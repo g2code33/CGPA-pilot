@@ -10,4 +10,12 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
   },
+  server: {
+    host: '0.0.0.0',
+    allowedHosts: true, // accept sandbox/proxy preview hosts
+  },
+  preview: {
+    host: '0.0.0.0',
+    allowedHosts: true,
+  },
 });
