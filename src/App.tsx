@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { INSTITUTION_LABEL } from './config';
+import { INSTITUTION_LABEL } from './config/context';
 import { UpdateBanner } from './components/UpdateBanner';
 import { ClearButton } from './components/ClearButton';
 import { Dashboard } from './views/Dashboard';

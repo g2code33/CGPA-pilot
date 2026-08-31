@@ -1,14 +1,14 @@
 import type { University } from '../types';
+import { uccPharmDCurriculum } from '../curricula/ucc-pharmd';
 
 // ─────────────────────────────────────────────────────────────────────────
-// University of Cape Coast (UCC)
-// Source for grading scale & degree classification:
-//   https://ucc.edu.gh/main/applicants-and-students/grading-system
-// School of Pharmacy · Doctor of Pharmacy (PharmD)
+// University of Cape Coast (UCC) — School of Pharmacy — Doctor of Pharmacy
 //
-// NOTE: course lists per level/semester are NOT published here. The
-// administrator configures the real curriculum (codes, titles, credits) in a
-// later prompt — the student app never fabricates UCC course information.
+// Grading system & degree classification published by UCC:
+//   https://ucc.edu.gh/main/applicants-and-students/grading-system
+// Course curricula are NOT invented: the PharmD curriculum version below is
+// held in `draft` status with an empty course list until the administrator
+// publishes the real level/semester/course data.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const ucc: University = {
@@ -16,10 +16,12 @@ export const ucc: University = {
   name: 'University of Cape Coast',
   shortName: 'UCC',
   country: 'Ghana',
+  gradingSystemId: 'ucc-standard',
+  classificationSystemId: 'ucc-undergraduate',
 
-  gradingScale: {
+  gradingSystem: {
     id: 'ucc-standard',
-    name: 'UCC Standard Undergraduate Scale',
+    name: 'UCC Standard Undergraduate Grading',
     bands: [
       { grade: 'A', minScore: 80, maxScore: 100, points: 4.0, interpretation: 'Excellent' },
       { grade: 'B+', minScore: 75, maxScore: 79, points: 3.5, interpretation: 'Very Good' },
@@ -32,9 +34,9 @@ export const ucc: University = {
     ],
   },
 
-  classification: {
+  classificationSystem: {
     id: 'ucc-undergraduate',
-    scaleName: 'UCC Degree Classification',
+    name: 'UCC Degree Classification',
     graduationMinCgpa: 1.0,
     bands: [
       { id: 'first', label: 'First Class', minCgpa: 3.6, maxCgpa: 4.0, tone: 'gold' },
@@ -48,23 +50,21 @@ export const ucc: University = {
 
   schools: [
     {
-      id: 'ucc-pharmacy',
+      id: 'ucc-school-of-pharmacy',
       name: 'School of Pharmacy',
+      universityId: 'ucc',
       programmes: [
         {
-          id: 'ucc-pharmacy-pharmd',
+          id: 'ucc-pharmd',
           name: 'Doctor of Pharmacy',
           shortName: 'PharmD',
-          expectedLevels: 6,
-          curricula: [
-            {
-              id: 'ucc-pharmd-current',
-              label: 'Current curriculum',
-              // Deliberately empty: the administrator publishes the real
-              // level/semester/course structure. No UCC courses are invented.
-              levels: [],
-            },
-          ],
+          schoolId: 'ucc-school-of-pharmacy',
+          duration: {
+            years: 6,
+            expectedLevels: 6,
+            label: '6-year professional doctorate',
+          },
+          curriculumVersionIds: [uccPharmDCurriculum.id],
         },
       ],
     },

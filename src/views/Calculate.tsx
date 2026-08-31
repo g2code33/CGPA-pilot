@@ -1,12 +1,12 @@
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Badge, Note } from '../components/ui';
-import { bandForScore, courseGrade, coursePoints } from '../engine/grades';
-import { fmt2 } from '../engine/format';
-import type { CourseEntry } from '../engine/types';
+import { bandForScore, effectiveGrade, gradePointsForCourse } from '../services/gradingService';
+import { fmt2 } from '../util/format';
+import type { CourseEntry } from '../state/studentState';
 
 export function Calculate() {
   const d = useDerived();
-  const { state, dispatch, scale, record } = d;
+  const { state, dispatch, grading, record } = d;
 
   return (
     <div className="space-y-4">
@@ -17,7 +17,6 @@ export function Calculate() {
           subtitle="Everything is computed on this device. Nothing you type leaves the app or is stored."
         />
 
-        {/* Mode switch */}
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => dispatch({ type: 'setMode', mode: 'history' })}
@@ -87,11 +86,11 @@ export function Calculate() {
                 min={0}
                 className="input text-center text-lg font-black"
                 placeholder="e.g. 64"
-                value={state.baseline.credits || ''}
+                value={state.baseline.creditHours || ''}
                 onChange={(e) =>
                   dispatch({
                     type: 'setBaseline',
-                    patch: { credits: Number(e.target.value) || 0 },
+                    patch: { creditHours: Number(e.target.value) || 0 },
                   })
                 }
               />
@@ -105,7 +104,7 @@ export function Calculate() {
         </Card>
       ) : (
         <>
-          {d.semesters.map(({ semester, totals }, idx) => (
+          {d.semesters.map(({ semester, totals }, _idx) => (
             <Card key={semester.id}>
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <input
@@ -120,11 +119,25 @@ export function Calculate() {
                   }
                 />
                 <div className="ml-auto flex items-center gap-2">
-                  <Badge tone={totals.cgpa === null ? 'gray' : totals.cgpa >= 3.6 ? 'gold' : totals.cgpa >= 3.0 ? 'green' : totals.cgpa >= 2.5 ? 'teal' : 'blue'}>
+                  <Badge
+                    tone={
+                      totals.cgpa === null
+                        ? 'gray'
+                        : totals.cgpa >= 3.6
+                          ? 'gold'
+                          : totals.cgpa >= 3.0
+                            ? 'green'
+                            : totals.cgpa >= 2.5
+                              ? 'teal'
+                              : 'blue'
+                    }
+                  >
                     GPA {fmt2(totals.cgpa)}
                   </Badge>
                   <button
-                    onClick={() => dispatch({ type: 'removeSemester', semesterId: semester.id })}
+                    onClick={() =>
+                      dispatch({ type: 'removeSemester', semesterId: semester.id })
+                    }
                     className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100"
                     title="Remove semester"
                   >
@@ -133,7 +146,6 @@ export function Calculate() {
                 </div>
               </div>
 
-              {/* Table head (desktop) */}
               <div className="mb-1 hidden grid-cols-12 gap-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:grid">
                 <span className="col-span-4">Course</span>
                 <span className="col-span-2">Code</span>
@@ -161,9 +173,9 @@ export function Calculate() {
                   ＋ Add course
                 </button>
                 <p className="text-[11px] text-slate-500">
-                  {totals.credits} graded cr · {fmt2(totals.points)} pts
+                  {totals.creditHours} graded cr · {fmt2(totals.points)} pts
                   {totals.pendingCount > 0 &&
-                    ` · ⏳ ${totals.pendingCount} pending (${totals.pendingCredits} cr)`}
+                    ` · ⏳ ${totals.pendingCount} pending (${totals.pendingCreditHours} cr)`}
                 </p>
               </div>
             </Card>
@@ -178,7 +190,6 @@ export function Calculate() {
         </>
       )}
 
-      {/* Live CGPA read-out */}
       <Card className="bg-slate-900 text-white ring-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -188,11 +199,11 @@ export function Calculate() {
             <p className="text-4xl font-black tabular-nums">{fmt2(record.cgpa)}</p>
           </div>
           <div className="text-right text-xs text-slate-300">
-            <p>{record.credits} graded credits</p>
+            <p>{record.creditHours} graded credits</p>
             <p>{fmt2(record.points)} grade points</p>
             {record.pendingCount > 0 && (
               <p className="text-amber-300">
-                ⏳ {record.pendingCount} pending · {record.pendingCredits} cr
+                ⏳ {record.pendingCount} pending · {record.pendingCreditHours} cr
               </p>
             )}
           </div>
@@ -209,13 +220,13 @@ function CourseRow({
   semesterId: string;
   course: CourseEntry;
 }) {
-  const { dispatch, scale } = useDerived();
+  const { dispatch, grading } = useDerived();
 
-  const grade = courseGrade(course, scale);
-  const points = coursePoints(course, scale);
+  const grade = effectiveGrade(course, grading);
+  const points = gradePointsForCourse(course, grading);
   const band =
     course.score !== null && !Number.isNaN(course.score)
-      ? bandForScore(course.score, scale)
+      ? bandForScore(course.score, grading)
       : null;
 
   const update = (patch: Partial<CourseEntry>) =>
@@ -261,8 +272,10 @@ function CourseRow({
             min={1}
             max={12}
             className="input text-center"
-            value={course.credits}
-            onChange={(e) => update({ credits: Math.max(1, Number(e.target.value) || 1) })}
+            value={course.creditHours}
+            onChange={(e) =>
+              update({ creditHours: Math.max(1, Number(e.target.value) || 1) })
+            }
           />
         </div>
         <div className="col-span-4 sm:col-span-2">
@@ -290,11 +303,13 @@ function CourseRow({
             className={`flex h-[38px] items-center justify-center rounded-xl text-sm font-black ${
               !grade
                 ? 'bg-slate-200 text-slate-400'
-                : band?.points === 0 || (course.grade && scale.bands.find((b) => b.grade === course.grade)?.points === 0)
+                : band?.points === 0 ||
+                    (course.grade &&
+                      grading.bands.find((b) => b.grade === course.grade)?.points === 0)
                   ? 'bg-red-100 text-red-700'
                   : 'bg-brand-100 text-brand-700'
             }`}
-            title={band ? band.interpretation : ''}
+            title={band?.interpretation ?? ''}
           >
             {grade ?? '—'}
           </div>
@@ -321,7 +336,9 @@ function CourseRow({
             ⏳ {course.pending ? 'Pending' : 'Pending?'}
           </button>
           <button
-            onClick={() => dispatch({ type: 'removeCourse', semesterId, courseId: course.id })}
+            onClick={() =>
+              dispatch({ type: 'removeCourse', semesterId, courseId: course.id })
+            }
             className="text-sm text-red-400 hover:text-red-600"
             title="Remove course"
           >
@@ -330,9 +347,8 @@ function CourseRow({
         </div>
       </div>
 
-      {/* Grade quick-pick */}
       <div className="mt-2 flex flex-wrap items-center gap-1">
-        {scale.bands.map((b) => (
+        {grading.bands.map((b) => (
           <button
             key={b.grade}
             disabled={course.pending}

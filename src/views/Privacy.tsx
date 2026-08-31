@@ -1,6 +1,16 @@
+import { useDerived } from '../state/derived';
 import { Card, SectionTitle } from '../components/ui';
+import {
+  PRIVACY_PROMISES,
+  PRIVACY_NEVERS,
+  PRIVACY_OFFLINE_NOTE,
+} from '../services/privacyService';
+import { cacheInfo } from '../services/curriculumService';
 
 export function Privacy() {
+  const d = useDerived();
+  const cache = cacheInfo();
+
   return (
     <div className="space-y-4">
       <Card className="bg-emerald-600 text-white ring-0">
@@ -13,13 +23,7 @@ export function Privacy() {
       <Card>
         <SectionTitle icon="✅" title="What CGPA PILOT does" />
         <ul className="space-y-2 text-sm text-slate-700">
-          {[
-            'Every calculation runs locally on your device — CGPA, targets, feasibility, what-ifs, flight path and projections.',
-            'Works fully offline after first load. No internet, API calls, cloud functions, online databases, logins or external AI are used for calculations.',
-            'Asks only for the numbers needed for a calculation (e.g. credits and grades, or current CGPA and total credits).',
-            'Treats everything you type as a temporary session: close the tab, refresh, or press Refresh/Clear and it is gone.',
-            'Lets you print an anonymous brief — no name or student ID appears, and the file stays on your device.',
-          ].map((t, i) => (
+          {PRIVACY_PROMISES.map((t, i) => (
             <li key={i} className="flex gap-2">
               <span className="mt-0.5 text-emerald-600">✔</span>
               <span>{t}</span>
@@ -31,14 +35,7 @@ export function Privacy() {
       <Card>
         <SectionTitle icon="🚫" title="What CGPA PILOT does NOT do" />
         <ul className="space-y-2 text-sm text-slate-700">
-          {[
-            'Does NOT ask for your name, student ID, email or phone number.',
-            'Does NOT create accounts or a student database.',
-            'Does NOT store your CGPA, GPA, grades, targets or scenarios in any browser storage, persistent database or offline cache.',
-            'Does NOT put your academic data in the web address (URL).',
-            'Does NOT upload your transcript or course results anywhere.',
-            'Does NOT use tracking/analytics storage tied to your academic data.',
-          ].map((t, i) => (
+          {PRIVACY_NEVERS.map((t, i) => (
             <li key={i} className="flex gap-2">
               <span className="mt-0.5 text-red-500">✖</span>
               <span>{t}</span>
@@ -48,15 +45,24 @@ export function Privacy() {
       </Card>
 
       <Card>
-        <SectionTitle icon="📦" title="What ships with the app" />
+        <SectionTitle
+          icon="📦"
+          title="What ships with the app (offline curriculum)"
+        />
         <p className="text-sm leading-relaxed text-slate-700">
           The app carries published, non-personal configuration for{' '}
-          <strong>University of Cape Coast · School of Pharmacy · PharmD</strong>
-          — the grading scale and degree-classification rules. Curriculum course
-          lists are configured by the administrator. This is public academic
-          configuration, not student information, and it is what enables full
-          offline use.
+          <strong>
+            {d.university.name} · {d.school?.name} · {d.programme?.shortName}
+          </strong>{' '}
+          — the grading system and degree-classification rules, plus any
+          curriculum version published by the administrator. This is public
+          academic configuration, not student information.
         </p>
+        <p className="mt-2 text-xs text-slate-500">{PRIVACY_OFFLINE_NOTE}</p>
+        <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-500 ring-1 ring-slate-100">
+          Offline curriculum source: <strong>{cache.source}</strong>
+          {cache.cachedAt ? ` (updated ${new Date(cache.cachedAt).toLocaleString()})` : ' (bundled with the app)'}
+        </div>
       </Card>
 
       <Card>
@@ -69,7 +75,7 @@ export function Privacy() {
 
       <p className="px-2 text-center text-[11px] text-slate-400">
         CGPA PILOT is an unofficial planning aid and is not affiliated with or
-        endorsed by the University of Cape Coast.
+        endorsed by {d.university.name}.
       </p>
     </div>
   );

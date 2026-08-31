@@ -75,12 +75,31 @@ otherwise the release APK falls back to the debug key (still installable).
 
 ```
 src/
-  config/      multi-tenant institution config (grading, classification, curricula)
-    institutions/ucc.ts   ← UCC School of Pharmacy PharmD
-  engine/      pure, offline calculation (grades, cgpa, projections, brief)
-  state/       in-memory React store (zero persistence) + derived selectors
-  views/       Dashboard · Calculate · Target · What-If · FlightPath · NextSemester · Print · Privacy
+  config/                      configuration-driven academic model
+    types.ts                     University→School→Programme→Curriculum→Level→Semester→Course
+    context.ts                   active institution context + registry
+    institutions/ucc.ts          UCC grading & classification (ucc.edu.gh)
+    curricula/ucc-pharmd.ts      UCC PharmD curriculum (draft; admin publishes courses)
+  services/                    pure, offline, config-driven services
+    curriculumService.ts         catalog lookups, published-curriculum selection, validation
+    gradingService.ts            score↔grade↔points (per a GradingSystem)
+    classificationService.ts     degree classification (per a ClassificationSystem)
+    cgpaCalculationService.ts    course/semester/history/confirmed totals
+    projectionService.ts         feasibility, max-possible CGPA, required GPA, flight path
+    scenarioService.ts           what-if runs, next-semester scenarios
+    pilotBriefService.ts         Pilot Brief text
+    printService.ts              anonymous printable report
+    privacyService.ts            privacy copy + reset/clear
+    configCache.ts               ONLY persistent storage: non-personal curriculum cache
+  state/                        in-memory student state (zero persistence) + derived hook
+  views/                        Dashboard · Calculate · Target · What-If · FlightPath …
 electron/      desktop main/preload + electron-updater
 android/       Capacitor project (committed; CI also scaffolds if missing)
 public/        PWA manifest + service worker
 ```
+
+Calculation logic lives in `services/`; UI components never hard-code
+university rules. Student data is temporary in-memory state; only published
+non-personal curriculum configuration is cached offline (`configCache.ts`).
+Adding another university = add a `config/institutions` entry — the core
+never needs rebuilding.

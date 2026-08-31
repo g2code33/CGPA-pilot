@@ -1,49 +1,40 @@
 import { useMemo, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
-import { pointsForGrade } from '../engine/grades';
-import { classify } from '../engine/grades';
-import { fmt2 } from '../engine/format';
-import type { CourseEntry } from '../engine/types';
+import { collectPending, runWhatIf } from '../services/scenarioService';
+import type { CourseEntry } from '../state/studentState';
+import { fmt2 } from '../util/format';
 
 /**
- * What-If simulator — fully local scratchpad.
- * Grades are chosen in component state only; global academic state is never
- * mutated. "Reset" returns to the pending picture; nothing is saved anywhere.
+ * What-If simulator — fully local scratchpad via scenarioService.
+ * Assumed grades live in component state only; academic state is never
+ * mutated and nothing is persisted.
  */
 export function WhatIf() {
   const d = useDerived();
-  const { record, scale, rules } = d;
+  const { record, grading, classification } = d;
 
-  // Collect every pending course (history mode) into the scratchpad.
   const pendingCourses = useMemo(
-    () =>
-      d.state.semesters.flatMap((s) =>
-        s.courses
-          .filter((c) => c.pending)
-          .map((c) => ({ ...c, semesterLabel: s.label }))
-      ),
+    () => collectPending(d.state.semesters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [d.state.semesters]
   );
 
-  // Hypothetical grade per pending course id.
-  const [grades, setGrades] = useState<Record<string, string>>({});
-  // Extra hypothetical future semester.
-  const [hypoCourses, setHypoCourses] = useState<CourseEntry[]>([]);
+  const [assumed, setAssumed] = useState<Record<string, string>>({});
+  const [hypothetical, setHypothetical] = useState<CourseEntry[]>([]);
 
   function setGrade(id: string, grade: string) {
-    setGrades((g) => ({ ...g, [id]: g[id] === grade ? '' : grade }));
+    setAssumed((g) => ({ ...g, [id]: g[id] === grade ? '' : grade }));
   }
 
   function addHypo() {
-    setHypoCourses((cs) => [
+    setHypothetical((cs) => [
       ...cs,
       {
         id: Math.random().toString(36).slice(2, 9),
         code: '',
         name: '',
-        credits: 3,
+        creditHours: 3,
         score: null,
         grade: null,
         pending: false,
@@ -52,33 +43,23 @@ export function WhatIf() {
   }
 
   function patchHypo(id: string, patch: Partial<CourseEntry>) {
-    setHypoCourses((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    setHypothetical((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
-  // Scenario math
-  let addedPoints = 0;
-  let addedCredits = 0;
-  for (const c of pendingCourses) {
-    const g = grades[c.id];
-    if (!g) continue;
-    const pts = pointsForGrade(g, scale);
-    if (pts === null) continue;
-    addedPoints += pts * c.credits;
-    addedCredits += c.credits;
-  }
-  for (const c of hypoCourses) {
-    if (!c.grade) continue;
-    const pts = pointsForGrade(c.grade, scale);
-    if (pts === null) continue;
-    addedPoints += pts * c.credits;
-    addedCredits += c.credits;
-  }
-
-  const scenarioCredits = record.credits + addedCredits;
-  const scenarioPoints = record.points + addedPoints;
-  const scenarioCgpa =
-    scenarioCredits > 0 ? scenarioPoints / scenarioCredits : null;
-  const scenarioClass = classify(scenarioCgpa, rules);
+  const result = runWhatIf(
+    {
+      basePoints: record.points,
+      baseCreditHours: record.creditHours,
+      assumedGrades: assumed,
+      pendingCourses,
+      hypothetical: hypothetical.map((c) => ({
+        creditHours: c.creditHours,
+        grade: c.grade,
+      })),
+    },
+    grading,
+    classification
+  );
 
   return (
     <div className="space-y-4">
@@ -106,21 +87,19 @@ export function WhatIf() {
                 key={c.id}
                 className="rounded-xl border border-amber-200 bg-amber-50/50 p-2.5"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-700">
-                    {c.code || 'Course'} {c.name ? `· ${c.name}` : ''}
-                    <span className="ml-1 text-slate-400">
-                      ({c.credits} cr · {c.semesterLabel})
-                    </span>
-                  </div>
+                <div className="text-xs font-semibold text-slate-700">
+                  {c.code || 'Course'} {c.name ? `· ${c.name}` : ''}
+                  <span className="ml-1 text-slate-400">
+                    ({c.creditHours} cr · {c.semesterLabel})
+                  </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {scale.bands.map((b) => (
+                  {grading.bands.map((b) => (
                     <button
                       key={b.grade}
                       onClick={() => setGrade(c.id, b.grade)}
                       className={`rounded-md px-2.5 py-1 text-xs font-bold ring-1 transition ${
-                        grades[c.id] === b.grade
+                        assumed[c.id] === b.grade
                           ? 'bg-brand-600 text-white ring-brand-600'
                           : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-100'
                       }`}
@@ -135,14 +114,16 @@ export function WhatIf() {
           </div>
         )}
 
-        {/* Hypothetical future semester */}
         <div className="mt-4">
           <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
             Hypothetical future semester
           </p>
           <div className="mt-2 space-y-2">
-            {hypoCourses.map((c) => (
-              <div key={c.id} className="grid grid-cols-12 items-center gap-2 rounded-xl border border-slate-200 p-2">
+            {hypothetical.map((c) => (
+              <div
+                key={c.id}
+                className="grid grid-cols-12 items-center gap-2 rounded-xl border border-slate-200 p-2"
+              >
                 <input
                   className="input col-span-5"
                   placeholder="Course (optional)"
@@ -154,25 +135,31 @@ export function WhatIf() {
                   min={1}
                   max={12}
                   className="input col-span-2 text-center"
-                  value={c.credits}
+                  value={c.creditHours}
                   onChange={(e) =>
-                    patchHypo(c.id, { credits: Math.max(1, Number(e.target.value) || 1) })
+                    patchHypo(c.id, {
+                      creditHours: Math.max(1, Number(e.target.value) || 1),
+                    })
                   }
                 />
                 <select
                   className="input col-span-4 text-center font-bold"
                   value={c.grade ?? ''}
-                  onChange={(e) => patchHypo(c.id, { grade: e.target.value || null })}
+                  onChange={(e) =>
+                    patchHypo(c.id, { grade: e.target.value || null })
+                  }
                 >
                   <option value="">Grade…</option>
-                  {scale.bands.map((b) => (
+                  {grading.bands.map((b) => (
                     <option key={b.grade} value={b.grade}>
                       {b.grade} ({b.points})
                     </option>
                   ))}
                 </select>
                 <button
-                  onClick={() => setHypoCourses((cs) => cs.filter((x) => x.id !== c.id))}
+                  onClick={() =>
+                    setHypothetical((cs) => cs.filter((x) => x.id !== c.id))
+                  }
                   className="col-span-1 text-right text-red-400 hover:text-red-600"
                 >
                   ✕
@@ -185,20 +172,19 @@ export function WhatIf() {
           </div>
         </div>
 
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3">
           <button
             onClick={() => {
-              setGrades({});
-              setHypoCourses([]);
+              setAssumed({});
+              setHypothetical([]);
             }}
-            className="btn-ghost flex-1"
+            className="btn-ghost w-full"
           >
             ↺ Reset scenario
           </button>
         </div>
       </Card>
 
-      {/* Scenario outcome */}
       <Card className="bg-slate-900 text-white ring-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -206,7 +192,7 @@ export function WhatIf() {
               Scenario CGPA
             </p>
             <p className="text-4xl font-black tabular-nums text-amber-300">
-              {fmt2(scenarioCgpa)}
+              {fmt2(result.scenarioCgpa)}
             </p>
           </div>
           <div className="text-right text-xs text-slate-300">
@@ -215,11 +201,11 @@ export function WhatIf() {
               Scenario
             </p>
             <p>
-              +{addedCredits} credits · +{fmt2(addedPoints)} points
+              +{result.addedCreditHours} credits · +{fmt2(result.addedPoints)} points
             </p>
-            {scenarioClass && (
+            {result.classification && (
               <p className="mt-1 rounded-full bg-white/10 px-3 py-1 font-bold">
-                {scenarioClass.label}
+                {result.classification.label}
               </p>
             )}
           </div>

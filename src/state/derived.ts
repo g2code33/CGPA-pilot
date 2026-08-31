@@ -1,31 +1,58 @@
-import { useAcademic } from './store';
-import { university } from '../config';
-import { confirmedRecord, historyTotals, semesterTotals } from '../engine/cgpa';
-import { classify } from '../engine/grades';
 import { useMemo } from 'react';
+import { useAcademic } from './store';
+import { resolveContext, INSTITUTION_LABEL } from '../config/context';
+import {
+  getActiveCurriculum,
+  isPublished,
+  curriculumTotalCredits,
+} from '../services/curriculumService';
+import {
+  confirmedRecord,
+  historyTotals,
+  semesterTotals,
+} from '../services/cgpaCalculationService';
+import { classifyCgpa } from '../services/classificationService';
 
+/**
+ * Single derived-data hook for the UI. Components never calculate directly
+ * from configuration — they call the services exposed here.
+ */
 export function useDerived() {
   const { state, dispatch } = useAcademic();
-  const scale = university.gradingScale;
-  const rules = university.classification;
 
   return useMemo(() => {
-    const record = confirmedRecord(state, scale);
-    const history = historyTotals(state.semesters, scale);
-    const semesters = state.semesters.map((s) => ({
-      semester: s,
-      totals: semesterTotals(s, scale),
+    const { university, school, programme, gradingSystem, classificationSystem } =
+      resolveContext();
+    const grading = gradingSystem!;
+    const classification = classificationSystem!;
+    const curriculum = getActiveCurriculum();
+
+    const record = confirmedRecord(state, grading);
+    const history = historyTotals(state.semesters, grading);
+    const semesters = state.semesters.map((semester) => ({
+      semester,
+      totals: semesterTotals(semester, grading),
     }));
-    const classification = classify(record.cgpa, rules);
+    const classBand = classifyCgpa(record.cgpa, classification);
+
     return {
       state,
       dispatch,
-      scale,
-      rules,
+      // configuration
+      university,
+      school,
+      programme,
+      grading,
+      classification,
+      curriculum,
+      curriculumPublished: isPublished(curriculum),
+      curriculumCredits: curriculum ? curriculumTotalCredits(curriculum) : 0,
+      institutionLabel: INSTITUTION_LABEL,
+      // derived record
       record,
       history,
       semesters,
-      classification,
+      classBand,
     };
-  }, [state, scale, rules]);
+  }, [state]);
 }

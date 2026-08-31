@@ -1,101 +1,46 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Academic configuration types
+// Academic configuration model (configuration-driven architecture)
 //
-// CGPA PILOT is built multi-tenant from day one: a University owns one or
-// more Schools, each School runs Programmes, and each Programme has versioned
-// Curricula (levels → semesters → courses). Only the institution/programme
-// selected by the administrator is ever exposed to the student app.
+// Hierarchy:
+//   University → School/College → Programme → Curriculum Version
+//              → Level → Semester → Course
 //
-// None of this is personal/student data: it is published, non-personal
-// curriculum configuration and may be cached locally for offline use.
+// This is PUBLISHED, NON-PERSONAL curriculum configuration. It is the only
+// kind of data the app may cache locally (see services/configCache.ts);
+// student academic data never enters this layer.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** One letter-grade band of a university grading scale. */
-export interface GradeBand {
-  /** Letter shown to students, e.g. "A", "B+", "E" */
-  grade: string;
-  /** Inclusive lower bound of raw score (0–100) */
-  minScore: number;
-  /** Inclusive upper bound of raw score (0–100) */
-  maxScore: number;
-  /** Grade points per credit hour */
-  points: number;
-  /** Official interpretation, e.g. "Excellent", "Weak Pass" */
-  interpretation?: string;
-}
+export type CurriculumStatus = 'draft' | 'published';
 
-/** University grading scale. */
-export interface GradingScale {
+/** One letter-grade band of a university grading system. */
+export interface GradingSystem {
   id: string;
   name: string;
   bands: GradeBand[];
 }
 
-/** One band of a degree-classification table. */
+export interface GradeBand {
+  grade: string;
+  minScore: number; // inclusive, 0–100
+  maxScore: number; // inclusive, 0–100
+  points: number; // grade points per credit hour
+  interpretation?: string;
+}
+
+/** One band of a degree-classification system. */
 export interface ClassificationBand {
   id: string;
   label: string;
-  /** Inclusive lower CGPA bound */
-  minCgpa: number;
-  /** Inclusive upper CGPA bound */
-  maxCgpa: number;
-  /** Visual tone used for badges */
+  minCgpa: number; // inclusive
+  maxCgpa: number; // inclusive
   tone: 'gold' | 'green' | 'teal' | 'blue' | 'red' | 'gray';
 }
 
-/** Classification rules for a programme. */
-export interface ClassificationRules {
-  id: string;
-  scaleName: string;
-  bands: ClassificationBand[];
-  /** Minimum CGPA required to graduate, if published */
-  graduationMinCgpa?: number;
-}
-
-/** A published course in a curriculum (non-personal). */
-export interface CurriculumCourse {
-  code: string;
-  title: string;
-  credits: number;
-  /** Compulsory core or elective — used by later planning prompts */
-  kind?: 'core' | 'elective' | 'required' | 'optional';
-}
-
-/** One semester of a level (semester 1 / 2, etc.). */
-export interface CurriculumSemester {
-  index: number; // 1-based
-  label: string; // e.g. "Semester 1"
-  courses: CurriculumCourse[];
-}
-
-/** One academic level of a programme (Level 100 … 600 for PharmD). */
-export interface CurriculumLevel {
-  index: number; // 1-based
-  label: string; // e.g. "Level 100"
-  semesters: CurriculumSemester[];
-}
-
-/** A versioned curriculum for a programme. */
-export interface CurriculumVersion {
-  id: string;
-  label: string; // e.g. "2024/2025"
-  /** Empty until the administrator publishes the actual course list. */
-  levels: CurriculumLevel[];
-}
-
-export interface Programme {
-  id: string;
-  name: string; // e.g. "Doctor of Pharmacy"
-  shortName: string; // e.g. "PharmD"
-  /** Expected number of levels, used to scaffold future planning prompts */
-  expectedLevels: number;
-  curricula: CurriculumVersion[];
-}
-
-export interface School {
+export interface ClassificationSystem {
   id: string;
   name: string;
-  programmes: Programme[];
+  bands: ClassificationBand[];
+  graduationMinCgpa?: number;
 }
 
 export interface University {
@@ -103,15 +48,87 @@ export interface University {
   name: string;
   shortName: string;
   country: string;
-  gradingScale: GradingScale;
-  classification: ClassificationRules;
+  gradingSystemId: string;
+  classificationSystemId: string;
+  /** Grading/classification systems may be defined in-catalog or referenced. */
+  gradingSystem?: GradingSystem;
+  classificationSystem?: ClassificationSystem;
   schools: School[];
 }
 
-/** The single institution context the student app runs under. */
-export interface InstitutionConfig {
+export interface School {
+  id: string;
+  name: string;
+  universityId: string;
+  programmes: Programme[];
+}
+
+export interface Programme {
+  id: string;
+  name: string;
+  shortName: string;
+  schoolId: string;
+  /** Nominal duration, e.g. { years: 6, label: '6-year professional doctorate' } */
+  duration: ProgrammeDuration;
+  curriculumVersionIds: string[];
+}
+
+export interface ProgrammeDuration {
+  years: number;
+  expectedLevels: number;
+  label: string;
+}
+
+export interface CurriculumVersion {
+  id: string;
+  versionName: string;
+  programmeId: string;
+  /** Academic year / effective date this curriculum applies from. */
+  effectiveAcademicYear: string;
+  effectiveDate: string; // ISO
+  status: CurriculumStatus;
+  /** Published courses arranged by level and semester. */
+  levels: CurriculumLevel[];
+}
+
+export interface CurriculumLevel {
+  index: number; // 1-based (Level 100 …)
+  label: string;
+  semesters: CurriculumSemester[];
+}
+
+export interface CurriculumSemester {
+  index: number; // 1-based within a level
+  label: string;
+  courses: CurriculumCourse[];
+}
+
+export interface CurriculumCourse {
+  id: string; // stable config id, e.g. "phar111"
+  code: string;
+  name: string;
+  creditHours: number;
+  level: number;
+  semester: number; // semester index within the level
+  programmeId: string;
+  curriculumId: string;
+  status: 'active' | 'inactive';
+  core: boolean;
+}
+
+/** A course flattened out of the level/semester tree, with context filled in. */
+export interface FlatCourse extends CurriculumCourse {
+  universityId: string;
+  schoolId: string;
+  levelLabel: string;
+  semesterLabel: string;
+}
+
+/** Which institution/programme/curriculum the student app is running under. */
+export interface InstitutionContext {
   universityId: string;
   schoolId: string;
   programmeId: string;
-  curriculumId: string;
+  /** Optional explicit curriculum; default = latest published for programme. */
+  curriculumId?: string;
 }

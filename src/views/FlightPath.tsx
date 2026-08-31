@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
-import { flightPath } from '../engine/projection';
-import { classify } from '../engine/grades';
-import { fmt2, clamp } from '../engine/format';
+import { flightPath } from '../services/projectionService';
+import { classifyCgpa } from '../services/classificationService';
+import { fmt2, clamp } from '../util/format';
 
 const CLASS_LINES: { label: string; min: number; tone: string }[] = [
   { label: 'First', min: 3.6, tone: '#f59e0b' },
@@ -15,7 +15,7 @@ const CLASS_LINES: { label: string; min: number; tone: string }[] = [
 
 export function FlightPathView() {
   const d = useDerived();
-  const { record, rules } = d;
+  const { record, classification } = d;
 
   const [semesterCount, setSemesterCount] = useState(6);
   const [perSemesterCredits, setPerSemesterCredits] = useState(18);
@@ -30,17 +30,16 @@ export function FlightPathView() {
     () =>
       flightPath(
         record.points,
-        record.credits,
+        record.creditHours,
         semesterCredits,
         assumedGpa
       ),
-    [record.points, record.credits, semesterCredits, assumedGpa]
+    [record.points, record.creditHours, semesterCredits, assumedGpa]
   );
 
   const finalPoint = path[path.length - 1];
-  const finalClass = classify(finalPoint?.cgpa ?? null, rules);
+  const finalClass = classifyCgpa(finalPoint?.cgpa ?? null, classification);
 
-  // ── SVG geometry ──
   const W = 640;
   const H = 300;
   const PAD_L = 44;
@@ -66,7 +65,10 @@ export function FlightPathView() {
         />
 
         {record.cgpa === null && (
-          <Note>Enter your record on the Calculate tab to plot a flight path from where you are now.</Note>
+          <Note>
+            Enter your record on the Calculate tab to plot a flight path from
+            where you are now.
+          </Note>
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -96,7 +98,9 @@ export function FlightPathView() {
               className="input text-center font-black"
               value={perSemesterCredits}
               onChange={(e) =>
-                setPerSemesterCredits(clamp(Math.round(Number(e.target.value) || 1), 1, 30))
+                setPerSemesterCredits(
+                  clamp(Math.round(Number(e.target.value) || 1), 1, 30)
+                )
               }
             />
           </label>
@@ -131,7 +135,6 @@ export function FlightPathView() {
         </div>
 
         <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" role="img" aria-label="Flight path graph">
-          {/* Class boundary lines */}
           {CLASS_LINES.map((c) => (
             <g key={c.label}>
               <line
@@ -150,7 +153,6 @@ export function FlightPathView() {
             </g>
           ))}
 
-          {/* Target line */}
           {d.state.targetCgpa !== null && (
             <line
               x1={PAD_L}
@@ -162,18 +164,14 @@ export function FlightPathView() {
             />
           )}
 
-          {/* Axes */}
           <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="#cbd5e1" />
           <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="#cbd5e1" />
           {[0, 1, 2, 3, 4].map((g) => (
-            <g key={g}>
-              <text x={PAD_L - 8} y={yFor(g) + 4} fontSize={10} textAnchor="end" fill="#94a3b8">
-                {g.toFixed(1)}
-              </text>
-            </g>
+            <text key={g} x={PAD_L - 8} y={yFor(g) + 4} fontSize={10} textAnchor="end" fill="#94a3b8">
+              {g.toFixed(1)}
+            </text>
           ))}
 
-          {/* Flight path */}
           <path d={linePath} fill="none" stroke="#4f46e5" strokeWidth={2.5} strokeLinejoin="round" />
           {path.map((p, i) => (
             <g key={i}>
@@ -185,10 +183,9 @@ export function FlightPathView() {
           ))}
         </svg>
 
-        {/* Milestone table */}
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {path.slice(1).map((p, i) => {
-            const cls = classify(p.cgpa, rules);
+            const cls = classifyCgpa(p.cgpa, classification);
             return (
               <div
                 key={i}
@@ -209,7 +206,8 @@ export function FlightPathView() {
 
       <Note>
         Milestones assume {perSemesterCredits} credits each semester at a
-        consistent {assumedGpa.toFixed(2)} GPA. Adjust the controls to fly different paths — your actual route changes with each result.
+        consistent {assumedGpa.toFixed(2)} GPA. Adjust the controls to fly
+        different paths — your actual route changes with each result.
       </Note>
     </div>
   );

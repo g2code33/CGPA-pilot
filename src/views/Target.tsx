@@ -1,39 +1,40 @@
 import { useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Badge, Note } from '../components/ui';
+import { Card, SectionTitle, Note } from '../components/ui';
+import { targetableBands } from '../services/classificationService';
 import {
   requiredFutureGpa,
   maxPossibleCgpa,
-  creditsToTargetAtStraightA,
+  creditHoursToTargetAtStraightA,
   assessFeasibility,
-} from '../engine/projection';
-import { fmt2 } from '../engine/format';
+} from '../services/projectionService';
+import { fmt2 } from '../util/format';
 
 export function Target() {
   const d = useDerived();
-  const { record, rules, dispatch } = d;
+  const { record, dispatch, classification } = d;
   const [remaining, setRemaining] = useState(120);
 
   const target = d.state.targetCgpa ?? 3.6;
   const cgpa = record.cgpa;
 
-  const req = requiredFutureGpa(record.points, record.credits, remaining, target);
-  const max = maxPossibleCgpa(record.points, record.credits, remaining);
+  const req = requiredFutureGpa(record.points, record.creditHours, remaining, target);
+  const max = maxPossibleCgpa(record.points, record.creditHours, remaining);
   const feasibility = assessFeasibility(
     record.points,
-    record.credits,
+    record.creditHours,
     remaining,
     target,
     cgpa
   );
-  const creditsStraightA = creditsToTargetAtStraightA(
+  const atStraightA = creditHoursToTargetAtStraightA(
     record.points,
-    record.credits,
+    record.creditHours,
     target
   );
   const projected =
     req !== null && req >= 0 && req <= 4
-      ? (record.points + req * remaining) / (record.credits + remaining)
+      ? (record.points + req * remaining) / (record.creditHours + remaining)
       : null;
 
   return (
@@ -51,7 +52,9 @@ export function Target() {
             max={4}
             step={0.05}
             value={target}
-            onChange={(e) => dispatch({ type: 'setTarget', target: Number(e.target.value) })}
+            onChange={(e) =>
+              dispatch({ type: 'setTarget', target: Number(e.target.value) })
+            }
             className="flex-1 accent-brand-600"
           />
           <span className="w-16 rounded-xl bg-brand-600 py-2 text-center text-lg font-black text-white">
@@ -59,21 +62,19 @@ export function Target() {
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {rules.bands
-            .filter((b) => b.minCgpa >= 1.0)
-            .map((b) => (
-              <button
-                key={b.id}
-                onClick={() => dispatch({ type: 'setTarget', target: b.minCgpa })}
-                className={`rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 transition ${
-                  target >= b.minCgpa && target <= b.maxCgpa
-                    ? 'bg-brand-100 text-brand-700 ring-brand-300'
-                    : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {b.label} ({b.minCgpa.toFixed(1)})
-              </button>
-            ))}
+          {targetableBands(classification).map((b) => (
+            <button
+              key={b.id}
+              onClick={() => dispatch({ type: 'setTarget', target: b.minCgpa })}
+              className={`rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 transition ${
+                target >= b.minCgpa && target <= b.maxCgpa
+                  ? 'bg-brand-100 text-brand-700 ring-brand-300'
+                  : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {b.label} ({b.minCgpa.toFixed(1)})
+            </button>
+          ))}
         </div>
       </Card>
 
@@ -91,14 +92,16 @@ export function Target() {
             <input
               type="number"
               min={0}
-              max={300}
+              max={400}
               className="input w-36 text-center text-lg font-black"
               value={remaining}
-              onChange={(e) => setRemaining(Math.max(0, Number(e.target.value) || 0))}
+              onChange={(e) =>
+                setRemaining(Math.max(0, Number(e.target.value) || 0))
+              }
             />
           </div>
           <div className="flex gap-1.5">
-            {[30, 60, 90, 120].map((v) => (
+            {[30, 60, 90, 120, 180].map((v) => (
               <button
                 key={v}
                 onClick={() => setRemaining(v)}
@@ -110,7 +113,6 @@ export function Target() {
           </div>
         </div>
 
-        {/* Verdict */}
         <div
           className={`mt-4 rounded-2xl p-4 text-center ${
             cgpa === null
@@ -148,9 +150,7 @@ export function Target() {
                   {req < 0 ? '0.00' : fmt2(req)}
                 </p>
               )}
-              <p className="text-sm font-medium text-slate-700">
-                {feasibility.message}
-              </p>
+              <p className="text-sm font-medium text-slate-700">{feasibility.message}</p>
               {projected !== null && feasibility.zone === 'on' && (
                 <p className="mt-1 text-xs font-semibold text-sky-800">
                   Finish on {fmt2(projected)} after {remaining} more credits.
@@ -161,7 +161,6 @@ export function Target() {
         </div>
       </Card>
 
-      {/* Boundary stats */}
       <div className="grid grid-cols-2 gap-3">
         <Card className="text-center">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -175,7 +174,7 @@ export function Target() {
             Credits to target at straight A
           </p>
           <p className="mt-1 text-2xl font-black text-brand-600">
-            {creditsStraightA === null ? '—' : Math.ceil(creditsStraightA)}
+            {atStraightA === null ? '—' : Math.ceil(atStraightA)}
           </p>
           <p className="text-[10px] text-slate-400">minimum credits needed</p>
         </Card>
@@ -184,7 +183,7 @@ export function Target() {
       {record.pendingCount > 0 && (
         <Note>
           You have {record.pendingCount} pending result{record.pendingCount === 1 ? '' : 's'} (
-          {record.pendingCredits} credits). Use the What-If tab to preview grades before they land — they
+          {record.pendingCreditHours} credits). Use the What-If tab to preview grades before they land — they
           could shift both your CGPA and the required average above.
         </Note>
       )}

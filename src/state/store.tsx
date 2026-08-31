@@ -10,12 +10,12 @@ import type {
   CalcMode,
   CourseEntry,
   SemesterEntry,
-} from '../engine/types';
-import { uid } from '../engine/format';
+} from './studentState';
+import { uid } from '../util/format';
+import { initCurriculum } from '../services/curriculumService';
 
 // ─────────────────────────────────────────────────────────────────────────
 // TEMPORARY, IN-MEMORY academic state.
-//
 // Deliberately NOT persisted: no localStorage, no sessionStorage, no
 // IndexedDB, no cookies, no URLs. Everything resets on refresh / Clear.
 // ─────────────────────────────────────────────────────────────────────────
@@ -25,28 +25,24 @@ function makeCourse(): CourseEntry {
     id: uid(),
     code: '',
     name: '',
-    credits: 3,
+    creditHours: 3,
     score: null,
     grade: null,
     pending: false,
   };
 }
 
-function makeSemester(label: string, withCourse = true): SemesterEntry {
-  return {
-    id: uid(),
-    label,
-    courses: withCourse ? [makeCourse()] : [],
-  };
+function makeSemester(label: string): SemesterEntry {
+  return { id: uid(), label, courses: [makeCourse()] };
 }
 
 function initialState(): AcademicState {
   return {
     mode: 'history',
     semesters: [makeSemester('Level 100 · Semester 1')],
-    baseline: { cgpa: null, credits: 0 },
+    baseline: { cgpa: null, creditHours: 0 },
     targetCgpa: 3.6, // First Class (UCC)
-    plannedNextCredits: 18,
+    plannedNextCreditHours: 18,
   };
 }
 
@@ -55,7 +51,7 @@ type Action =
   | { type: 'setMode'; mode: CalcMode }
   | { type: 'setTarget'; target: number | null }
   | { type: 'setBaseline'; patch: Partial<AcademicState['baseline']> }
-  | { type: 'setPlannedNextCredits'; credits: number }
+  | { type: 'setPlannedNext'; creditHours: number }
   | { type: 'addSemester' }
   | { type: 'removeSemester'; semesterId: string }
   | { type: 'renameSemester'; semesterId: string; label: string }
@@ -75,17 +71,16 @@ function reducer(state: AcademicState, action: Action): AcademicState {
       return { ...state, targetCgpa: action.target };
 
     case 'setBaseline':
+      return { ...state, baseline: { ...state.baseline, ...action.patch } };
+
+    case 'setPlannedNext':
       return {
         ...state,
-        baseline: { ...state.baseline, ...action.patch },
+        plannedNextCreditHours: Math.max(1, action.creditHours || 1),
       };
-
-    case 'setPlannedNextCredits':
-      return { ...state, plannedNextCredits: Math.max(0, action.credits) };
 
     case 'addSemester': {
       const n = state.semesters.length + 1;
-      // Suggest the conventional UCC label (Level 100 S1, S2, Level 200 …)
       const level = Math.ceil(n / 2);
       const sem = ((n - 1) % 2) + 1;
       return {
@@ -159,6 +154,8 @@ interface Store {
 const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  // Load the locally cached/bundled published curriculum BEFORE first render.
+  useMemo(() => initCurriculum(), []);
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
