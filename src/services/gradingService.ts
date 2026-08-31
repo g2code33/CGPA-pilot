@@ -11,8 +11,27 @@ export function bandForScore(
   score: number,
   system: GradingSystem
 ): GradeBand {
-  const band = system.bands.find((b) => score >= b.minScore && score <= b.maxScore);
-  return band ?? system.bands[system.bands.length - 1];
+  const bands = [...system.bands].sort((a, b) => a.minScore - b.minScore);
+  // Exact inclusive-range match (handles the official contiguous UCC ranges).
+  const exact = bands.find((b) => score >= b.minScore && score <= b.maxScore);
+  if (exact) return exact;
+  // Boundary fallback for decimal scores / gaps: the highest band whose
+  // minimum the score reaches; below the lowest band → lowest band.
+  const reached = [...bands]
+    .sort((a, b) => b.minScore - a.minScore)
+    .find((b) => score >= b.minScore);
+  return reached ?? bands[0];
+}
+
+/** Highest grade point available in a grading system (feasibility ceiling). */
+export function maxGradePoints(system: GradingSystem): number {
+  return system.bands.reduce((m, b) => Math.max(m, b.points), 0);
+}
+
+/** Lowest grade point above zero, used for worst-case projections. */
+export function minPositiveGradePoints(system: GradingSystem): number {
+  const positive = system.bands.filter((b) => b.points > 0).map((b) => b.points);
+  return positive.length ? Math.min(...positive) : 0;
 }
 
 export function bandForGrade(

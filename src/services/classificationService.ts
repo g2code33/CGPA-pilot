@@ -13,11 +13,23 @@ export function classifyCgpa(
   system: ClassificationSystem
 ): ClassificationBand | null {
   if (cgpa === null || Number.isNaN(cgpa)) return null;
-  return (
-    system.bands.find((b) => cgpa >= b.minCgpa && cgpa <= b.maxCgpa) ??
-    system.bands[system.bands.length - 1]
-  );
+  // Boundary-correct: order bands by minimum (descending) and assign the
+  // first band whose minimum the CGPA reaches. This is robust to floating
+  // point (3.0 is the 2:1 boundary, not a gap) and to bands whose ranges
+  // abut without sharing endpoints.
+  const byMax = [...system.bands].sort((a, b) => b.maxCgpa - a.maxCgpa);
+  const ordered = [...system.bands].sort((a, b) => b.minCgpa - a.minCgpa);
+  const match = ordered.find((b) => cgpa + 1e-9 >= b.minCgpa);
+  // Never classify above the highest awarded band or below zero.
+  const highest = byMax[0];
+  if (match && highest && cgpa > highest.maxCgpa + 1e-9) {
+    return highest;
+  }
+  return match ?? ordered[ordered.length - 1] ?? null;
 }
+
+/** Grade-point ceiling for the active grading system (feasibility max). */
+export { maxGradePoints } from './gradingService';
 
 export function classBandForMinimum(
   cgpa: number,

@@ -8,10 +8,14 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type {
+  ClassificationBand,
+  ClassificationSystem,
   CurriculumCourse,
   CurriculumLevel,
   CurriculumVersion,
   EntityStatus,
+  GradeBand,
+  GradingSystem,
   Programme,
   School,
   University,
@@ -19,6 +23,14 @@ import type {
 import { ucc } from '../config/institutions/ucc';
 import { uccPharmDCurriculum } from '../config/curricula/ucc-pharmd';
 import type { AdminCatalog } from './adminStorage';
+
+// Official UCC rules (seed) — used for the "reset to official" action.
+export function uccOfficialGrading(): GradingSystem {
+  return clone(ucc.gradingSystem!);
+}
+export function uccOfficialClassification(): ClassificationSystem {
+  return clone(ucc.classificationSystem!);
+}
 
 export function seedCatalog(): AdminCatalog {
   return {
@@ -958,4 +970,271 @@ export function isDistributionPayload(value: unknown): value is DistributionPayl
     Array.isArray(p.universities) &&
     Array.isArray(p.curricula)
   );
+}
+
+// ── Grading & classification systems ──────────────────────────────────────
+
+function mapUniversity(
+  catalog: AdminCatalog,
+  universityId: string,
+  fn: (u: University) => University
+): AdminCatalog {
+  return {
+    ...catalog,
+    universities: catalog.universities.map((u) =>
+      u.id === universityId ? fn(u) : u
+    ),
+  };
+}
+
+function mapProgrammeScoped(
+  catalog: AdminCatalog,
+  programmeId: string,
+  fn: (p: Programme) => Programme
+): AdminCatalog {
+  return {
+    ...catalog,
+    universities: catalog.universities.map((u) => ({
+      ...u,
+      schools: u.schools.map((s) => ({
+        ...s,
+        programmes: s.programmes.map((p) => (p.id === programmeId ? fn(p) : p)),
+      })),
+    })),
+  };
+}
+
+export type RuleTarget =
+  | { scope: 'university'; universityId: string }
+  | { scope: 'programme'; programmeId: string };
+
+export function getGradingSystem(
+  catalog: AdminCatalog,
+  target: RuleTarget
+): GradingSystem | undefined {
+  if (target.scope === 'university') {
+    return catalog.universities.find((u) => u.id === target.universityId)?.gradingSystem;
+  }
+  const found = findProgramme(catalog, target.programmeId);
+  if (!found) return undefined;
+  return found.programme.gradingSystem ?? found.university.gradingSystem;
+}
+
+export function getClassificationSystem(
+  catalog: AdminCatalog,
+  target: RuleTarget
+): ClassificationSystem | undefined {
+  if (target.scope === 'university') {
+    return catalog.universities.find((u) => u.id === target.universityId)
+      ?.classificationSystem;
+  }
+  const found = findProgramme(catalog, target.programmeId);
+  if (!found) return undefined;
+  return found.programme.classificationSystem ?? found.university.classificationSystem;
+}
+
+export function setGradingSystem(
+  catalog: AdminCatalog,
+  target: RuleTarget,
+  system: GradingSystem
+): AdminCatalog {
+  if (target.scope === 'university') {
+    return mapUniversity(catalog, target.universityId, (u) => ({
+      ...u,
+      gradingSystemId: system.id,
+      gradingSystem: system,
+    }));
+  }
+  return mapProgrammeScoped(catalog, target.programmeId, (p) => ({
+    ...p,
+    gradingSystem: system,
+  }));
+}
+
+export function setClassificationSystem(
+  catalog: AdminCatalog,
+  target: RuleTarget,
+  system: ClassificationSystem
+): AdminCatalog {
+  if (target.scope === 'university') {
+    return mapUniversity(catalog, target.universityId, (u) => ({
+      ...u,
+      classificationSystemId: system.id,
+      classificationSystem: system,
+    }));
+  }
+  return mapProgrammeScoped(catalog, target.programmeId, (p) => ({
+    ...p,
+    classificationSystem: system,
+  }));
+}
+
+export interface RuleIssue {
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+/**
+ * Validate a grading system:
+ *  - no duplicate grades / missing grade points / invalid points
+ *  - no overlapping score ranges; bands sorted ascending; gaps are warnings
+ *  - coverage of 0–100 is a warning; points should be non-increasing
+ */
+export function validateGradingSystem(system: GradingSystem | undefined): RuleIssue[] {
+  const issues: RuleIssue[] = [];
+  if (!system) {
+    issues.push({ severity: 'error', message: 'No grading system defined.' });
+    return issues;
+  }
+  const bands = system.bands;
+  if (bands.length === 0) {
+    issues.push({ severity: 'error', message: 'No grade bands defined.' });
+    return issues;
+  }
+
+  const grades = new Set<string>();
+  for (const b of bands) {
+    const grade = b.grade?.trim();
+    if (!grade) {
+      issues.push({ severity: 'error', message: 'A grade band is missing its letter grade.' });
+    } else if (grades.has(grade)) {
+      issues.push({ severity: 'error', message: `Duplicate grade: ${grade}.` });
+    }
+    grades.add(grade);
+
+    if (b.points === null || b.points === undefined || Number.isNaN(b.points) || b.points < 0) {
+      issues.push({ severity: 'error', message: `${grade || 'A band'} is missing valid grade points (must be ≥ 0).` });
+    }
+
+    if (!Number.isFinite(b.minScore) || !Number.isFinite(b.maxScore)) {
+      issues.push({ severity: 'error', message: `${grade || 'A band'} has a non-numeric score range.` });
+    } else {
+      if (b.minScore < 0 || b.minScore > 100 || b.maxScore < 0 || b.maxScore > 100) {
+        issues.push({ severity: 'error', message: `${grade}: score range must be within 0–100.` });
+      }
+      if (b.minScore > b.maxScore) {
+        issues.push({ severity: 'error', message: `${grade}: minimum score is above maximum.` });
+      }
+    }
+  }
+
+  // Overlaps & gaps (ascending by minScore).
+  const sorted = [...bands].sort((a, b) => a.minScore - b.minScore);
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    if (cur.minScore <= prev.maxScore) {
+      issues.push({
+        severity: 'error',
+        message: `Overlapping score ranges: ${prev.grade} (${prev.minScore}–${prev.maxScore}) and ${cur.grade} (${cur.minScore}–${cur.maxScore}).`,
+      });
+    } else if (cur.minScore - prev.maxScore > 1.0001) {
+      issues.push({
+        severity: 'warning',
+        message: `Gap between ${prev.grade} (up to ${prev.maxScore}) and ${cur.grade} (from ${cur.minScore}) — scores in between match no band.`,
+      });
+    }
+    // Higher scores should not award fewer points than lower scores.
+    if (typeof cur.points === 'number' && typeof prev.points === 'number' && cur.points > prev.points + 1e-9) {
+      issues.push({
+        severity: 'warning',
+        message: `${cur.grade} (higher scores) awards more points than ${prev.grade} — points usually decrease as scores drop.`,
+      });
+    }
+  }
+  const top = sorted[sorted.length - 1];
+  const bottom = sorted[0];
+  if (top && top.maxScore < 100) {
+    issues.push({ severity: 'warning', message: `Highest band ends at ${top.maxScore} — scores up to 100 are not covered.` });
+  }
+  if (bottom && bottom.minScore > 0) {
+    issues.push({ severity: 'warning', message: `Lowest band starts at ${bottom.minScore} — scores from 0 are not covered.` });
+  }
+
+  return issues;
+}
+
+/**
+ * Validate degree-classification ranges:
+ *  - name present; numeric, ordered ranges
+ *  - no overlapping ranges; gaps are warnings
+ */
+export function validateClassificationSystem(
+  system: ClassificationSystem | undefined
+): RuleIssue[] {
+  const issues: RuleIssue[] = [];
+  if (!system) {
+    issues.push({ severity: 'error', message: 'No classification system defined.' });
+    return issues;
+  }
+  const bands = system.bands;
+  if (bands.length === 0) {
+    issues.push({ severity: 'error', message: 'No classification bands defined.' });
+    return issues;
+  }
+
+  const labels = new Set<string>();
+  for (const b of bands) {
+    if (!b.label?.trim()) {
+      issues.push({ severity: 'error', message: 'A classification band is missing its name.' });
+    } else if (labels.has(b.label.trim())) {
+      issues.push({ severity: 'error', message: `Duplicate classification: ${b.label}.` });
+    }
+    labels.add(b.label.trim());
+
+    if (!Number.isFinite(b.minCgpa) || !Number.isFinite(b.maxCgpa)) {
+      issues.push({ severity: 'error', message: `${b.label || 'A band'} has a non-numeric CGPA range.` });
+    } else if (b.minCgpa < 0 || b.minCgpa > 4 || b.maxCgpa < 0 || b.maxCgpa > 4) {
+      issues.push({ severity: 'error', message: `${b.label}: CGPA range must be within 0.00–4.00.` });
+    } else if (b.minCgpa > b.maxCgpa) {
+      issues.push({ severity: 'error', message: `${b.label}: minimum CGPA is above maximum.` });
+    }
+  }
+
+  const sorted = [...bands].sort((a, b) => b.minCgpa - a.minCgpa); // highest first
+  for (let i = 1; i < sorted.length; i++) {
+    const higher = sorted[i - 1];
+    const lower = sorted[i];
+    // Contiguous bands abut at two decimals: higher.min ≈ lower.max + 0.01.
+    // Overlap when the lower band reaches up into (or past) the higher one.
+    if (lower.maxCgpa + 1e-9 >= higher.minCgpa) {
+      issues.push({
+        severity: 'error',
+        message: `Overlapping classification ranges: ${lower.label} (up to ${lower.maxCgpa}) and ${higher.label} (from ${higher.minCgpa}).`,
+      });
+    } else if (higher.minCgpa - lower.maxCgpa > 0.01 + 1e-9) {
+      issues.push({
+        severity: 'warning',
+        message: `Gap between ${lower.label} (up to ${lower.maxCgpa}) and ${higher.label} (from ${higher.minCgpa}).`,
+      });
+    }
+  }
+  const top = sorted[0];
+  if (top && top.maxCgpa < 4 - 1e-9) {
+    issues.push({ severity: 'warning', message: `Top classification ends at ${top.maxCgpa} — a perfect 4.00 CGPA is unclassified.` });
+  }
+
+  return issues;
+}
+
+export function gradingSystemValid(system: GradingSystem | undefined): boolean {
+  return !validateGradingSystem(system).some((i) => i.severity === 'error');
+}
+export function classificationSystemValid(system: ClassificationSystem | undefined): boolean {
+  return !validateClassificationSystem(system).some((i) => i.severity === 'error');
+}
+
+export function makeGradingBand(partial: Partial<GradeBand> = {}): GradeBand {
+  return {
+    id: `gb-${Math.random().toString(36).slice(2, 8)}`,
+    grade: '',
+    minScore: 0,
+    maxScore: 100,
+    points: 0,
+    interpretation: '',
+    ...partial,
+  };
+}
+export function makeClassificationBand(partial: Partial<ClassificationBand> = {}): ClassificationBand {
+  return { id: `cls-${Math.random().toString(36).slice(2, 8)}`, label: '', minCgpa: 0, maxCgpa: 4, tone: 'gray', ...partial };
 }

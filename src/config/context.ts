@@ -40,9 +40,12 @@ export function resolveContext(ctx: InstitutionContext = ACTIVE_CONTEXT) {
     (p) => p.id === ctx.programmeId
   );
 
-  const gradingSystem: GradingSystem | undefined = university.gradingSystem;
+  // A programme may override the university-wide systems; otherwise the
+  // university's published rules apply.
+  const gradingSystem: GradingSystem | undefined =
+    programme?.gradingSystem ?? university.gradingSystem;
   const classificationSystem: ClassificationSystem | undefined =
-    university.classificationSystem;
+    programme?.classificationSystem ?? university.classificationSystem;
 
   return { university, school, programme, gradingSystem, classificationSystem };
 }

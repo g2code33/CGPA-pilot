@@ -3,7 +3,9 @@
 // future GPA, flight path, milestones and next-semester projection. Pure.
 // ─────────────────────────────────────────────────────────────────────────
 
-export const MAX_POINTS = 4.0;
+// Grade-point ceiling is config-driven (the active grading system's top
+// band); 4.0 is the conventional fallback used only if none is supplied.
+export const DEFAULT_MAX_POINTS = 4.0;
 
 export type FeasibilityZone = 'achieved' | 'on' | 'off' | 'unknown';
 
@@ -25,15 +27,16 @@ export function requiredFutureGpa(
   return (target * (creditHours + futureCreditHours) - points) / futureCreditHours;
 }
 
-/** Best achievable CGPA if every remaining course is an A. */
+/** Best achievable CGPA if every remaining course earns the top grade. */
 export function maxPossibleCgpa(
   points: number,
   creditHours: number,
-  remainingCreditHours: number
+  remainingCreditHours: number,
+  maxPoints: number = DEFAULT_MAX_POINTS
 ): number | null {
   const total = creditHours + remainingCreditHours;
   if (total <= 0) return null;
-  return (points + MAX_POINTS * remainingCreditHours) / total;
+  return (points + maxPoints * remainingCreditHours) / total;
 }
 
 /** Worst CGPA if pending courses earn 0 points while their credits count. */
@@ -52,7 +55,8 @@ export function assessFeasibility(
   creditHours: number,
   futureCreditHours: number,
   target: number,
-  currentCgpa: number | null
+  currentCgpa: number | null,
+  maxPoints: number = DEFAULT_MAX_POINTS
 ): Feasibility {
   if (currentCgpa === null) {
     return {
@@ -84,7 +88,7 @@ export function assessFeasibility(
       message: 'Add remaining credit hours to plan.',
     };
   }
-  if (req <= MAX_POINTS) {
+  if (req <= maxPoints + 1e-9) {
     return {
       feasible: true,
       requiredGpa: req,
@@ -96,7 +100,7 @@ export function assessFeasibility(
     feasible: false,
     requiredGpa: req,
     zone: 'off',
-    message: `You would need ${req.toFixed(2)} — above the ${MAX_POINTS.toFixed(2)} maximum. Target is out of range for this plan.`,
+    message: `You would need ${req.toFixed(2)} — above the ${maxPoints.toFixed(2)} maximum. Target is out of range for this plan.`,
   };
 }
 
@@ -149,14 +153,15 @@ export function projectNextSemester(
   return (points + gpa * nextCreditHours) / total;
 }
 
-/** Minimum future credit hours at straight A's needed to reach the target. */
+/** Minimum future credit hours at the top grade needed to reach the target. */
 export function creditHoursToTargetAtStraightA(
   points: number,
   creditHours: number,
-  target: number
+  target: number,
+  maxPoints: number = DEFAULT_MAX_POINTS
 ): number | null {
   if (creditHours <= 0) return null;
-  const denom = MAX_POINTS - target;
+  const denom = maxPoints - target;
   if (denom <= 0) return 0;
   const n = (target * creditHours - points) / denom;
   return n > 0 ? n : 0;

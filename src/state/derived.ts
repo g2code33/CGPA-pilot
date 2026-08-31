@@ -12,6 +12,7 @@ import {
   semesterTotals,
 } from '../services/cgpaCalculationService';
 import { classifyCgpa } from '../services/classificationService';
+import { maxGradePoints } from '../services/gradingService';
 
 /**
  * Single derived-data hook for the UI. Components never calculate directly
@@ -53,6 +54,7 @@ export function useDerived() {
       history,
       semesters,
       classBand,
+      maxPoints: maxGradePoints(grading),
     };
   }, [state]);
 }

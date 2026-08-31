@@ -6,14 +6,16 @@ import { Universities } from './views/Universities';
 import { Curricula } from './views/Curricula';
 import { CurriculumEditor } from './views/CurriculumEditor';
 import { CurriculumPreview } from './views/CurriculumPreview';
+import { Grading } from './views/Grading';
 
-type ViewName = 'overview' | 'universities' | 'curricula' | 'editor' | 'preview';
+type ViewName = 'overview' | 'universities' | 'curricula' | 'grading' | 'editor' | 'preview';
 type View = { name: ViewName; curriculumId?: string };
 
 const NAV: { id: View['name']; label: string; icon: string }[] = [
   { id: 'overview', label: 'Dashboard', icon: '📊' },
   { id: 'universities', label: 'Institutions', icon: '🏛️' },
   { id: 'curricula', label: 'Curricula', icon: '📚' },
+  { id: 'grading', label: 'Grading & Classes', icon: '🎯' },
 ];
 
 export function AdminApp() {
@@ -63,6 +65,7 @@ export function AdminApp() {
           {view.name === 'curricula' && (
             <Curricula onOpen={(id) => setView({ name: 'editor', curriculumId: id })} />
           )}
+          {view.name === 'grading' && <Grading />}
           {view.name === 'editor' && view.curriculumId && (
             <CurriculumEditor
               curriculumId={view.curriculumId}

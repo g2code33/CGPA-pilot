@@ -5,21 +5,30 @@ import { flightPath } from '../services/projectionService';
 import { classifyCgpa } from '../services/classificationService';
 import { fmt2, clamp } from '../util/format';
 
-const CLASS_LINES: { label: string; min: number; tone: string }[] = [
-  { label: 'First', min: 3.6, tone: '#f59e0b' },
-  { label: '2:1', min: 3.0, tone: '#10b981' },
-  { label: '2:2', min: 2.5, tone: '#14b8a6' },
-  { label: '3rd', min: 2.0, tone: '#0ea5e9' },
-  { label: 'Pass', min: 1.0, tone: '#94a3b8' },
-];
+const TONE_COLOR: Record<string, string> = {
+  gold: '#f59e0b',
+  green: '#10b981',
+  teal: '#14b8a6',
+  blue: '#0ea5e9',
+  red: '#ef4444',
+  gray: '#94a3b8',
+};
 
 export function FlightPathView() {
   const d = useDerived();
-  const { record, classification } = d;
+  const { record, classification, maxPoints } = d;
 
   const [semesterCount, setSemesterCount] = useState(6);
   const [perSemesterCredits, setPerSemesterCredits] = useState(18);
   const [assumedGpa, setAssumedGpa] = useState(3.6);
+
+  const classLines = classification.bands
+    .filter((b) => b.minCgpa > 0)
+    .map((b) => ({
+      label: b.label.replace(/\s*\(.*\)/, '').split(' ')[0],
+      min: b.minCgpa,
+      tone: TONE_COLOR[b.tone] ?? '#94a3b8',
+    }));
 
   const semesterCredits = useMemo(
     () => Array.from({ length: semesterCount }, () => perSemesterCredits),
@@ -49,7 +58,7 @@ export function FlightPathView() {
   const xFor = (i: number) =>
     PAD_L + (i / Math.max(1, path.length - 1)) * (W - PAD_L - PAD_R);
   const yFor = (cgpa: number) =>
-    PAD_T + (1 - cgpa / 4) * (H - PAD_T - PAD_B);
+    PAD_T + (1 - cgpa / maxPoints) * (H - PAD_T - PAD_B);
 
   const linePath = path
     .map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p.cgpa).toFixed(1)}`)
@@ -111,9 +120,9 @@ export function FlightPathView() {
             <input
               type="range"
               min={0}
-              max={4}
+              max={maxPoints}
               step={0.05}
-              value={assumedGpa}
+              value={Math.min(assumedGpa, maxPoints)}
               onChange={(e) => setAssumedGpa(Number(e.target.value))}
               className="mt-3 w-full accent-brand-600"
             />
@@ -135,7 +144,7 @@ export function FlightPathView() {
         </div>
 
         <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" role="img" aria-label="Flight path graph">
-          {CLASS_LINES.map((c) => (
+          {classLines.map((c) => (
             <g key={c.label}>
               <line
                 x1={PAD_L}
@@ -166,7 +175,7 @@ export function FlightPathView() {
 
           <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="#cbd5e1" />
           <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="#cbd5e1" />
-          {[0, 1, 2, 3, 4].map((g) => (
+          {Array.from({ length: Math.round(maxPoints) + 1 }, (_, g) => g).map((g) => (
             <text key={g} x={PAD_L - 8} y={yFor(g) + 4} fontSize={10} textAnchor="end" fill="#94a3b8">
               {g.toFixed(1)}
             </text>

@@ -23,6 +23,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
     remainingCreditHours: 0,
     classification: classBand,
     targetClassLabel: targetClass?.label ?? 'target',
+    maxPoints: d.maxPoints,
   });
 
   const atTarget =
@@ -65,7 +66,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
               <span className="text-6xl font-black tabular-nums leading-none">
                 {fmt2(record.cgpa)}
               </span>
-              <span className="pb-1 text-sm text-brand-200">/ 4.00</span>
+              <span className="pb-1 text-sm text-brand-200">/ {d.maxPoints.toFixed(2)}</span>
             </div>
             <p className="mt-2 text-xs text-brand-200">
               {record.creditHours} graded credits · {fmt1(record.points)} grade points
@@ -88,7 +89,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
           <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/15">
             <div
               className="h-full rounded-full bg-gradient-to-r from-amber-300 to-emerald-300 transition-all"
-              style={{ width: `${Math.min(100, ((record.cgpa ?? 0) / 4) * 100)}%` }}
+              style={{ width: `${Math.min(100, ((record.cgpa ?? 0) / d.maxPoints) * 100)}%` }}
             />
           </div>
           <div className="mt-1.5 flex justify-between text-[10px] font-semibold text-brand-200">

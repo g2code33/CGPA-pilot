@@ -23,6 +23,8 @@ export interface GradingSystem {
 }
 
 export interface GradeBand {
+  /** Stable id used by editors (optional for legacy/seed configs). */
+  id?: string;
   grade: string;
   minScore: number; // inclusive, 0–100
   maxScore: number; // inclusive, 0–100
@@ -77,6 +79,13 @@ export interface Programme {
   /** Nominal duration, e.g. { years: 6, label: '6-year professional doctorate' } */
   duration: ProgrammeDuration;
   curriculumVersionIds: string[];
+  /**
+   * Optional programme-level override. When absent, the programme uses its
+   * university's grading/classification systems. This lets a programme define
+   * its own rules without affecting the rest of the university.
+   */
+  gradingSystem?: GradingSystem;
+  classificationSystem?: ClassificationSystem;
 }
 
 export interface ProgrammeDuration {

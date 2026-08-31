@@ -18,22 +18,25 @@ export function Target() {
   const target = d.state.targetCgpa ?? 3.6;
   const cgpa = record.cgpa;
 
+  const maxPoints = d.maxPoints;
   const req = requiredFutureGpa(record.points, record.creditHours, remaining, target);
-  const max = maxPossibleCgpa(record.points, record.creditHours, remaining);
+  const max = maxPossibleCgpa(record.points, record.creditHours, remaining, maxPoints);
   const feasibility = assessFeasibility(
     record.points,
     record.creditHours,
     remaining,
     target,
-    cgpa
+    cgpa,
+    maxPoints
   );
   const atStraightA = creditHoursToTargetAtStraightA(
     record.points,
     record.creditHours,
-    target
+    target,
+    maxPoints
   );
   const projected =
-    req !== null && req >= 0 && req <= 4
+    req !== null && req >= 0 && req <= maxPoints
       ? (record.points + req * remaining) / (record.creditHours + remaining)
       : null;
 
@@ -49,16 +52,16 @@ export function Target() {
           <input
             type="range"
             min={1}
-            max={4}
+            max={maxPoints}
             step={0.05}
-            value={target}
+            value={Math.min(target, maxPoints)}
             onChange={(e) =>
               dispatch({ type: 'setTarget', target: Number(e.target.value) })
             }
             className="flex-1 accent-brand-600"
           />
           <span className="w-16 rounded-xl bg-brand-600 py-2 text-center text-lg font-black text-white">
-            {target.toFixed(2)}
+            {Math.min(target, maxPoints).toFixed(2)}
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">

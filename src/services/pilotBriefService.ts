@@ -16,6 +16,7 @@ export interface BriefInput {
   remainingCreditHours: number;
   classification: ClassificationBand | null;
   targetClassLabel: string;
+  maxPoints?: number;
 }
 
 export function buildBrief(i: BriefInput): string[] {
@@ -55,7 +56,8 @@ export function buildBrief(i: BriefInput): string[] {
         i.target
       );
       if (req !== null) {
-        if (req <= 4.0) {
+        const max = i.maxPoints ?? 4.0;
+        if (req <= max + 1e-9) {
           lines.push(
             `Target ${fmt2(i.target)} (${i.targetClassLabel}) needs an average of ${fmt2(req)} over your next ${i.remainingCreditHours} credits.`
           );
