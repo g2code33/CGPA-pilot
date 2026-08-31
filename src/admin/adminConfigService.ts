@@ -560,6 +560,242 @@ export function removeCourse(
   });
 }
 
+/** Move a course up or down within its semester list. */
+export function reorderCourse(
+  catalog: AdminCatalog,
+  id: string,
+  levelIndex: number,
+  semesterIndex: number,
+  courseId: string,
+  direction: 'up' | 'down'
+): AdminCatalog {
+  return editCurriculum(catalog, id, (c) => {
+    if (!mutatable(c.status)) return c;
+    return {
+      ...c,
+      levels: c.levels.map((l) => {
+        if (l.index !== levelIndex) return l;
+        return {
+          ...l,
+          semesters: l.semesters.map((s) => {
+            if (s.index !== semesterIndex) return s;
+            const courses = [...s.courses];
+            const idx = courses.findIndex((x) => x.id === courseId);
+            const target = direction === 'up' ? idx - 1 : idx + 1;
+            if (idx < 0 || target < 0 || target >= courses.length) return s;
+            const tmp = courses[idx];
+            courses[idx] = courses[target];
+            courses[target] = tmp;
+            return { ...s, courses };
+          }),
+        };
+      }),
+    };
+  });
+}
+
+/** Duplicate a course (same name/credits, blank code to avoid a clash). */
+export function duplicateCourse(
+  catalog: AdminCatalog,
+  id: string,
+  levelIndex: number,
+  semesterIndex: number,
+  courseId: string
+): AdminCatalog {
+  return editCurriculum(catalog, id, (c) => {
+    if (!mutatable(c.status)) return c;
+    return {
+      ...c,
+      levels: c.levels.map((l) => {
+        if (l.index !== levelIndex) return l;
+        return {
+          ...l,
+          semesters: l.semesters.map((s) => {
+            if (s.index !== semesterIndex) return s;
+            const idx = s.courses.findIndex((x) => x.id === courseId);
+            if (idx < 0) return s;
+            const src = s.courses[idx];
+            const copy: CurriculumCourse = {
+              ...src,
+              id: cid('crs'),
+              code: '', // admin enters the real (unique) code
+              curriculumId: id,
+            };
+            const courses = [...s.courses];
+            courses.splice(idx + 1, 0, copy);
+            return { ...s, courses };
+          }),
+        };
+      }),
+    };
+  });
+}
+
+export interface BulkRow {
+  code: string;
+  name: string;
+  creditHours: number;
+  valid: boolean;
+}
+
+/**
+ * Parse pasted bulk-course text. Accepts, per line:
+ *   CODE <tab> Name <tab> Credits
+ *   CODE, Name, Credits
+ *   CODE  Name  Credits        (2+ spaces)
+ *   CODE Name Credits          (heuristic: code = first token, credits = last number)
+ */
+export function parseBulkCourses(text: string): BulkRow[] {
+  const rows: BulkRow[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const raw = rawLine.trim();
+    if (!raw) continue;
+
+    let parts: string[] = raw
+      .split(/\t|,|\s{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    if (parts.length < 3) {
+      // Heuristic: leading course code (e.g. "PHA 111" or "PHA111"),
+      // trailing credits, everything between = name.
+      const tokens = raw.split(/\s+/);
+      const last = tokens[tokens.length - 1];
+      // Try a 1-token then 2-token leading code ("PHA111" / "PHA 111").
+      let codeLen = 0;
+      if (/^[A-Za-z]{2,5}\d{2,3}[A-Za-z]?$/.test(tokens[0] ?? '')) codeLen = 1;
+      else if (/^[A-Za-z]{2,5}$/.test(tokens[0] ?? '') && /^\d{2,3}[A-Za-z]?$/.test(tokens[1] ?? '')) codeLen = 2;
+      const nameTokens = tokens.slice(codeLen, -1);
+      if (
+        codeLen > 0 &&
+        tokens.length >= codeLen + 2 &&
+        /^\d+(\.\d{1,2})?$/.test(last)
+      ) {
+        parts = [tokens.slice(0, codeLen).join(' '), nameTokens.join(' '), last];
+      }
+    }
+
+    const code = (parts[0] ?? '').toUpperCase();
+    const creditHours = Number(parts[parts.length - 1]) || 0;
+    const name = parts.slice(1, -1).join(' ').trim();
+    const valid =
+      !!code && /^\d+(\.\d{1,2})?$/.test(String(parts[parts.length - 1])) && creditHours > 0;
+
+    rows.push({ code, name, creditHours: creditHours || 0, valid });
+  }
+  return rows;
+}
+
+export function bulkAddCourses(
+  catalog: AdminCatalog,
+  id: string,
+  levelIndex: number,
+  semesterIndex: number,
+  rows: BulkRow[]
+): AdminCatalog {
+  return editCurriculum(catalog, id, (c) => {
+    if (!mutatable(c.status)) return c;
+    const newCourses: CurriculumCourse[] = rows
+      .filter((r) => r.code)
+      .map((r) => ({
+        id: cid('crs'),
+        code: r.code,
+        name: r.name,
+        creditHours: r.creditHours,
+        level: levelIndex,
+        semester: semesterIndex,
+        programmeId: c.programmeId,
+        curriculumId: id,
+        status: 'active' as const,
+        core: true,
+      }));
+    return {
+      ...c,
+      levels: c.levels.map((l) => {
+        if (l.index !== levelIndex) return l;
+        return {
+          ...l,
+          semesters: l.semesters.map((s) =>
+            s.index !== semesterIndex
+              ? s
+              : { ...s, courses: [...s.courses, ...newCourses] }
+          ),
+        };
+      }),
+    };
+  });
+}
+
+// ── Totals ────────────────────────────────────────────────────────────────
+
+export interface SemesterStat {
+  index: number;
+  label: string;
+  courses: number;
+  credits: number;
+}
+export interface LevelStat {
+  index: number;
+  label: string;
+  courses: number;
+  credits: number;
+  semesters: SemesterStat[];
+}
+export interface CurriculumStat {
+  levels: LevelStat[];
+  totalCourses: number;
+  totalActiveCourses: number;
+  totalCredits: number;
+}
+
+export function curriculumStats(version: CurriculumVersion): CurriculumStat {
+  const levels: LevelStat[] = version.levels.map((l) => {
+    const semesters: SemesterStat[] = l.semesters.map((s) => ({
+      index: s.index,
+      label: s.label,
+      courses: s.courses.length,
+      credits: s.courses
+        .filter((c) => c.status === 'active')
+        .reduce((sum, c) => sum + (c.creditHours || 0), 0),
+    }));
+    return {
+      index: l.index,
+      label: l.label,
+      courses: l.semesters.reduce((n, s) => n + s.courses.length, 0),
+      credits: semesters.reduce((sum, s) => sum + s.credits, 0),
+      semesters,
+    };
+  });
+  return {
+    levels,
+    totalCourses: version.levels.reduce(
+      (n, l) => n + l.semesters.reduce((m, s) => m + s.courses.length, 0),
+      0
+    ),
+    totalActiveCourses: version.levels.reduce(
+      (n, l) =>
+        n +
+        l.semesters.reduce(
+          (m, s) => m + s.courses.filter((c) => c.status === 'active').length,
+          0
+        ),
+      0
+    ),
+    totalCredits: levels.reduce((sum, l) => sum + l.credits, 0),
+  };
+}
+
+/** Suggested version name, e.g. "UCC PharmD — 2026/27". */
+export function suggestVersionName(
+  catalog: AdminCatalog,
+  programmeId: string
+): string {
+  const found = findProgramme(catalog, programmeId);
+  if (!found) return '';
+  const year = new Date().getFullYear();
+  return `${found.university.shortName} ${found.programme.shortName} — ${year}/${String((year + 1) % 100).padStart(2, '0')}`;
+}
+
 // ── Review validation ─────────────────────────────────────────────────────
 
 export interface ReviewIssue {
@@ -585,11 +821,28 @@ export function reviewCurriculum(version: CurriculumVersion): ReviewIssue[] {
   let activeCount = 0;
   let totalCredits = 0;
 
-  for (const level of version.levels) {
+  // Levels should be indexed 1..N sequentially.
+  version.levels.forEach((level, i) => {
+    if (level.index !== i + 1) {
+      issues.push({
+        severity: 'error',
+        message: `${level.label} has an invalid level index (expected ${i + 1}, got ${level.index}).`,
+      });
+    }
+    if (!level.label?.trim()) {
+      issues.push({ severity: 'error', message: `Level at position ${i + 1} is missing its label.` });
+    }
     if (level.semesters.length === 0) {
       issues.push({ severity: 'error', message: `${level.label} has no semesters.` });
     }
-    for (const sem of level.semesters) {
+    // Semesters should be indexed sequentially within the level.
+    level.semesters.forEach((sem, j) => {
+      if (sem.index !== j + 1) {
+        issues.push({
+          severity: 'error',
+          message: `${level.label} has an invalid semester index (expected ${j + 1}, got ${sem.index}).`,
+        });
+      }
       if (sem.courses.length === 0) {
         issues.push({
           severity: 'warning',
@@ -598,6 +851,19 @@ export function reviewCurriculum(version: CurriculumVersion): ReviewIssue[] {
       }
       for (const course of sem.courses) {
         courseCount++;
+        // Course placement must match where it is stored.
+        if (course.level !== level.index || course.semester !== sem.index) {
+          issues.push({
+            severity: 'error',
+            message: `${course.code || 'A course'} (${level.label} · ${sem.label}) has an invalid level/semester reference.`,
+          });
+        }
+        if (course.programmeId !== version.programmeId) {
+          issues.push({
+            severity: 'error',
+            message: `${course.code || 'A course'} is linked to the wrong programme.`,
+          });
+        }
         const code = course.code.trim().toUpperCase();
         if (!code) {
           issues.push({
@@ -613,10 +879,14 @@ export function reviewCurriculum(version: CurriculumVersion): ReviewIssue[] {
             message: `${code || 'A course'} (${level.label} · ${sem.label}) is missing its name.`,
           });
         }
-        if (!course.creditHours || course.creditHours <= 0 || course.creditHours > 20) {
+        if (
+          !Number.isFinite(course.creditHours) ||
+          course.creditHours <= 0 ||
+          course.creditHours > 20
+        ) {
           issues.push({
             severity: 'error',
-            message: `${code || 'A course'} has an invalid credit-hour value (must be 1–20).`,
+            message: `${code || 'A course'} has invalid credits (must be 1–20). Zero or negative credits are not allowed.`,
           });
         }
         if (course.status === 'active') {
@@ -624,8 +894,8 @@ export function reviewCurriculum(version: CurriculumVersion): ReviewIssue[] {
           totalCredits += course.creditHours || 0;
         }
       }
-    }
-  }
+    });
+  });
 
   for (const [code, n] of seenCodes) {
     if (n > 1) {

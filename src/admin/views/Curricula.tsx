@@ -9,6 +9,8 @@ import {
   deleteCurriculum,
   reviewCurriculum,
   canPublish,
+  curriculumStats,
+  suggestVersionName,
 } from '../adminConfigService';
 import { writeCachedConfig } from '../../services/configCache';
 import type { CurriculumVersion } from '../../config/types';
@@ -87,6 +89,7 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
         const errors = issues.filter((i) => i.severity === 'error').length;
         const warnings = issues.filter((i) => i.severity === 'warning').length;
         const locked = c.status === 'published' || c.status === 'archived';
+        const stats = curriculumStats(c);
 
         return (
           <section key={c.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -111,6 +114,8 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
               <span>📅 {c.effectiveAcademicYear || 'year not set'}</span>
               <span>🗓 effective {c.effectiveDate}</span>
               <span>📚 {c.levels.length} levels</span>
+              <span>📖 {stats.totalActiveCourses} active courses</span>
+              <span className="font-bold text-brand-700">🎓 {stats.totalCredits} credits</span>
               {(errors > 0 || warnings > 0) && (
                 <span className={errors > 0 ? 'font-bold text-red-600' : 'text-amber-600'}>
                   {errors > 0 ? `⛔ ${errors} error${errors === 1 ? '' : 's'}` : ''}
@@ -236,8 +241,11 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
             <select
               className="input sm:col-span-2"
-              value={showCreate}
-              onChange={(e) => setShowCreate(e.target.value)}
+              value={showCreate ?? ''}
+              onChange={(e) => {
+                setShowCreate(e.target.value);
+                setForm((f) => ({ ...f, versionName: suggestVersionName(catalog, e.target.value) }));
+              }}
             >
               {catalog.universities.flatMap((u) =>
                 u.schools.flatMap((s) =>
@@ -285,6 +293,7 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
           onClick={() => {
             const first = catalog.universities[0]?.schools[0]?.programmes[0];
             setShowCreate(first?.id ?? null);
+            if (first) setForm((f) => ({ ...f, versionName: suggestVersionName(catalog, first.id) }));
           }}
         >
           ＋ Create curriculum version

@@ -5,8 +5,9 @@ import { Overview } from './views/Overview';
 import { Universities } from './views/Universities';
 import { Curricula } from './views/Curricula';
 import { CurriculumEditor } from './views/CurriculumEditor';
+import { CurriculumPreview } from './views/CurriculumPreview';
 
-type ViewName = 'overview' | 'universities' | 'curricula' | 'editor';
+type ViewName = 'overview' | 'universities' | 'curricula' | 'editor' | 'preview';
 type View = { name: ViewName; curriculumId?: string };
 
 const NAV: { id: View['name']; label: string; icon: string }[] = [
@@ -66,6 +67,13 @@ export function AdminApp() {
             <CurriculumEditor
               curriculumId={view.curriculumId}
               onBack={() => setView({ name: 'curricula' })}
+              onPreview={(id) => setView({ name: 'preview', curriculumId: id })}
+            />
+          )}
+          {view.name === 'preview' && view.curriculumId && (
+            <CurriculumPreview
+              curriculumId={view.curriculumId}
+              onBack={() => setView({ name: 'editor', curriculumId: view.curriculumId })}
             />
           )}
         </main>
