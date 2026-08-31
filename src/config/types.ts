@@ -10,7 +10,10 @@
 // student academic data never enters this layer.
 // ─────────────────────────────────────────────────────────────────────────
 
-export type CurriculumStatus = 'draft' | 'published';
+export type EntityStatus = 'active' | 'inactive';
+
+/** Curriculum publication workflow. Only `published` versions reach students. */
+export type CurriculumStatus = 'draft' | 'review' | 'published' | 'archived';
 
 /** One letter-grade band of a university grading system. */
 export interface GradingSystem {
@@ -48,6 +51,7 @@ export interface University {
   name: string;
   shortName: string;
   country: string;
+  status: EntityStatus;
   gradingSystemId: string;
   classificationSystemId: string;
   /** Grading/classification systems may be defined in-catalog or referenced. */
@@ -60,6 +64,7 @@ export interface School {
   id: string;
   name: string;
   universityId: string;
+  status: EntityStatus;
   programmes: Programme[];
 }
 
@@ -68,6 +73,7 @@ export interface Programme {
   name: string;
   shortName: string;
   schoolId: string;
+  status: EntityStatus;
   /** Nominal duration, e.g. { years: 6, label: '6-year professional doctorate' } */
   duration: ProgrammeDuration;
   curriculumVersionIds: string[];

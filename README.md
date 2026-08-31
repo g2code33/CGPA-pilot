@@ -42,9 +42,20 @@ administrator — no UCC course data is fabricated.
 
 ```bash
 npm install
-npm run dev            # web (Vite)
+npm run dev            # web (Vite) — student app at /, admin console at /admin.html
 npm run dev:desktop    # Electron dev window
 ```
+
+### Admin console
+
+A separate application bundle at **`admin.html`** (`/admin.html`), unlinked
+from the student app and `noindex`. It manages institutions and curriculum
+with persistent hashed-passcode auth (factory passcode `pilot-admin` — change
+on first run). Curriculum workflow is **Draft → Review → Published →
+Archived**; only **published** curricula reach students, published versions
+are locked (edit via Duplicate) and cannot be deleted. Publishing writes a
+versioned configuration document the student app caches offline; no student
+data ever enters admin/sync.
 
 ## Build
 

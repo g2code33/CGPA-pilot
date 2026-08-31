@@ -6,6 +6,7 @@ const CACHE = 'cgpa-pilot-v1';
 const SHELL = [
   './',
   './index.html',
+  './admin.html',
   './manifest.webmanifest',
   './icon-512.png',
 ];

@@ -35,7 +35,8 @@ const STORAGE_USAGE_RE =
   /\b(?:localStorage|sessionStorage|indexedDB)\b|\.cookie\b/;
 
 // ── 1. Build artifacts ─────────────────────────────────────────────────────
-assert(existsSync(join(dist, 'index.html')), 'dist/index.html exists');
+assert(existsSync(join(dist, 'index.html')), 'dist/index.html exists (student app)');
+assert(existsSync(join(dist, 'admin.html')), 'dist/admin.html exists (separate admin app)');
 assert(existsSync(join(dist, 'sw.js')), 'service worker copied to dist');
 assert(existsSync(join(dist, 'manifest.webmanifest')), 'PWA manifest copied');
 assert(existsSync(join(dist, 'icon-512.png')), 'icon copied');
@@ -43,6 +44,15 @@ assert(
   readFileSync(join(dist, 'index.html'), 'utf8').includes('CGPA'),
   'branding present in index.html'
 );
+assert(
+  readFileSync(join(dist, 'admin.html'), 'utf8').includes('Admin'),
+  'admin entry marked as admin'
+);
+
+// Admin and student bundles are separate; the admin bundle must never ship to
+// the student entry — verify student HTML doesn't reference the admin entry.
+const studentHtml = readFileSync(join(dist, 'index.html'), 'utf8');
+assert(!/admin-main/.test(studentHtml), 'student entry never loads the admin bundle');
 
 // The minified bundle inlines configCache (the only module allowed to store
 // non-personal config). Assert it never sets/reads cookies (student-tracking
@@ -72,23 +82,50 @@ function walk(dir) {
 }
 
 const sources = walk(join(root, 'src'));
-const storageModules = [];
+const STUDENT_STORAGE_FILE = join('src', 'services', 'configCache.ts');
+const ADMIN_STORAGE_FILE = join('src', 'admin', 'adminStorage.ts');
+
+const studentStorageModules = [];
+const adminStorageModules = [];
 for (const file of sources) {
   const rel = file.slice(root.length + 1);
   const code = stripNoise(readFileSync(file, 'utf8'));
-  if (STORAGE_USAGE_RE.test(code)) storageModules.push(rel);
+  if (!STORAGE_USAGE_RE.test(code)) continue;
+  if (rel.startsWith(join('src', 'admin'))) adminStorageModules.push(rel);
+  else studentStorageModules.push(rel);
 }
 
+// Student application: the curriculum config cache is the sole storage user.
 assert(
-  storageModules.length === 1 && storageModules[0] === ALLOWED_STORAGE_FILE,
-  `storage API calls appear only in ${ALLOWED_STORAGE_FILE} (found in: ${storageModules.join(', ') || 'none'})`
+  studentStorageModules.length === 1 &&
+    studentStorageModules[0] === STUDENT_STORAGE_FILE,
+  `student app storage calls appear only in ${STUDENT_STORAGE_FILE} (found: ${studentStorageModules.join(', ') || 'none'})`
+);
+
+// Admin application (persistent by design): the admin storage service is the
+// sole direct storage user; views/services call its functions.
+assert(
+  adminStorageModules.length === 1 &&
+    adminStorageModules[0] === ADMIN_STORAGE_FILE,
+  `admin storage calls appear only in ${ADMIN_STORAGE_FILE} (found: ${adminStorageModules.join(', ') || 'none'})`
 );
 
 // The config cache must never import student state (privacy boundary).
-const cacheCode = stripNoise(readFileSync(join(root, ALLOWED_STORAGE_FILE), 'utf8'));
+const cacheCode = stripNoise(
+  readFileSync(join(root, STUDENT_STORAGE_FILE), 'utf8')
+);
 assert(
   !/studentState|AcademicState|CourseEntry|SemesterEntry/.test(cacheCode),
   'configCache never imports student academic state types'
+);
+
+// Admin storage must never import student academic state (one-way sync only).
+const adminCode = stripNoise(
+  readFileSync(join(root, ADMIN_STORAGE_FILE), 'utf8')
+);
+assert(
+  !/studentState|AcademicState|CourseEntry|SemesterEntry/.test(adminCode),
+  'adminStorage never imports student academic state (no student data upload)'
 );
 
 // ── 3. Config-driven UI ───────────────────────────────────────────────────

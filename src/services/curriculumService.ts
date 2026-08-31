@@ -83,9 +83,10 @@ export function getCurriculaForProgramme(programmeId: string): CurriculumVersion
 }
 
 /**
- * The curriculum the student app should use: the explicitly requested one,
- * otherwise the latest PUBLISHED version for the programme, otherwise the
- * newest available version (may be draft before administrator publication).
+ * The curriculum the STUDENT app should use: the latest PUBLISHED version for
+ * the programme. Draft / review / archived versions are never served to
+ * students — if no published version exists, this returns undefined (the UI
+ * shows "awaiting published curriculum").
  */
 export function getActiveCurriculum(
   ctx: InstitutionContext = ACTIVE_CONTEXT
@@ -93,7 +94,7 @@ export function getActiveCurriculum(
   ensureInit();
   if (ctx.curriculumId) {
     const explicit = getCurriculumVersion(ctx.curriculumId);
-    if (explicit) return explicit;
+    if (explicit && explicit.status === 'published') return explicit;
   }
   const programme = getProgramme(
     ctx.universityId,
@@ -104,11 +105,19 @@ export function getActiveCurriculum(
     programme?.curriculumVersionIds
       .map((id) => getCurriculumVersion(id))
       .filter(Boolean) as CurriculumVersion[]
-  ).sort((a, b) => (a.effectiveDate < b.effectiveDate ? 1 : -1));
+  )
+    .filter((c) => c.status === 'published')
+    .sort((a, b) => (a.effectiveDate < b.effectiveDate ? 1 : -1));
 
-  return (
-    versions.find((c) => c.status === 'published') ?? versions[0] ?? undefined
-  );
+  return versions[0] ?? undefined;
+}
+
+/** All versions the ADMIN can see, newest effective date first. */
+export function getAllCurriculaForProgramme(programmeId: string): CurriculumVersion[] {
+  ensureInit();
+  return curricula
+    .filter((c) => c.programmeId === programmeId)
+    .sort((a, b) => (a.effectiveDate < b.effectiveDate ? 1 : -1));
 }
 
 export function getLevels(curriculum?: CurriculumVersion): CurriculumLevel[] {
@@ -225,21 +234,15 @@ export function isValidCurriculum(c: CurriculumVersion): boolean {
     typeof c.versionName === 'string' &&
     typeof c.programmeId === 'string' &&
     Array.isArray(c.levels) &&
-    (c.status === 'draft' || c.status === 'published') &&
+    (c.status === 'draft' ||
+      c.status === 'review' ||
+      c.status === 'published' ||
+      c.status === 'archived') &&
     c.levels.every(
       (l) =>
         typeof l.index === 'number' &&
         Array.isArray(l.semesters) &&
-        l.semesters.every(
-          (s) =>
-            typeof s.index === 'number' &&
-            Array.isArray(s.courses) &&
-            s.courses.every(
-              (course: CurriculumCourse) =>
-                typeof course.code === 'string' &&
-                typeof course.creditHours === 'number'
-            )
-        )
+        l.semesters.every((s) => typeof s.index === 'number' && Array.isArray(s.courses))
     )
   );
 }

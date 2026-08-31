@@ -16,6 +16,7 @@ export const ucc: University = {
   name: 'University of Cape Coast',
   shortName: 'UCC',
   country: 'Ghana',
+  status: 'active',
   gradingSystemId: 'ucc-standard',
   classificationSystemId: 'ucc-undergraduate',
 
@@ -53,12 +54,14 @@ export const ucc: University = {
       id: 'ucc-school-of-pharmacy',
       name: 'School of Pharmacy',
       universityId: 'ucc',
+      status: 'active',
       programmes: [
         {
           id: 'ucc-pharmd',
           name: 'Doctor of Pharmacy',
           shortName: 'PharmD',
           schoolId: 'ucc-school-of-pharmacy',
+          status: 'active',
           duration: {
             years: 6,
             expectedLevels: 6,
