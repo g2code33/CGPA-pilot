@@ -1,0 +1,22 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+.DS_Store
+
+# Capacitor / Android build artifacts
+android/app/build/
+android/build/
+android/.gradle/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/.idea/
+android/captures/
+
+# Signing material — never commit
+*.keystore
+*.jks
+*.p12
+keystore.properties
+android/app/release-keystore.p12

@@ -1,0 +1,171 @@
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useReducer,
+  type ReactNode,
+} from 'react';
+import type {
+  AcademicState,
+  CalcMode,
+  CourseEntry,
+  SemesterEntry,
+} from '../engine/types';
+import { uid } from '../engine/format';
+
+// ─────────────────────────────────────────────────────────────────────────
+// TEMPORARY, IN-MEMORY academic state.
+//
+// Deliberately NOT persisted: no localStorage, no sessionStorage, no
+// IndexedDB, no cookies, no URLs. Everything resets on refresh / Clear.
+// ─────────────────────────────────────────────────────────────────────────
+
+function makeCourse(): CourseEntry {
+  return {
+    id: uid(),
+    code: '',
+    name: '',
+    credits: 3,
+    score: null,
+    grade: null,
+    pending: false,
+  };
+}
+
+function makeSemester(label: string, withCourse = true): SemesterEntry {
+  return {
+    id: uid(),
+    label,
+    courses: withCourse ? [makeCourse()] : [],
+  };
+}
+
+function initialState(): AcademicState {
+  return {
+    mode: 'history',
+    semesters: [makeSemester('Level 100 · Semester 1')],
+    baseline: { cgpa: null, credits: 0 },
+    targetCgpa: 3.6, // First Class (UCC)
+    plannedNextCredits: 18,
+  };
+}
+
+type Action =
+  | { type: 'reset' }
+  | { type: 'setMode'; mode: CalcMode }
+  | { type: 'setTarget'; target: number | null }
+  | { type: 'setBaseline'; patch: Partial<AcademicState['baseline']> }
+  | { type: 'setPlannedNextCredits'; credits: number }
+  | { type: 'addSemester' }
+  | { type: 'removeSemester'; semesterId: string }
+  | { type: 'renameSemester'; semesterId: string; label: string }
+  | { type: 'addCourse'; semesterId: string }
+  | { type: 'removeCourse'; semesterId: string; courseId: string }
+  | { type: 'updateCourse'; semesterId: string; courseId: string; patch: Partial<CourseEntry> };
+
+function reducer(state: AcademicState, action: Action): AcademicState {
+  switch (action.type) {
+    case 'reset':
+      return initialState();
+
+    case 'setMode':
+      return { ...state, mode: action.mode };
+
+    case 'setTarget':
+      return { ...state, targetCgpa: action.target };
+
+    case 'setBaseline':
+      return {
+        ...state,
+        baseline: { ...state.baseline, ...action.patch },
+      };
+
+    case 'setPlannedNextCredits':
+      return { ...state, plannedNextCredits: Math.max(0, action.credits) };
+
+    case 'addSemester': {
+      const n = state.semesters.length + 1;
+      // Suggest the conventional UCC label (Level 100 S1, S2, Level 200 …)
+      const level = Math.ceil(n / 2);
+      const sem = ((n - 1) % 2) + 1;
+      return {
+        ...state,
+        semesters: [
+          ...state.semesters,
+          makeSemester(`Level ${level * 100} · Semester ${sem}`),
+        ],
+      };
+    }
+
+    case 'removeSemester':
+      return {
+        ...state,
+        semesters: state.semesters.filter((s) => s.id !== action.semesterId),
+      };
+
+    case 'renameSemester':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId ? { ...s, label: action.label } : s
+        ),
+      };
+
+    case 'addCourse':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId
+            ? { ...s, courses: [...s.courses, makeCourse()] }
+            : s
+        ),
+      };
+
+    case 'removeCourse':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId
+            ? { ...s, courses: s.courses.filter((c) => c.id !== action.courseId) }
+            : s
+        ),
+      };
+
+    case 'updateCourse':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId
+            ? {
+                ...s,
+                courses: s.courses.map((c) =>
+                  c.id === action.courseId ? { ...c, ...action.patch } : c
+                ),
+              }
+            : s
+        ),
+      };
+
+    default:
+      return state;
+  }
+}
+
+interface Store {
+  state: AcademicState;
+  dispatch: React.Dispatch<Action>;
+}
+
+const StoreContext = createContext<Store | null>(null);
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const value = useMemo(() => ({ state, dispatch }), [state]);
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+}
+
+export function useAcademic(): Store {
+  const ctx = useContext(StoreContext);
+  if (!ctx) throw new Error('useAcademic must be used within StoreProvider');
+  return ctx;
+}

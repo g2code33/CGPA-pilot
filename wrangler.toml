@@ -1,0 +1,5 @@
+# Cloudflare Pages deployment for the web/PWA version.
+# The build emits a fully static site into dist/ — no server runtime.
+name = "cgpa-pilot"
+compatibility_date = "2026-08-31"
+pages_build_output_dir = "dist"
