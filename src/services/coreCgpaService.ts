@@ -17,6 +17,7 @@ import type { GradingSystem } from '../config/types';
 import type {
   AcademicState,
   CourseEntry,
+  ResultStatus,
   SemesterEntry,
 } from '../state/studentState';
 import { gradePointsForCourse } from './gradingService';
@@ -43,10 +44,36 @@ export interface SemesterTerm {
   creditHours: number;
   qualityPoints: number;
   gpa: number | null;
-  /** 'gpa' = student-provided semester GPA; 'courses' = derived from courses */
-  source: 'gpa' | 'courses' | 'none';
+  /**
+   * 'gpa' = student-provided semester GPA; 'courses' = derived from courses;
+   * 'pending' = whole-semester result pending; 'none' = nothing entered.
+   */
+  source: 'gpa' | 'courses' | 'pending' | 'none';
   pendingCreditHours: number;
   pendingCount: number;
+}
+
+/**
+ * Status of a semester's results. A whole-semester pending flag is explicit;
+ * otherwise it is 'complete' when a confirmed GPA/graded courses exist and
+ * 'not-entered' when nothing has been supplied.
+ */
+export function semesterStatus(semester: SemesterEntry): ResultStatus {
+  if (semester.pending) return 'pending';
+  if (
+    semester.courses.some((c) => !c.pending && (c.grade || c.score !== null)) ||
+    (semester.gpa !== null && !Number.isNaN(semester.gpa))
+  ) {
+    return 'complete';
+  }
+  return 'not-entered';
+}
+
+/** Status of an individual course entry. */
+export function courseStatus(course: CourseEntry): ResultStatus {
+  if (course.pending) return 'pending';
+  if (course.grade || course.score !== null) return 'complete';
+  return 'not-entered';
 }
 
 export function semesterTerm(
@@ -54,6 +81,27 @@ export function semesterTerm(
   grading: GradingSystem,
   configuredCredits?: number
 ): SemesterTerm {
+  // Whole-semester pending: NEVER treated as a known grade. It contributes
+  // nothing to the confirmed CGPA, but its known credit load (curriculum /
+  // override / entered courses) is reported as pending for projections.
+  if (semester.pending) {
+    const enteredCourseCredits = semester.courses.reduce(
+      (sum, c) => sum + (c.creditHours || 0),
+      0
+    );
+    const pendingCredits =
+      semester.creditHoursOverride ?? configuredCredits ??
+      (enteredCourseCredits > 0 ? enteredCourseCredits : 0);
+    return {
+      creditHours: 0,
+      qualityPoints: 0,
+      gpa: null,
+      source: 'pending',
+      pendingCreditHours: pendingCredits,
+      pendingCount: 1,
+    };
+  }
+
   const pendingCourses = semester.courses.filter((c) => c.pending);
   const pendingCreditHours = pendingCourses.reduce(
     (sum, c) => sum + (c.creditHours || 0),
@@ -159,9 +207,13 @@ export function currentModeRecord(
 ): CurrentRecord {
   const fromCurriculum =
     curriculumCompletedCredits !== null && curriculumCompletedCredits > 0;
-  const creditHours = fromCurriculum
+  const totalCompleted = fromCurriculum
     ? (curriculumCompletedCredits as number)
     : baseline.creditHours || 0;
+  // Pending results within the completed period are NOT part of the CGPA the
+  // student reported — they are confirmed-excluded and projected separately.
+  const pending = Math.max(0, baseline.pendingCreditHours || 0);
+  const creditHours = Math.max(0, totalCompleted - pending);
   const cgpa = baseline.cgpa;
   return {
     creditHours,
@@ -194,13 +246,14 @@ export function computeSnapshot(
       state.baseline,
       options?.curriculumCompletedCredits ?? null
     );
+    const pendingCredits = Math.max(0, state.baseline.pendingCreditHours || 0);
     return {
       mode: 'current',
       creditHours: rec.creditHours,
       qualityPoints: rec.qualityPoints,
       cgpa: rec.cgpa,
-      pendingCreditHours: 0,
-      pendingCount: 0,
+      pendingCreditHours: pendingCredits,
+      pendingCount: pendingCredits > 0 ? 1 : 0,
     };
   }
   const r = weightedCgpa(

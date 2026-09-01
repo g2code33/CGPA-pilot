@@ -216,11 +216,42 @@ export function Target() {
       </div>
 
       {record.pendingCount > 0 && (
-        <Note>
-          You have {record.pendingCount} pending result{record.pendingCount === 1 ? '' : 's'} (
-          {record.pendingCreditHours} credits). Use the What-If tab to preview grades before they land — they
-          could shift both your CGPA and the required average above.
-        </Note>
+        <Card className="bg-amber-50 ring-amber-200">
+          <SectionTitle
+            icon="⏳"
+            title="Pending results vs your target"
+            subtitle={`${record.pendingCreditHours} credits await release and are excluded from the confirmed figures above.`}
+          />
+          <div className="grid grid-cols-2 gap-2 text-center text-xs">
+            <div className="rounded-xl bg-white p-2.5 ring-1 ring-red-200">
+              <p className="font-black text-red-600">
+                {fmt2(d.pending.worstCaseCgpa)}
+              </p>
+              <p className="text-slate-500">
+                worst case · needs {fmt2(d.pending.requiredPendingGpa)} on pending
+                to reach {fmt2(target)}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white p-2.5 ring-1 ring-emerald-200">
+              <p className="font-black text-emerald-600">
+                {fmt2(d.pending.bestCaseCgpa)}
+              </p>
+              <p className="text-slate-500">best case once released</p>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] font-semibold text-amber-800">
+            {d.pending.targetStatus === 'guaranteed' &&
+              `Target ${fmt2(target)} is secured regardless of the pending results.`}
+            {d.pending.targetStatus === 'possible' &&
+              `Target ${fmt2(target)} is possible depending on the pending results, then the remaining future credits above.`}
+            {d.pending.targetStatus === 'unreachable' &&
+              `Even top grades on the pending credits cannot reach ${fmt2(target)} — the remaining future credits matter.`}
+          </p>
+          <Note>
+            Projections only — a pending result is never treated as a grade. Use
+            the What-If tab to trial specific grades.
+          </Note>
+        </Card>
       )}
     </div>
   );

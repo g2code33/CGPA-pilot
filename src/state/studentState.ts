@@ -7,6 +7,16 @@
 
 export type CalcMode = 'history' | 'current';
 
+/**
+ * Result status for a semester/course.
+ *  - 'complete'    : a confirmed grade/GPA is entered and counts in the CGPA.
+ *  - 'pending'     : results are not released yet. NEVER treated as a known
+ *                    grade: excluded from the confirmed CGPA, but its known
+ *                    credit hours feed best-/worst-case projections.
+ *  - 'not-entered' : the student simply hasn't provided anything yet.
+ */
+export type ResultStatus = 'complete' | 'pending' | 'not-entered';
+
 export interface CourseEntry {
   id: string;
   code: string;
@@ -40,6 +50,12 @@ export interface SemesterEntry {
   creditHoursOverride: number | null;
   /** Optional detailed course-level entry (advanced; not required). */
   courses: CourseEntry[];
+  /**
+   * The whole semester's results are pending release. The semester is
+   * excluded from the confirmed CGPA; its (curriculum-known) credit hours
+   * are treated as pending and used only in projections.
+   */
+  pending: boolean;
 }
 
 export interface CurrentBaseline {
@@ -50,6 +66,12 @@ export interface CurrentBaseline {
   cgpa: number | null;
   /** Manual total credits completed (used when the curriculum is unpublished). */
   creditHours: number;
+  /**
+   * Credits whose results are pending release within the completed period.
+   * The current CGPA reflects only released results; these credits are
+   * excluded from the confirmed position and used only in projections.
+   */
+  pendingCreditHours: number;
 }
 
 export interface AcademicState {

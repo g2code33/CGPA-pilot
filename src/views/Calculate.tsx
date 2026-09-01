@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Badge, Note } from '../components/ui';
+import { PendingProjectionPanel } from '../components/PendingProjection';
 import { bandForScore, effectiveGrade, gradePointsForCourse } from '../services/gradingService';
 import { fmt2 } from '../util/format';
 import type { CourseEntry } from '../state/studentState';
@@ -52,8 +53,10 @@ export function Calculate() {
         <CurrentMode />
       ) : (
         <>
-          {d.semesters.map(({ semester, configuredCredits, effectiveCredits, term }) => (
-            <Card key={semester.id}>
+          {d.semesters.map(({ semester, configuredCredits, effectiveCredits, term }) => {
+            const isPending = semester.pending;
+            return (
+            <Card key={semester.id} className={isPending ? 'ring-2 ring-amber-300' : ''}>
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <input
                   className="input max-w-[220px] font-bold"
@@ -67,21 +70,42 @@ export function Calculate() {
                   }
                 />
                 <div className="ml-auto flex items-center gap-2">
-                  <Badge
-                    tone={
-                      term.gpa === null
-                        ? 'gray'
-                        : term.gpa >= 3.6
+                  {isPending ? (
+                    <Badge tone="gold">⏳ Result Pending</Badge>
+                  ) : term.gpa !== null ? (
+                    <Badge
+                      tone={
+                        term.gpa >= 3.6
                           ? 'gold'
                           : term.gpa >= 3.0
                             ? 'green'
                             : term.gpa >= 2.5
                               ? 'teal'
                               : 'blue'
+                      }
+                    >
+                      GPA {fmt2(term.gpa)}
+                    </Badge>
+                  ) : (
+                    <Badge tone="gray">Not entered</Badge>
+                  )}
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: 'setSemesterPending',
+                        semesterId: semester.id,
+                        pending: !isPending,
+                      })
                     }
+                    className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ring-1 transition ${
+                      isPending
+                        ? 'bg-amber-500 text-white ring-amber-500'
+                        : 'bg-white text-slate-500 ring-slate-300 hover:bg-amber-50 hover:text-amber-700'
+                    }`}
+                    title={isPending ? 'Mark results as released' : 'Results not yet available'}
                   >
-                    GPA {fmt2(term.gpa)}
-                  </Badge>
+                    {isPending ? '✓ Released' : '⏳ Pending'}
+                  </button>
                   {state.semesters.length > 1 && (
                     <button
                       onClick={() =>
@@ -96,65 +120,82 @@ export function Calculate() {
                 </div>
               </div>
 
-              {/* Semester GPA + credits — the core credit-weighted input */}
-              <div className="grid grid-cols-2 gap-3 rounded-xl bg-brand-50/60 p-3 ring-1 ring-brand-100">
-                <label className="block">
-                  <span className="label">Semester GPA</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={maxPoints}
-                    step={0.01}
-                    className="input text-center text-lg font-black"
-                    placeholder="e.g. 3.42"
-                    value={semester.gpa ?? ''}
-                    onChange={(e) =>
-                      dispatch({
-                        type: 'setSemesterGpa',
-                        semesterId: semester.id,
-                        gpa: e.target.value === '' ? null : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label className="block">
-                  <span className="label">
-                    Semester credits{' '}
-                    {configuredCredits > 0 && (
-                      <span className="font-normal normal-case text-emerald-600">
-                        (curriculum: {configuredCredits})
+              {isPending ? (
+                <div className="rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                  <p className="text-sm font-bold text-amber-900">Result Pending</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800">
+                    Results for this semester are not released yet. It is{' '}
+                    <strong>excluded from your confirmed CGPA</strong>; its{' '}
+                    <strong>{term.pendingCreditHours} known credits</strong>
+                    {configuredCredits > 0 ? ' (from the curriculum)' : ''} are used
+                    only in the best-/worst-case projections below. No grade is
+                    assumed.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Semester GPA + credits — the core credit-weighted input */}
+                  <div className="grid grid-cols-2 gap-3 rounded-xl bg-brand-50/60 p-3 ring-1 ring-brand-100">
+                    <label className="block">
+                      <span className="label">Semester GPA</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={maxPoints}
+                        step={0.01}
+                        className="input text-center text-lg font-black"
+                        placeholder="e.g. 3.42"
+                        value={semester.gpa ?? ''}
+                        onChange={(e) =>
+                          dispatch({
+                            type: 'setSemesterGpa',
+                            semesterId: semester.id,
+                            gpa: e.target.value === '' ? null : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="label">
+                        Semester credits{' '}
+                        {configuredCredits > 0 && (
+                          <span className="font-normal normal-case text-emerald-600">
+                            (curriculum: {configuredCredits})
+                          </span>
+                        )}
                       </span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="input text-center text-lg font-black"
+                        placeholder={configuredCredits > 0 ? String(configuredCredits) : 'e.g. 18'}
+                        value={semester.creditHoursOverride ?? ''}
+                        onChange={(e) =>
+                          dispatch({
+                            type: 'setSemesterCredits',
+                            semesterId: semester.id,
+                            creditHours:
+                              e.target.value === '' ? null : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Quality points = GPA × {effectiveCredits || 'credits'}. Semester GPAs
+                    are <strong>credit-weighted</strong>, never simply averaged.
+                    {term.source === 'courses' && (
+                      <> Course details below are being used for this semester.</>
                     )}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    className="input text-center text-lg font-black"
-                    placeholder={configuredCredits > 0 ? String(configuredCredits) : 'e.g. 18'}
-                    value={semester.creditHoursOverride ?? ''}
-                    onChange={(e) =>
-                      dispatch({
-                        type: 'setSemesterCredits',
-                        semesterId: semester.id,
-                        creditHours:
-                          e.target.value === '' ? null : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <p className="mt-2 text-[11px] text-slate-500">
-                Quality points = GPA × {effectiveCredits || 'credits'}. Semester GPAs
-                are <strong>credit-weighted</strong>, never simply averaged.
-                {term.source === 'courses' && (
-                  <> Course details below are being used for this semester.</>
-                )}
-              </p>
+                  </p>
 
-              {/* Optional course-level detail */}
-              <CourseDetail semesterId={semester.id} courses={semester.courses} />
+                  {/* Optional course-level detail */}
+                  <CourseDetail semesterId={semester.id} courses={semester.courses} />
+                </>
+              )}
             </Card>
-          ))}
+            );
+          })}
 
           <button
             onClick={() => dispatch({ type: 'addSemester' })}
@@ -165,11 +206,15 @@ export function Calculate() {
         </>
       )}
 
+      {d.pending.pendingCreditHours > 0 && (
+        <PendingProjectionPanel pending={d.pending} target={state.targetCgpa} />
+      )}
+
       <Card className="bg-slate-900 text-white ring-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Cumulative Grade Point Average
+              Confirmed CGPA
             </p>
             <p className="text-4xl font-black tabular-nums">{fmt2(record.cgpa)}</p>
           </div>
@@ -178,11 +223,24 @@ export function Calculate() {
             <p>{fmt2(record.points)} quality points</p>
             {record.pendingCount > 0 && (
               <p className="text-amber-300">
-                ⏳ {record.pendingCount} pending · {record.pendingCreditHours} cr
+                ⏳ Result Pending · {d.pending.pendingCreditHours} cr excluded
               </p>
             )}
           </div>
         </div>
+        {d.pending.pendingCreditHours > 0 && d.pending.bestCaseCgpa !== null && (
+          <p className="mt-3 border-t border-white/10 pt-2 text-[11px] text-slate-300">
+            Once released: projected CGPA{' '}
+            <span className="font-bold text-red-300">
+              {fmt2(d.pending.worstCaseCgpa)}
+            </span>{' '}
+            (worst) to{' '}
+            <span className="font-bold text-emerald-300">
+              {fmt2(d.pending.bestCaseCgpa)}
+            </span>{' '}
+            (best). <span className="text-slate-400">Projection — not a grade.</span>
+          </p>
+        )}
       </Card>
     </div>
   );
@@ -288,6 +346,29 @@ function CurrentMode() {
           )}
         </div>
       </div>
+
+      <label className="mt-3 block">
+        <span className="label">
+          ⏳ Pending-result credits (results not yet released)
+        </span>
+        <input
+          type="number"
+          min={0}
+          className="input text-center text-lg font-black"
+          placeholder="0"
+          value={b.pendingCreditHours || ''}
+          onChange={(e) =>
+            dispatch({
+              type: 'setBaseline',
+              patch: { pendingCreditHours: Math.max(0, Number(e.target.value) || 0) },
+            })
+          }
+        />
+        <span className="mt-1 block text-[10px] text-slate-400">
+          Your CGPA above reflects released results only. Pending credits are
+          excluded from it and used solely for projections.
+        </span>
+      </label>
 
       {creditsKnown && (
         <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
@@ -433,17 +514,20 @@ function CourseRow({
         </div>
         <div className="col-span-4 sm:col-span-1">
           <div
-            className={`flex h-[38px] items-center justify-center rounded-xl text-sm font-black ${
-              !grade
-                ? 'bg-slate-200 text-slate-400'
-                : band?.points === 0 ||
-                    (course.grade &&
-                      grading.bands.find((b) => b.grade === course.grade)?.points === 0)
-                  ? 'bg-red-100 text-red-700'
-                  : 'bg-brand-100 text-brand-700'
+            className={`flex h-[38px] items-center justify-center rounded-xl px-1 text-[11px] font-black ${
+              course.pending
+                ? 'bg-amber-200 text-amber-800'
+                : !grade
+                  ? 'bg-slate-200 text-slate-400'
+                  : band?.points === 0 ||
+                      (course.grade &&
+                        grading.bands.find((b) => b.grade === course.grade)?.points === 0)
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-brand-100 text-brand-700'
             }`}
+            title={course.pending ? 'Result Pending — not a grade' : undefined}
           >
-            {grade ?? '—'}
+            {course.pending ? 'Pending' : grade ?? '—'}
           </div>
         </div>
         <div className="col-span-12 flex items-center justify-end gap-2 sm:col-span-2">

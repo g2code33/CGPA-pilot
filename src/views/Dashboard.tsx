@@ -1,5 +1,6 @@
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Stat } from '../components/ui';
+import { PendingProjectionPanel } from '../components/PendingProjection';
 import { buildBrief } from '../services/pilotBriefService';
 import { classifyCgpa } from '../services/classificationService';
 import { fmt2, fmt1 } from '../util/format';
@@ -105,18 +106,21 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
       </Card>
 
       {record.pendingCount > 0 && (
-        <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
-          <p className="text-xs font-semibold text-amber-800">
-            ⏳ {record.pendingCount} pending result{record.pendingCount === 1 ? '' : 's'} (
-            {record.pendingCreditHours} credits) excluded from CGPA.
-          </p>
-          <button
-            onClick={() => onNavigate('whatif')}
-            className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700"
-          >
-            Preview
-          </button>
-        </div>
+        <>
+          <PendingProjectionPanel pending={d.pending} target={d.state.targetCgpa} />
+          <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
+            <p className="text-xs font-semibold text-amber-800">
+              ⏳ {record.pendingCount} pending result{record.pendingCount === 1 ? '' : 's'} (
+              {record.pendingCreditHours} credits) excluded from your confirmed CGPA.
+            </p>
+            <button
+              onClick={() => onNavigate('whatif')}
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700"
+            >
+              Try specific grades
+            </button>
+          </div>
+        </>
       )}
 
       {/* Pilot Brief */}

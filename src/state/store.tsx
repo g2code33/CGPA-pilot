@@ -41,6 +41,7 @@ function makeSemester(levelIndex: number, semesterIndex: number): SemesterEntry 
     gpa: null,
     creditHoursOverride: null,
     courses: [],
+    pending: false,
   };
 }
 
@@ -48,7 +49,13 @@ function initialState(): AcademicState {
   return {
     mode: 'history',
     semesters: [makeSemester(1, 1)],
-    baseline: { levelIndex: 1, semesterIndex: 1, cgpa: null, creditHours: 0 },
+    baseline: {
+      levelIndex: 1,
+      semesterIndex: 1,
+      cgpa: null,
+      creditHours: 0,
+      pendingCreditHours: 0,
+    },
     targetCgpa: 3.6, // First Class (UCC)
     plannedNextCreditHours: 18,
   };
@@ -64,6 +71,7 @@ type Action =
   | { type: 'removeSemester'; semesterId: string }
   | { type: 'renameSemester'; semesterId: string; label: string }
   | { type: 'setSemesterGpa'; semesterId: string; gpa: number | null }
+  | { type: 'setSemesterPending'; semesterId: string; pending: boolean }
   | {
       type: 'setSemesterCredits';
       semesterId: string;
@@ -136,6 +144,16 @@ function reducer(state: AcademicState, action: Action): AcademicState {
         ...state,
         semesters: state.semesters.map((s) =>
           s.id === action.semesterId ? { ...s, gpa: action.gpa } : s
+        ),
+      };
+
+    case 'setSemesterPending':
+      // Marking pending never deletes entered values (restored on release),
+      // but the term is excluded from the confirmed CGPA while pending.
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId ? { ...s, pending: action.pending } : s
         ),
       };
 

@@ -9,6 +9,7 @@ import {
   semesterTerm,
   type SemesterTerm,
 } from '../services/coreCgpaService';
+import { pendingProjection, type PendingProjection } from '../services/pendingService';
 import {
   curriculumSemesters,
   progressThrough,
@@ -77,6 +78,22 @@ export function useDerived() {
 
     const classBand = classifyCgpa(snapshot.cgpa, classification);
 
+    // Pending-results projection: the confirmed position plus best/worst-case
+    // outcomes once released. In history mode pending credit hours come from
+    // the engine (pending semesters + pending courses); current mode has no
+    // per-course entry, so its pending load is reported by the view.
+    const pending: PendingProjection = pendingProjection(
+      {
+        confirmedPoints: snapshot.qualityPoints,
+        confirmedCreditHours: snapshot.creditHours,
+        pendingCreditHours: snapshot.pendingCreditHours,
+        pendingCount: snapshot.pendingCount,
+        target: state.targetCgpa,
+      },
+      grading,
+      classification
+    );
+
     return {
       state,
       dispatch,
@@ -98,6 +115,7 @@ export function useDerived() {
       record,
       semesters,
       classBand,
+      pending,
     };
   }, [state]);
 }
