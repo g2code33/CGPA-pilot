@@ -1,70 +1,108 @@
+import { useMemo } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Stat } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { InstitutionSelector } from '../components/InstitutionSelector';
-import { buildBrief } from '../services/pilotBriefService';
-import { classifyCgpa } from '../services/classificationService';
-import { fmt2, fmt1 } from '../util/format';
+import { buildDashboard } from '../services/dashboardService';
+import { progressThrough } from '../services/structureService';
+import { fmt2, fmt1, clamp } from '../util/format';
 
-type Tab = 'calculate' | 'target' | 'whatif' | 'flight' | 'next' | 'print' | 'privacy';
+type Tab =
+  | 'calculate'
+  | 'target'
+  | 'whatif'
+  | 'flight'
+  | 'milestones'
+  | 'next'
+  | 'print'
+  | 'privacy';
+
+const STATUS_TONE: Record<string, string> = {
+  met: 'bg-emerald-50 ring-emerald-300 text-emerald-800',
+  achievable: 'bg-emerald-50 ring-emerald-300 text-emerald-800',
+  'very-demanding': 'bg-amber-50 ring-amber-300 text-amber-800',
+  'extremely-demanding': 'bg-orange-50 ring-orange-300 text-orange-800',
+  impossible: 'bg-red-50 ring-red-300 text-red-800',
+  unknown: 'bg-slate-100 ring-slate-200 text-slate-600',
+};
 
 export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   const d = useDerived();
-  const { record, classBand, dispatch } = d;
+  const { record, dispatch, state } = d;
 
-  // Launch a student input mode: set the mode first, then open Calculate.
   const start = (mode: 'quick' | 'history' | 'planning') => {
     dispatch({ type: 'setInputMode', inputMode: mode });
     onNavigate('calculate');
   };
 
-  const targetClass = d.state.targetCgpa
-    ? classifyCgpa(d.state.targetCgpa, d.classification)
-    : null;
-
-  const brief = buildBrief({
-    cgpa: record.cgpa,
-    creditHours: record.creditHours,
-    pendingCreditHours: record.pendingCreditHours,
-    pendingCount: record.pendingCount,
-    target: d.state.targetCgpa,
-    remainingCreditHours: 0,
-    classification: classBand,
-    targetClassLabel: targetClass?.label ?? 'target',
-    maxPoints: d.maxPoints,
-  });
-
-  const atTarget =
-    record.cgpa !== null && d.state.targetCgpa !== null
-      ? record.cgpa >= d.state.targetCgpa
+  // Current position context (level + remaining slots), per engine mode.
+  const position = useMemo(() => {
+    if (state.mode === 'current') {
+      return {
+        level: state.baseline.levelIndex,
+        sem: state.baseline.semesterIndex,
+        remainingSlots: d.progress.remainingSlots,
+        remainingCredits: d.progress.hasCreditData
+          ? d.progress.remainingCredits
+          : Math.max(0, d.totalProgrammeCredits - record.creditHours),
+      };
+    }
+    const last = state.semesters[state.semesters.length - 1];
+    const level = last ? last.levelIndex : 1;
+    const sem = last ? last.semesterIndex : 1;
+    const prog = d.curriculum
+      ? progressThrough(d.curriculum, level, sem)
       : null;
+    return {
+      level,
+      sem,
+      remainingSlots: prog?.remainingSlots ?? [],
+      remainingCredits: prog?.hasCreditData
+        ? prog.remainingCredits
+        : Math.max(0, d.totalProgrammeCredits - record.creditHours),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.mode, state.baseline.levelIndex, state.baseline.semesterIndex, state.semesters, d.curriculum, d.progress, d.totalProgrammeCredits, record.creditHours]);
+
+  const model = useMemo(
+    () =>
+      buildDashboard({
+        currentPoints: record.points,
+        currentCredits: record.creditHours,
+        currentCgpa: record.cgpa,
+        currentLevelIndex: position.level,
+        currentSemesterIndex: position.sem,
+        targetCgpa: state.targetCgpa ?? 3.6,
+        remainingSlots: position.remainingSlots,
+        remainingCredits: position.remainingCredits,
+        curriculum: d.curriculum,
+        curriculumPublished: d.curriculumPublished,
+        grading: d.grading,
+        classification: d.classification,
+        institutionLabel: d.institutionLabel,
+      }),
+    [
+      record.points, record.creditHours, record.cgpa, position.level, position.sem,
+      position.remainingSlots, position.remainingCredits, state.targetCgpa,
+      d.curriculum, d.curriculumPublished, d.grading, d.classification, d.institutionLabel,
+    ]
+  );
+
+  const flight = model.flightPath.milestones;
 
   return (
     <div className="space-y-4">
       {/* Institution selection (in-memory, config-driven) */}
-      <InstitutionSelector compact />
+      <div className="no-print">
+        <InstitutionSelector compact />
+      </div>
 
-      {/* Quick start: the three student input modes */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      {/* Quick start modes */}
+      <div className="no-print grid grid-cols-1 gap-2 sm:grid-cols-3">
         {[
-          {
-            id: 'quick' as const,
-            icon: '⚡',
-            title: 'Quick mode',
-            hint: 'Current level + CGPA',
-          },
-          {
-            id: 'history' as const,
-            icon: '📚',
-            title: 'GPA History',
-            hint: 'Enter each semester GPA',
-          },
-          {
-            id: 'planning' as const,
-            icon: '🗺️',
-            title: 'Planning mode',
-            hint: 'Target + future scenarios',
-          },
+          { id: 'quick' as const, icon: '⚡', title: 'Quick mode', hint: 'Current level + CGPA' },
+          { id: 'history' as const, icon: '📚', title: 'GPA History', hint: 'Enter each semester GPA' },
+          { id: 'planning' as const, icon: '🗺️', title: 'Planning mode', hint: 'Target + future scenarios' },
         ].map((m) => (
           <button
             key={m.id}
@@ -78,100 +116,161 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
         ))}
       </div>
 
-      {/* Context strip */}
-      <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] font-semibold text-slate-500">
-        <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700 ring-1 ring-brand-200">
-          🏛 {d.university.name}
-        </span>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
-          {d.school?.name} · {d.programme?.shortName}
-        </span>
-        {d.curriculum && (
-          <span
-            className={`rounded-full px-2.5 py-1 ring-1 ${
-              d.curriculumPublished
-                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                : 'bg-amber-50 text-amber-700 ring-amber-200'
-            }`}
-            title={`Curriculum: ${d.curriculum.versionName}`}
-          >
-            {d.curriculumPublished ? '📗 Published curriculum' : '📒 Awaiting published curriculum'}
-          </span>
-        )}
+      {/* Print header (print only) */}
+      <div className="print-only">
+        <h1 className="text-xl font-black uppercase tracking-wide">
+          CGPA <span className="text-brand-600">Pilot</span> — Pilot Brief
+        </h1>
+        <p className="text-xs text-slate-500">
+          {model.institutionLabel} · Generated {new Date().toLocaleDateString()} ·
+          Projections are scenarios, not guaranteed outcomes. Anonymous — no personal data.
+        </p>
       </div>
 
-      {/* Hero CGPA instrument */}
-      <Card className="overflow-hidden bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 text-white ring-0">
-        <div className="flex items-start justify-between">
+      {/* ── CURRENT POSITION / DESTINATION hero ─────────────────────── */}
+      <Card className="print-sheet overflow-hidden bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 text-white ring-0">
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-200">
-              Current CGPA
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
+              Current position
             </p>
-            <div className="mt-1 flex items-end gap-2">
-              <span className="text-6xl font-black tabular-nums leading-none">
-                {fmt2(record.cgpa)}
-              </span>
-              <span className="pb-1 text-sm text-brand-200">/ {d.maxPoints.toFixed(2)}</span>
-            </div>
-            <p className="mt-2 text-xs text-brand-200">
-              {record.creditHours} graded credits · {fmt1(record.points)} grade points
+            <p className="mt-1 text-5xl font-black tabular-nums leading-none">
+              {fmt2(model.currentCgpa)}
+            </p>
+            <p className="mt-2 text-xs font-semibold text-brand-100">
+              🏅 {model.currentClassLabel ?? 'Awaiting data'}
+            </p>
+            <p className="text-xs text-brand-200">
+              Level {model.currentLevel * 100} · {model.creditsCompleted} graded credits
             </p>
           </div>
           <div className="text-right">
-            {classBand ? (
-              <span className="inline-block rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold ring-1 ring-white/25">
-                🏅 {classBand.label}
-              </span>
-            ) : (
-              <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-brand-200">
-                Awaiting data
-              </span>
-            )}
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
+              Destination
+            </p>
+            <p className="mt-1 text-5xl font-black tabular-nums leading-none text-emerald-300">
+              {fmt2(model.targetCgpa)}
+            </p>
+            <p className="mt-2 text-xs font-semibold text-brand-100">
+              🎯 {model.targetClassLabel}
+            </p>
+            <p className="text-xs text-brand-200">target classification</p>
           </div>
         </div>
+        <div className="no-print mt-4 flex items-center justify-end">
+          <button
+            onClick={() => window.print()}
+            className="rounded-lg bg-white/15 px-3 py-1.5 text-[11px] font-bold text-white ring-1 ring-white/25 hover:bg-white/25"
+          >
+            🖨️ Print Pilot Brief
+          </button>
+        </div>
+      </Card>
 
-        <div className="mt-4">
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/15">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-300 to-emerald-300 transition-all"
-              style={{ width: `${Math.min(100, ((record.cgpa ?? 0) / d.maxPoints) * 100)}%` }}
-            />
-          </div>
-          <div className="mt-1.5 flex justify-between text-[10px] font-semibold text-brand-200">
-            <span>0.00</span>
-            <span>
-              Target {d.state.targetCgpa ? fmt2(d.state.targetCgpa) : '—'}
-              {atTarget === true && ' · ✅ on track'}
-              {atTarget === false && ' · ⬆️ below target'}
-            </span>
-            <span>4.00</span>
+      {/* ── FLIGHT STATUS ─────────────────────────────────────────── */}
+      <Card className={`print-sheet ring-2 ${STATUS_TONE[model.status] ?? STATUS_TONE.unknown}`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-3xl leading-none">{model.statusEmoji}</span>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70">
+              Flight status
+            </p>
+            <p className="text-xl font-black">{model.statusLabel}</p>
           </div>
         </div>
       </Card>
 
-      {record.pendingCount > 0 && (
-        <>
-          <PendingProjectionPanel pending={d.pending} target={d.state.targetCgpa} />
-          <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
-            <p className="text-xs font-semibold text-amber-800">
-              ⏳ {record.pendingCount} pending result{record.pendingCount === 1 ? '' : 's'} (
-              {record.pendingCreditHours} credits) excluded from your confirmed CGPA.
-            </p>
-            <button
-              onClick={() => onNavigate('whatif')}
-              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700"
-            >
-              Try specific grades
+      {/* ── Required performance + Next mission + Projected destination ── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Card className="print-sheet text-center">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Required future avg GPA
+          </p>
+          <p className="mt-1 text-3xl font-black tabular-nums text-amber-600">
+            {model.requiredFutureGpa === null ? '—' : fmt2(model.requiredFutureGpa)}
+          </p>
+          <p className="text-[10px] text-slate-400">over {position.remainingCredits} remaining cr</p>
+          <p className="mt-1 text-[10px] font-semibold text-emerald-600">
+            Max possible final: {model.maxPossibleFinalCgpa === null ? '—' : fmt2(model.maxPossibleFinalCgpa)}
+          </p>
+        </Card>
+
+        <Card className="print-sheet">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            ▶️ Next mission
+          </p>
+          {model.next ? (
+            <>
+              <p className="mt-1 text-sm font-black text-slate-800">{model.next.next.label}</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-brand-700">
+                {fmt2(model.next.requiredNextGpa)}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                required GPA · {model.next.next.credits} credits
+              </p>
+              <p className="mt-1 text-[10px] font-semibold text-emerald-700">
+                Target: {model.next.targetClassLabel}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs text-slate-400">Enter your CGPA to plan the next semester.</p>
+          )}
+          <button
+            onClick={() => onNavigate('next')}
+            className="no-print mt-2 w-full rounded-lg bg-brand-50 px-2 py-1 text-[10px] font-bold text-brand-700 hover:bg-brand-100"
+          >
+            Open Next Semester Pilot →
+          </button>
+        </Card>
+
+        <Card className="print-sheet text-center">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Projected destination
+          </p>
+          <p className="mt-1 text-3xl font-black tabular-nums text-indigo-700">
+            {model.projectedFinalCgpa === null ? '—' : fmt2(model.projectedFinalCgpa)}
+          </p>
+          <p className="text-[10px] font-semibold text-slate-500">{model.projectedClassLabel ?? '—'}</p>
+          <p className="text-[10px] text-slate-400">on the planned steady average</p>
+          <button
+            onClick={() => onNavigate('flight')}
+            className="no-print mt-2 w-full rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-200"
+          >
+            See flight path →
+          </button>
+        </Card>
+      </div>
+
+      {/* ── Compact flight path ───────────────────────────────────── */}
+      {model.hasData && flight.length > 1 && (
+        <Card className="print-sheet">
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="text-sm font-extrabold text-slate-800">Flight path</h3>
+            <button onClick={() => onNavigate('flight')} className="no-print text-[11px] font-bold text-brand-600">
+              Enlarge →
             </button>
           </div>
-        </>
+          <CompactFlight
+            milestones={flight}
+            current={model.currentCgpa ?? 0}
+            target={model.targetCgpa}
+            max={d.maxPoints}
+          />
+        </Card>
       )}
 
-      {/* Pilot Brief */}
-      <Card>
-        <SectionTitle icon="🗣️" title="Pilot Brief" subtitle="Your co-pilot's status read-out" />
+      {/* Pending results */}
+      {record.pendingCount > 0 && (
+        <div className="no-print">
+          <PendingProjectionPanel pending={d.pending} target={state.targetCgpa} />
+        </div>
+      )}
+
+      {/* ── Pilot brief ───────────────────────────────────────────── */}
+      <Card className="print-sheet">
+        <SectionTitle icon="🗣️" title="Pilot Brief" subtitle="Your co-pilot's concise status read-out" />
         <ul className="space-y-2">
-          {brief.map((line, i) => (
+          {model.brief.map((line, i) => (
             <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-700">
               <span className="mt-0.5 text-brand-500">▸</span>
               <span>{line}</span>
@@ -180,7 +279,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
         </ul>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Quick stats */}
+      <div className="no-print grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Semesters" value={d.state.semesters.length} />
         <Stat
           label="Courses logged"
@@ -190,19 +290,11 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
           )}
         />
         <Stat label="Pending" value={record.pendingCount} sub={`${record.pendingCreditHours} cr.`} />
-        <Stat
-          label="Mode"
-          value={
-            d.state.inputMode === 'quick'
-              ? 'Quick'
-              : d.state.inputMode === 'history'
-                ? 'GPA History'
-                : 'Planning'
-          }
-        />
+        <Stat label="Graded points" value={fmt1(record.points)} />
       </div>
 
-      <Card>
+      {/* Navigation */}
+      <Card className="no-print">
         <SectionTitle icon="🧭" title="Navigation" />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {[
@@ -233,18 +325,57 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
       </Card>
 
       {!d.curriculumPublished && (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 text-center text-[11px] leading-relaxed text-amber-700 ring-1 ring-amber-200">
+        <p className="no-print rounded-xl bg-amber-50 px-3 py-2 text-center text-[11px] leading-relaxed text-amber-700 ring-1 ring-amber-200">
           The {d.programme?.shortName} course curriculum has not been published
           yet — you can still calculate freely. The administrator configures
           real courses; CGPA PILOT never invents them.
         </p>
       )}
 
-      <p className="px-2 text-center text-[10px] leading-relaxed text-slate-400">
+      <p className="no-print px-2 text-center text-[10px] leading-relaxed text-slate-400">
         {d.university.shortName} grading &amp; classification per published
         university rules · CGPA PILOT is an unofficial planning aid, not an
         academic record.
       </p>
     </div>
+  );
+}
+
+/** Compact sparkline-style trajectory graph for the dashboard. */
+function CompactFlight({
+  milestones,
+  current,
+  target,
+  max,
+}: {
+  milestones: { projectedCgpa: number; label: string; isGraduation: boolean }[];
+  current: number;
+  target: number;
+  max: number;
+}) {
+  const W = 320;
+  const H = 120;
+  const PAD_L = 8;
+  const PAD_R = 8;
+  const PAD_T = 10;
+  const PAD_B = 18;
+  const pts = [current, ...milestones.map((m) => m.projectedCgpa)];
+  const n = pts.length;
+  const x = (i: number) => PAD_L + (i / Math.max(1, n - 1)) * (W - PAD_L - PAD_R);
+  const y = (v: number) => PAD_T + (1 - clamp(v, 0, max) / max) * (H - PAD_T - PAD_B);
+  const line = pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Compact flight path">
+      <line x1={PAD_L} x2={W - PAD_R} y1={y(target)} y2={y(target)} stroke="#10b981" strokeWidth={1.5} />
+      <path d={line} fill="none" stroke="#4f46e5" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(0)} cy={y(current)} r={4} fill="#0f172a" />
+      <circle cx={x(n - 1)} cy={y(pts[n - 1])} r={4} fill="#4f46e5" stroke="#fff" strokeWidth={1} />
+      <text x={x(0)} y={H - 5} fontSize={9} fontWeight={700} textAnchor="middle" fill="#0f172a">Now</text>
+      <text x={x(n - 1)} y={H - 5} fontSize={9} fontWeight={700} textAnchor="middle" fill="#4f46e5">Grad</text>
+      <text x={W - PAD_R} y={y(target) - 3} fontSize={9} fontWeight={700} textAnchor="end" fill="#10b981">
+        Target {target.toFixed(2)}
+      </text>
+    </svg>
   );
 }
