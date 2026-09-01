@@ -44,32 +44,84 @@ body {
   }
 }
 
-/* ── Printing: app chrome is hidden; the active sheet prints ── */
-.print-only {
+/* ─────────────────────────────────────────────────────────────────────
+   PRINT SYSTEM (Prompt 15)
+   On screen the print root is hidden; on print only it is shown and the
+   live app is hidden, so any single section/scenario can print in
+   isolation. Layout is A4-friendly with clean page breaks.
+   ───────────────────────────────────────────────────────────────────── */
+#cgpa-print-root {
   display: none;
 }
+
 @media print {
   body {
     background: #fff;
   }
+
+  /* Hide the live application entirely while printing a scoped sheet. */
+  .app-root {
+    display: none !important;
+  }
+  #cgpa-print-root {
+    display: block !important;
+  }
+
   .no-print {
     display: none !important;
   }
-  /* Hide the application shell so only the active view's sheet prints. */
-  aside,
-  header,
-  nav {
-    display: none !important;
+
+  /* A4-friendly page setup. */
+  @page {
+    size: A4;
+    margin: 14mm;
   }
-  main {
-    padding: 0 !important;
+  html,
+  body {
+    background: #fff;
   }
-  .print-only {
-    display: block !important;
+  #cgpa-print-root {
+    color: #0f172a;
+    font-size: 12px;
+    line-height: 1.45;
   }
-  /* Inline SVG graphs render as crisp vectors with no background box. */
-  .print-sheet {
-    box-shadow: none !important;
-    ring: 0 !important;
+  #cgpa-print-root .print-brand {
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  #cgpa-print-root h1,
+  #cgpa-print-root h2,
+  #cgpa-print-root h3 {
+    page-break-after: avoid;
+  }
+  #cgpa-print-root table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+  #cgpa-print-root tr {
+    page-break-inside: avoid;
+  }
+  #cgpa-print-root thead {
+    display: table-header-group;
+  }
+  #cgpa-print-root svg {
+    max-width: 100%;
+    height: auto;
+    page-break-inside: avoid;
+  }
+  #cgpa-print-root .print-block {
+    page-break-inside: avoid;
+    margin-bottom: 14px;
+  }
+  #cgpa-print-root .print-page-break {
+    page-break-before: always;
+  }
+  #cgpa-print-root .print-card {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
   }
 }

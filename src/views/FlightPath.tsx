@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Badge } from '../components/ui';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
 import { progressThrough } from '../services/structureService';
+import { printSection } from '../services/scopedPrint';
 import { fmt2, clamp } from '../util/format';
 
 const TONE_COLOR: Record<string, string> = {
@@ -30,6 +31,14 @@ export function FlightPathView() {
   const [assumedGpa, setAssumedGpa] = useState<number | null>(null);
   const [fallbackCredits, setFallbackCredits] = useState(18);
   const [fallbackSemesters, setFallbackSemesters] = useState(6);
+  const graphRef = useRef<HTMLDivElement>(null);
+  const printGraph = () =>
+    printSection(graphRef.current, {
+      title: 'Print Flight Path',
+      institutionLabel: d.institutionLabel,
+      programmeName: d.programme?.name ?? '',
+      curriculumVersion: d.curriculum?.versionName,
+    });
 
   const target = state.targetCgpa ?? 3.6;
   // Current level: explicit in current mode; in history mode infer from the
@@ -222,6 +231,17 @@ export function FlightPathView() {
         />
       </div>
 
+      {/* ── Print button (kept outside the printable ref) ─────────────── */}
+      <div className="no-print flex justify-end">
+        <button
+          onClick={printGraph}
+          className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
+        >
+          🖨️ Print Flight Path
+        </button>
+      </div>
+
+      <div ref={graphRef}>
       {/* ── Graph (printable) ─────────────────────────────────────────── */}
       <Card className="print-sheet">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -229,22 +249,13 @@ export function FlightPathView() {
             Flight path · {d.programme?.shortName ?? 'Programme'} · Level{' '}
             {model.currentLevel * 100} → Graduation
           </h3>
-          <button
-            onClick={() => window.print()}
-            className="no-print rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
-          >
-            🖨️ Print Flight Path
-          </button>
         </div>
 
-        {/* Print-only header */}
-        <div className="print-only mb-3">
-          <p className="text-lg font-black text-slate-900">CGPA Pilot — Flight Path</p>
-          <p className="text-xs text-slate-500">
-            {d.institutionLabel} · Generated {new Date().toLocaleDateString()} ·
-            Projections are scenarios, not guaranteed outcomes.
-          </p>
-        </div>
+        <p className="mb-2 text-[11px] text-slate-600">
+          Current CGPA <strong>{fmt2(record.cgpa)}</strong> · Target <strong>{fmt2(target)}</strong> (solid green line).
+          The projected trajectory (solid) and required line (dashed amber) assume the configured curriculum
+          credit loads and a steady future GPA; they are scenarios, not guaranteed outcomes.
+        </p>
 
         <svg
           viewBox={`0 0 ${W} ${H}`}
@@ -379,7 +390,7 @@ export function FlightPathView() {
 
       {/* ── Graduation projection ─────────────────────────────────────── */}
       {!noData && grad && (
-        <Card className="no-print">
+        <Card className="print-sheet">
           <SectionTitle icon="🎓" title="Graduation projection" />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-center">
             <Box label="Projected final CGPA" value={fmt2(grad.projectedCgpa)} tone="text-brand-700" />
@@ -391,7 +402,7 @@ export function FlightPathView() {
             />
             <Box label="Total programme credits" value={String(grad.cumulativeCredits)} tone="text-slate-800" />
           </div>
-          <div className="mt-3">
+          <div className="mt-3 no-print">
             {model.requiredFutureGpa === null ? (
               <Badge tone="gray">Set a target to see the required path</Badge>
             ) : !model.targetReachable ? (
@@ -412,7 +423,7 @@ export function FlightPathView() {
 
       {/* ── Milestone table ───────────────────────────────────────────── */}
       {!noData && (
-        <Card className="no-print">
+        <Card className="print-sheet">
           <SectionTitle icon="📍" title="Milestones" subtitle="End of each level through graduation." />
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -452,6 +463,7 @@ export function FlightPathView() {
           </div>
         </Card>
       )}
+      </div>
     </div>
   );
 }

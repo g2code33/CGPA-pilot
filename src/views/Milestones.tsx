@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Badge } from '../components/ui';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
 import { progressThrough } from '../services/structureService';
+import { printSection } from '../services/scopedPrint';
 import { fmt2, clamp } from '../util/format';
 
 const COLORS = {
@@ -29,6 +30,14 @@ export function Milestones() {
   const [userGpa, setUserGpa] = useState<number>(3.2);
   const [fallbackCredits, setFallbackCredits] = useState(18);
   const [fallbackSemesters, setFallbackSemesters] = useState(6);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const printSheet = () =>
+    printSection(sheetRef.current, {
+      title: 'Print Semester Projection — Milestones',
+      institutionLabel: d.institutionLabel,
+      programmeName: d.programme?.name ?? '',
+      curriculumVersion: d.curriculum?.versionName,
+    });
 
   const currentLevel =
     state.mode === 'current'
@@ -169,19 +178,24 @@ export function Milestones() {
         </Card>
       )}
 
-      {/* ── Scenario comparison graph ───────────────────────────────── */}
+      {!noData && (
+        <div className="no-print flex justify-end">
+          <button onClick={printSheet} className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700">
+            🖨️ Print semester projection
+          </button>
+        </div>
+      )}
+
+      <div ref={sheetRef}>
       {!noData && (
         <Card className="print-sheet">
-          <div className="no-print mb-1 flex items-center justify-between">
+          <div className="mb-1 flex items-center justify-between">
             <h3 className="text-sm font-extrabold text-slate-800">Updated flight path</h3>
-            <button onClick={() => window.print()} className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700">
-              🖨️ Print milestones
-            </button>
           </div>
-          <div className="print-only mb-2">
-            <p className="text-lg font-black text-slate-900">CGPA Pilot — Milestone plan</p>
-            <p className="text-xs text-slate-500">{d.institutionLabel} · {new Date().toLocaleDateString()} · Scenarios are projections, not guaranteed outcomes.</p>
-          </div>
+          <p className="mb-1 text-[11px] text-slate-600">
+            Best case = maximum configured grade point; Target case = the steady average needed;
+            Your scenario = the GPA you set (a possible drop). These are planning projections.
+          </p>
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Milestone scenarios graph">
             <line x1={PAD_L} x2={W - PAD_R} y1={yFor(target)} y2={yFor(target)} stroke={COLORS.targetLine} strokeWidth={2} />
             <text x={W - PAD_R} y={yFor(target) - 5} fontSize={11} fill={COLORS.targetLine} fontWeight={800} textAnchor="end">Target {target.toFixed(2)}</text>
@@ -266,6 +280,7 @@ export function Milestones() {
           </p>
         </Card>
       )}
+      </div>
 
       {/* ── Scenario definitions ─────────────────────────────────────── */}
       {!noData && (

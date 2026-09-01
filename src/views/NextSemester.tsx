@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
 import {
@@ -7,6 +7,7 @@ import {
   whatIfGrades,
 } from '../services/nextSemesterService';
 import { classifyCgpa } from '../services/classificationService';
+import { printSection } from '../services/scopedPrint';
 import { fmt2 } from '../util/format';
 
 const STATUS_TONE: Record<string, string> = {
@@ -24,6 +25,14 @@ export function NextSemester() {
   const [comboId, setComboId] = useState<'efficient' | 'balanced' | 'top'>('efficient');
   const [locked, setLocked] = useState<Record<string, string>>({});
   const [showWhatIf, setShowWhatIf] = useState(false);
+  const planRef = useRef<HTMLDivElement>(null);
+  const printPlan = () =>
+    printSection(planRef.current, {
+      title: 'Print Next Semester Plan',
+      institutionLabel: d.institutionLabel,
+      programmeName: d.programme?.name ?? '',
+      curriculumVersion: d.curriculum?.versionName,
+    });
 
   // Current position → next semester.
   const position = useMemo(() => {
@@ -157,20 +166,15 @@ export function NextSemester() {
           </div>
 
           {/* ── Target-grade combinations ─────────────────────────────── */}
+          <div ref={planRef}>
           <Card className="print-sheet">
-            <div className="no-print mb-2 flex flex-wrap items-center justify-between gap-2">
-              <SectionTitle
-                icon="🎯"
-                title="Target grade combinations"
-                subtitle="Mathematically derived from the configured grading system and each course's credit hours."
-              />
-            </div>
-
-            <div className="print-only mb-3">
-              <p className="text-lg font-black text-slate-900">CGPA Pilot — Next Semester Plan</p>
-              <p className="text-xs text-slate-500">
-                {d.institutionLabel} · {next.label} · Generated {new Date().toLocaleDateString()}
-              </p>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800">🎯 Next semester — {next.label}</h3>
+                <p className="text-[11px] text-slate-500">
+                  Required GPA <strong className="text-brand-700">{fmt2(plan.requiredNextGpa)}</strong> · Target {plan.targetClassLabel} · Target grade combinations are mathematically derived from the configured grading and course credits.
+                </p>
+              </div>
             </div>
 
             {plan.combos.length > 0 && (
@@ -261,7 +265,7 @@ export function NextSemester() {
                 {showWhatIf ? '✕ Close what-if' : '🔀 What if I get a specific grade?'}
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={printPlan}
                 className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
               >
                 🖨️ Print Next Semester Plan
@@ -276,6 +280,7 @@ export function NextSemester() {
               )}
             </div>
           </Card>
+          </div>
 
           {/* ── What-if grade picker ─────────────────────────────────── */}
           {showWhatIf && whatIf && (

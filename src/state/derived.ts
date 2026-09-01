@@ -11,6 +11,7 @@ import {
   type SemesterTerm,
 } from '../services/coreCgpaService';
 import { pendingProjection, type PendingProjection } from '../services/pendingService';
+import { buildDashboard, type DashboardModel } from '../services/dashboardService';
 import {
   curriculumSemesters,
   progressThrough,
@@ -96,6 +97,40 @@ export function useDerived() {
       classification
     );
 
+    // Current academic position for cockpit/dashboard models (works in both
+    // engine modes).
+    let positionLevel = state.baseline.levelIndex;
+    let positionSem = state.baseline.semesterIndex;
+    if (state.mode === 'history' && state.semesters.length > 0) {
+      const last = state.semesters[state.semesters.length - 1];
+      positionLevel = last.levelIndex;
+      positionSem = last.semesterIndex;
+    }
+    const positionProgress = progressThrough(curriculum, positionLevel, positionSem);
+    const remainingSlots =
+      state.mode === 'current' ? progress.remainingSlots : positionProgress.remainingSlots;
+    const remainingCredits =
+      (curriculum && (state.mode === 'current' ? progress : positionProgress).hasCreditData)
+        ? (state.mode === 'current' ? progress : positionProgress).remainingCredits
+        : Math.max(0, totalProgrammeCredits(curriculum) - snapshot.creditHours);
+
+    const dashboard: DashboardModel = buildDashboard({
+      currentPoints: snapshot.qualityPoints,
+      currentCredits: snapshot.creditHours,
+      currentCgpa: snapshot.cgpa,
+      currentLevelIndex: positionLevel,
+      currentSemesterIndex: positionSem,
+      targetCgpa: state.targetCgpa ?? 3.6,
+      remainingSlots,
+      remainingCredits,
+      curriculum,
+      curriculumPublished: !!curriculum && curriculum.status === 'published',
+      grading,
+      classification,
+      institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
+        || INSTITUTION_LABEL,
+    });
+
     return {
       state,
       dispatch,
@@ -106,7 +141,7 @@ export function useDerived() {
       grading,
       classification,
       curriculum,
-      curriculumPublished: !!curriculum,
+      curriculumPublished: !!curriculum && curriculum.status === 'published',
       slots,
       totalProgrammeCredits: totalProgrammeCredits(curriculum),
       progress,
@@ -119,6 +154,7 @@ export function useDerived() {
       semesters,
       classBand,
       pending,
+      dashboard,
     };
   }, [state, context]);
 }

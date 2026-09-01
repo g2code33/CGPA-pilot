@@ -1,10 +1,9 @@
-import { useMemo } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Stat } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { InstitutionSelector } from '../components/InstitutionSelector';
-import { buildDashboard } from '../services/dashboardService';
-import { progressThrough } from '../services/structureService';
+import { printHtml } from '../services/scopedPrint';
+import { summaryReport, fullReport, pilotBriefReport } from '../services/reportComposer';
 import { fmt2, fmt1, clamp } from '../util/format';
 
 type Tab =
@@ -35,60 +34,23 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
     onNavigate('calculate');
   };
 
-  // Current position context (level + remaining slots), per engine mode.
-  const position = useMemo(() => {
-    if (state.mode === 'current') {
-      return {
-        level: state.baseline.levelIndex,
-        sem: state.baseline.semesterIndex,
-        remainingSlots: d.progress.remainingSlots,
-        remainingCredits: d.progress.hasCreditData
-          ? d.progress.remainingCredits
-          : Math.max(0, d.totalProgrammeCredits - record.creditHours),
-      };
-    }
-    const last = state.semesters[state.semesters.length - 1];
-    const level = last ? last.levelIndex : 1;
-    const sem = last ? last.semesterIndex : 1;
-    const prog = d.curriculum
-      ? progressThrough(d.curriculum, level, sem)
-      : null;
-    return {
-      level,
-      sem,
-      remainingSlots: prog?.remainingSlots ?? [],
-      remainingCredits: prog?.hasCreditData
-        ? prog.remainingCredits
-        : Math.max(0, d.totalProgrammeCredits - record.creditHours),
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.mode, state.baseline.levelIndex, state.baseline.semesterIndex, state.semesters, d.curriculum, d.progress, d.totalProgrammeCredits, record.creditHours]);
-
-  const model = useMemo(
-    () =>
-      buildDashboard({
-        currentPoints: record.points,
-        currentCredits: record.creditHours,
-        currentCgpa: record.cgpa,
-        currentLevelIndex: position.level,
-        currentSemesterIndex: position.sem,
-        targetCgpa: state.targetCgpa ?? 3.6,
-        remainingSlots: position.remainingSlots,
-        remainingCredits: position.remainingCredits,
-        curriculum: d.curriculum,
-        curriculumPublished: d.curriculumPublished,
-        grading: d.grading,
-        classification: d.classification,
-        institutionLabel: d.institutionLabel,
-      }),
-    [
-      record.points, record.creditHours, record.cgpa, position.level, position.sem,
-      position.remainingSlots, position.remainingCredits, state.targetCgpa,
-      d.curriculum, d.curriculumPublished, d.grading, d.classification, d.institutionLabel,
-    ]
-  );
-
+  const model = d.dashboard;
   const flight = model.flightPath.milestones;
+  const positionRemainingCredits =
+    d.state.mode === 'current' && d.progress.hasCreditData
+      ? d.progress.remainingCredits
+      : Math.max(0, d.totalProgrammeCredits - record.creditHours);
+
+  const branding = {
+    title: 'Pilot Brief',
+    institutionLabel: model.institutionLabel,
+    programmeName: d.programme?.name ?? '',
+    curriculumVersion: model.curriculumVersion ?? undefined,
+  };
+  const printSummary = () => printHtml([summaryReport(model)], { ...branding, title: 'Print Summary' });
+  const printBrief = () => printHtml([pilotBriefReport(model)], branding);
+  const printFull = () =>
+    printHtml(fullReport(model), { ...branding, title: 'Full Report' });
 
   return (
     <div className="space-y-4">
@@ -114,17 +76,6 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
             <p className="text-[11px] text-slate-500">{m.hint}</p>
           </button>
         ))}
-      </div>
-
-      {/* Print header (print only) */}
-      <div className="print-only">
-        <h1 className="text-xl font-black uppercase tracking-wide">
-          CGPA <span className="text-brand-600">Pilot</span> — Pilot Brief
-        </h1>
-        <p className="text-xs text-slate-500">
-          {model.institutionLabel} · Generated {new Date().toLocaleDateString()} ·
-          Projections are scenarios, not guaranteed outcomes. Anonymous — no personal data.
-        </p>
       </div>
 
       {/* ── CURRENT POSITION / DESTINATION hero ─────────────────────── */}
@@ -157,12 +108,24 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
             <p className="text-xs text-brand-200">target classification</p>
           </div>
         </div>
-        <div className="no-print mt-4 flex items-center justify-end">
+        <div className="no-print mt-4 flex flex-wrap items-center justify-end gap-2">
           <button
-            onClick={() => window.print()}
+            onClick={printBrief}
             className="rounded-lg bg-white/15 px-3 py-1.5 text-[11px] font-bold text-white ring-1 ring-white/25 hover:bg-white/25"
           >
             🖨️ Print Pilot Brief
+          </button>
+          <button
+            onClick={printSummary}
+            className="rounded-lg bg-white/15 px-3 py-1.5 text-[11px] font-bold text-white ring-1 ring-white/25 hover:bg-white/25"
+          >
+            🖨️ Print Summary
+          </button>
+          <button
+            onClick={printFull}
+            className="rounded-lg bg-white/25 px-3 py-1.5 text-[11px] font-bold text-white ring-1 ring-white/30 hover:bg-white/35"
+          >
+            🖨️ Print Full Report
           </button>
         </div>
       </Card>
@@ -189,7 +152,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
           <p className="mt-1 text-3xl font-black tabular-nums text-amber-600">
             {model.requiredFutureGpa === null ? '—' : fmt2(model.requiredFutureGpa)}
           </p>
-          <p className="text-[10px] text-slate-400">over {position.remainingCredits} remaining cr</p>
+          <p className="text-[10px] text-slate-400">over {positionRemainingCredits} remaining cr</p>
           <p className="mt-1 text-[10px] font-semibold text-emerald-600">
             Max possible final: {model.maxPossibleFinalCgpa === null ? '—' : fmt2(model.maxPossibleFinalCgpa)}
           </p>

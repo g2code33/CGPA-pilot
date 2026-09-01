@@ -39,7 +39,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
 
   return (
-    <div className="mx-auto flex min-h-full max-w-5xl flex-col sm:flex-row">
+    <div className="app-root mx-auto flex min-h-full max-w-5xl flex-col sm:flex-row">
       {/* ── Sidebar (desktop) ─────────────────────────────── */}
       <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white p-4 sm:flex">
         <Brand compact />

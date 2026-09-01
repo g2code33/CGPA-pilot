@@ -10,6 +10,7 @@ import {
 } from '../services/scenarioService';
 import { analyzeTarget } from '../services/targetService';
 import { progressThrough } from '../services/structureService';
+import { printHtml, sectionHeading, htmlTable, TONE } from '../services/scopedPrint';
 import type { CourseEntry } from '../state/studentState';
 import { fmt2, clamp } from '../util/format';
 
@@ -128,6 +129,41 @@ export function WhatIf() {
     setResetKey((k) => k + 1);
   }
 
+  const branding = {
+    title: 'Print Scenario',
+    institutionLabel: d.institutionLabel,
+    programmeName: d.programme?.name ?? '',
+    curriculumVersion: d.curriculum?.versionName,
+  };
+
+  // Print ONLY the single selected scenario as a standalone one-page sheet.
+  function printScenario(s: FutureScenario) {
+    const sign = (n: number | null) =>
+      n === null ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
+    const html = `
+      ${sectionHeading('🔀', `What-if scenario — ${s.label}`)}
+      <div class="print-card">${htmlTable(['What-if result', 'Value'], [
+        ['Assumed next-semester GPA', s.futureGpa.toFixed(2)],
+        ['Next-period credits', String(s.futureCredits)],
+        ['Projected semester GPA', s.projectedSemesterGpa.toFixed(2)],
+        ['Projected CGPA', s.projectedCgpa === null ? '—' : s.projectedCgpa.toFixed(2)],
+        ['Change vs current CGPA', sign(s.differenceFromCurrent)],
+        ['Change vs target CGPA', sign(s.differenceFromTarget)],
+        ['Final CGPA if this average is held', s.trajectoryFinalCgpa === null ? '—' : s.trajectoryFinalCgpa.toFixed(2)],
+        ['Projected classification', s.classification?.label ?? '—'],
+        ['Target feasibility', s.targetStatusLabel],
+      ])}</div>
+      <p style="font-size:10px;color:#64748b;">
+        The <strong style="color:${TONE.brand};">target</strong> is the goal you set (${target.toFixed(2)});
+        the <strong style="color:${TONE.brand};">projected CGPA</strong> is a prediction only if the assumed
+        future GPA actually happens — it is not a guaranteed outcome. No individual course grades are inferred.
+      </p>`;
+    printHtml([{ html }], {
+      ...branding,
+      title: `What-If Scenario · ${s.label}`,
+    });
+  }
+
   const noData = record.cgpa === null;
 
   return (
@@ -138,15 +174,6 @@ export function WhatIf() {
           title="What-If Simulator"
           subtitle="Try a future GPA — “what if my next GPA is 3.0 / 3.5 / 4.0?” This never changes your confirmed calculation, is never saved, and never invents individual grades."
         />
-
-        {/* Print-only header */}
-        <div className="print-only">
-          <p className="text-lg font-black text-slate-900">CGPA Pilot — What-If Scenario</p>
-          <p className="text-xs text-slate-500">
-            {d.institutionLabel} · {new Date().toLocaleDateString()} ·
-            Scenarios are projections, not guaranteed outcomes.
-          </p>
-        </div>
 
         {noData && (
           <Note>
@@ -223,10 +250,10 @@ export function WhatIf() {
           <h3 className="text-sm font-extrabold text-slate-800">Compare scenarios</h3>
           <div className="flex gap-2">
             <button
-              onClick={() => window.print()}
+              onClick={() => scenarios[3] && printScenario(scenarios[3])}
               className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
             >
-              🖨️ Print Scenario
+              🖨️ Print this scenario
             </button>
             <button
               onClick={reset}
@@ -248,6 +275,7 @@ export function WhatIf() {
                 <th className="py-2 pr-2 text-right">Δ vs target</th>
                 <th className="py-2 pr-2 text-right">Final if held</th>
                 <th className="py-2 pr-2 text-right">Target feasibility</th>
+                <th className="py-2 pr-2 text-right">Print</th>
               </tr>
             </thead>
             <tbody>
@@ -286,6 +314,15 @@ export function WhatIf() {
                           need {fmt2(s.requiredFutureGpaAfter)} after
                         </span>
                       )}
+                  </td>
+                  <td className="py-2 pr-2 text-right">
+                    <button
+                      onClick={() => printScenario(s)}
+                      className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-brand-600 hover:text-white"
+                      title={`Print the "${s.label}" scenario only`}
+                    >
+                      🖨️
+                    </button>
                   </td>
                 </tr>
               ))}
