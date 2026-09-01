@@ -39,6 +39,8 @@ const TONE_CLASSES: Record<string, string> = {
   green: 'bg-green-100 text-green-700 ring-green-300',
   teal: 'bg-teal-100 text-teal-700 ring-teal-300',
   blue: 'bg-sky-100 text-sky-700 ring-sky-300',
+  amber: 'bg-amber-100 text-amber-800 ring-amber-300',
+  orange: 'bg-orange-100 text-orange-700 ring-orange-300',
   red: 'bg-red-100 text-red-700 ring-red-300',
   gray: 'bg-slate-100 text-slate-600 ring-slate-300',
 };

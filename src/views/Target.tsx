@@ -1,258 +1,268 @@
 import { useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
-import { targetableBands } from '../services/classificationService';
-import {
-  creditHoursToTargetAtStraightA,
-  assessFeasibility,
-} from '../services/projectionService';
-import {
-  requiredFutureGpaPrecise,
-  maximumFinalCgpa,
-  targetFeasible,
-} from '../services/coreCgpaService';
+import { PendingProjectionPanel } from '../components/PendingProjection';
+import { analyzeTarget } from '../services/targetService';
 import { fmt2 } from '../util/format';
 
 export function Target() {
   const d = useDerived();
-  const { record, dispatch, classification, grading, progress, maxPoints } = d;
+  const { record, dispatch, classification, grading, progress, state } = d;
 
-  // Default remaining credits come from the configured curriculum (in current
-  // mode) or the total programme structure; the student can override.
+  // Remaining credits default from the configured curriculum; editable.
   const defaultRemaining =
-    d.state.mode === 'current' && progress.hasCreditData
+    state.mode === 'current' && progress.hasCreditData
       ? progress.remainingCredits
       : Math.max(0, d.totalProgrammeCredits - record.creditHours);
   const [remaining, setRemaining] = useState<number | null>(null);
-  const remainingCredits = remaining ?? defaultRemaining;
+  const [custom, setCustom] = useState<string>('');
+  const [showWhy, setShowWhy] = useState(false);
+  const creditsRemaining = Math.max(0, remaining ?? defaultRemaining);
 
-  const target = d.state.targetCgpa ?? 3.6;
-  const cgpa = record.cgpa;
+  const target = state.targetCgpa ?? 3.6;
 
-  const reqPrecise = requiredFutureGpaPrecise(
-    record.points,
-    record.creditHours,
-    remainingCredits,
-    target
+  const analysis = analyzeTarget(
+    {
+      currentPoints: record.points,
+      creditsCompleted: record.creditHours,
+      creditsRemaining,
+      targetCgpa: target,
+      currentCgpa: record.cgpa,
+    },
+    grading,
+    classification
   );
-  const max = maximumFinalCgpa(
-    record.points,
-    record.creditHours,
-    remainingCredits,
-    grading
+
+  // Targetable classification bands come from the active configured rules.
+  const classes = classification.bands.filter(
+    (b) => (classification.graduationMinCgpa ?? 0) <= b.minCgpa
   );
-  const feasibility = assessFeasibility(
-    record.points,
-    record.creditHours,
-    remainingCredits,
-    target,
-    cgpa,
-    maxPoints
-  );
-  const feasible = targetFeasible(reqPrecise, grading);
-  const atStraightA = creditHoursToTargetAtStraightA(
-    record.points,
-    record.creditHours,
-    target,
-    maxPoints
-  );
-  const projected =
-    reqPrecise !== null && reqPrecise >= 0 && feasible
-      ? (record.points + reqPrecise * remainingCredits) /
-        (record.creditHours + remainingCredits)
-      : null;
+
+  const toneCard: Record<string, string> = {
+    green: 'bg-green-50 ring-green-300',
+    amber: 'bg-amber-50 ring-amber-300',
+    orange: 'bg-orange-50 ring-orange-300',
+    red: 'bg-red-50 ring-red-300',
+    gray: 'bg-slate-100 ring-slate-200',
+  };
+  const toneText: Record<string, string> = {
+    green: 'text-green-700',
+    amber: 'text-amber-700',
+    orange: 'text-orange-700',
+    red: 'text-red-700',
+    gray: 'text-slate-600',
+  };
+
+  function applyCustom() {
+    const v = Number(custom);
+    if (!Number.isNaN(v) && v >= 0 && v <= d.maxPoints + 1e-9) {
+      dispatch({ type: 'setTarget', target: v });
+    }
+  }
 
   return (
     <div className="space-y-4">
+      {/* ── Choose a target ─────────────────────────────────────────── */}
       <Card>
         <SectionTitle
           icon="🎯"
-          title="Target"
-          subtitle="Choose your destination — the class of degree you are navigating towards."
+          title="Your target"
+          subtitle="Pick a degree class from the configured rules, or set a custom CGPA."
         />
-        <div className="flex items-center gap-4">
-          <input
-            type="range"
-            min={1}
-            max={maxPoints}
-            step={0.05}
-            value={Math.min(target, maxPoints)}
-            onChange={(e) =>
-              dispatch({ type: 'setTarget', target: Number(e.target.value) })
-            }
-            className="flex-1 accent-brand-600"
-          />
-          <span className="w-16 rounded-xl bg-brand-600 py-2 text-center text-lg font-black text-white">
-            {Math.min(target, maxPoints).toFixed(2)}
+
+        <div className="flex flex-wrap gap-2">
+          {classes.map((b) => {
+            const active = target >= b.minCgpa && target <= b.maxCgpa;
+            return (
+              <button
+                key={b.id}
+                onClick={() => {
+                  setCustom('');
+                  dispatch({ type: 'setTarget', target: b.minCgpa });
+                }}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 transition ${
+                  active
+                    ? 'bg-brand-600 text-white ring-brand-600'
+                    : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {b.label.split('(')[0].trim()} · {b.minCgpa.toFixed(2)}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="block">
+            <span className="label">Custom CGPA target</span>
+            <input
+              type="number"
+              min={0}
+              max={d.maxPoints}
+              step={0.01}
+              className="input w-36 text-center text-lg font-black"
+              placeholder={`0.00–${d.maxPoints.toFixed(2)}`}
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
+            />
+          </label>
+          <button
+            onClick={applyCustom}
+            className="rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-700"
+          >
+            Set target
+          </button>
+          <span className="pb-2 text-xs font-bold text-brand-700">
+            Current target: {fmt2(target)}
+            {analysis.targetClass ? ` · ${analysis.targetClass.label.split('(')[0].trim()}` : ''}
           </span>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {targetableBands(classification).map((b) => (
-            <button
-              key={b.id}
-              onClick={() => dispatch({ type: 'setTarget', target: b.minCgpa })}
-              className={`rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 transition ${
-                target >= b.minCgpa && target <= b.maxCgpa
-                  ? 'bg-brand-100 text-brand-700 ring-brand-300'
-                  : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              {b.label} ({b.minCgpa.toFixed(1)})
-            </button>
-          ))}
+
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={d.maxPoints}
+            step={0.05}
+            value={Math.min(target, d.maxPoints)}
+            onChange={(e) => {
+              setCustom('');
+              dispatch({ type: 'setTarget', target: Number(e.target.value) });
+            }}
+            className="flex-1 accent-brand-600"
+          />
         </div>
       </Card>
 
+      {/* ── Remaining credits ───────────────────────────────────────── */}
       <Card>
         <SectionTitle
-          icon="🧭"
-          title="Feasibility analysis"
-          subtitle="How many graded credits remain until you graduate?"
+          icon="🧮"
+          title="Credits completed & remaining"
+          subtitle="Completed credits come from your entered results; remaining defaults to the configured curriculum."
         />
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-bold uppercase text-slate-500">
-              Remaining credits
-            </label>
+        <div className="grid grid-cols-2 gap-3 text-center">
+          <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+            <p className="text-2xl font-black text-slate-800">{record.creditHours}</p>
+            <p className="text-[11px] font-semibold text-slate-500">credits completed</p>
+          </div>
+          <div className="rounded-xl bg-brand-50 p-3 ring-1 ring-brand-100">
             <input
               type="number"
               min={0}
               max={400}
-              className="input w-36 text-center text-lg font-black"
-              value={remaining ?? remainingCredits}
+              className="input w-full text-center text-2xl font-black text-brand-700"
+              value={remaining ?? creditsRemaining}
               onChange={(e) =>
                 e.target.value === ''
                   ? setRemaining(null)
                   : setRemaining(Math.max(0, Number(e.target.value) || 0))
               }
             />
-          </div>
-          {d.state.mode === 'current' && progress.hasCreditData && (
-            <button
-              onClick={() => setRemaining(progress.remainingCredits)}
-              className="rounded-lg bg-emerald-100 px-3 py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-200"
-            >
-              Use curriculum ({progress.remainingCredits})
-            </button>
-          )}
-          <div className="flex gap-1.5">
-            {[30, 60, 90, 120, 180].map((v) => (
-              <button
-                key={v}
-                onClick={() => setRemaining(v)}
-                className="rounded-lg bg-slate-100 px-2.5 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
-              >
-                {v}
-              </button>
-            ))}
+            <p className="text-[11px] font-semibold text-brand-700">credits remaining</p>
           </div>
         </div>
-
-        <div
-          className={`mt-4 rounded-2xl p-4 text-center ${
-            cgpa === null
-              ? 'bg-slate-100'
-              : feasibility.zone === 'achieved'
-                ? 'bg-emerald-50 ring-1 ring-emerald-200'
-                : feasibility.zone === 'on'
-                  ? 'bg-sky-50 ring-1 ring-sky-200'
-                  : 'bg-red-50 ring-1 ring-red-200'
-          }`}
-        >
-          {cgpa === null ? (
-            <p className="text-sm text-slate-500">
-              Enter your record on the Calculate tab first.
-            </p>
-          ) : (
-            <>
-              <p
-                className={`text-[11px] font-bold uppercase tracking-widest ${
-                  feasibility.zone === 'off' ? 'text-red-600' : 'text-emerald-700'
-                }`}
-              >
-                {feasibility.zone === 'achieved'
-                  ? '✅ Target achieved'
-                  : feasibility.zone === 'on'
-                    ? '🟢 Target reachable'
-                    : '🔴 Out of range'}
-              </p>
-              {reqPrecise !== null && feasibility.zone !== 'achieved' && (
-                <p
-                  className={`my-1 text-5xl font-black ${
-                    feasibility.zone === 'off' ? 'text-red-600' : 'text-sky-700'
-                  }`}
-                >
-                  {reqPrecise < 0 ? "0.00" : fmt2(reqPrecise)}
-                </p>
-              )}
-              <p className="text-sm font-medium text-slate-700">{feasibility.message}</p>
-              {projected !== null && feasibility.zone === 'on' && (
-                <p className="mt-1 text-xs font-semibold text-sky-800">
-                  Finish on {fmt2(projected)} after {remainingCredits} more credits.
-                </p>
-              )}
-            </>
-          )}
-        </div>
+        {state.mode === 'current' && progress.hasCreditData && (
+          <button
+            onClick={() => setRemaining(progress.remainingCredits)}
+            className="mt-2 w-full rounded-lg bg-emerald-100 px-3 py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-200"
+          >
+            Use curriculum remaining ({progress.remainingCredits} credits)
+          </button>
+        )}
       </Card>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="text-center">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Maximum possible CGPA
-          </p>
-          <p className="mt-1 text-2xl font-black text-emerald-600">{fmt2(max)}</p>
-          <p className="text-[10px] text-slate-400">if every remaining course is an A</p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Credits to target at straight A
-          </p>
-          <p className="mt-1 text-2xl font-black text-brand-600">
-            {atStraightA === null ? '—' : Math.ceil(atStraightA)}
-          </p>
-          <p className="text-[10px] text-slate-400">minimum credits needed</p>
-        </Card>
-      </div>
-
-      {record.pendingCount > 0 && (
-        <Card className="bg-amber-50 ring-amber-200">
-          <SectionTitle
-            icon="⏳"
-            title="Pending results vs your target"
-            subtitle={`${record.pendingCreditHours} credits await release and are excluded from the confirmed figures above.`}
-          />
-          <div className="grid grid-cols-2 gap-2 text-center text-xs">
-            <div className="rounded-xl bg-white p-2.5 ring-1 ring-red-200">
-              <p className="font-black text-red-600">
-                {fmt2(d.pending.worstCaseCgpa)}
-              </p>
-              <p className="text-slate-500">
-                worst case · needs {fmt2(d.pending.requiredPendingGpa)} on pending
-                to reach {fmt2(target)}
-              </p>
-            </div>
-            <div className="rounded-xl bg-white p-2.5 ring-1 ring-emerald-200">
-              <p className="font-black text-emerald-600">
-                {fmt2(d.pending.bestCaseCgpa)}
-              </p>
-              <p className="text-slate-500">best case once released</p>
-            </div>
+      {/* ── TARGET STATUS ───────────────────────────────────────────── */}
+      <Card className={`ring-2 ${toneCard[analysis.tone]}`}>
+        <div className="flex items-center gap-3">
+          <span className="text-4xl leading-none">{analysis.statusEmoji}</span>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+              Target status
+            </p>
+            <p className={`text-2xl font-black ${toneText[analysis.tone]}`}>
+              {analysis.statusLabel}
+            </p>
           </div>
-          <p className="mt-2 text-[11px] font-semibold text-amber-800">
-            {d.pending.targetStatus === 'guaranteed' &&
-              `Target ${fmt2(target)} is secured regardless of the pending results.`}
-            {d.pending.targetStatus === 'possible' &&
-              `Target ${fmt2(target)} is possible depending on the pending results, then the remaining future credits above.`}
-            {d.pending.targetStatus === 'unreachable' &&
-              `Even top grades on the pending credits cannot reach ${fmt2(target)} — the remaining future credits matter.`}
-          </p>
-          <Note>
-            Projections only — a pending result is never treated as a grade. Use
-            the What-If tab to trial specific grades.
-          </Note>
-        </Card>
+          <div className="ml-auto text-right text-xs">
+            <p className="text-slate-500">Current</p>
+            <p className="text-lg font-black tabular-nums text-slate-800">
+              {fmt2(record.cgpa)}
+            </p>
+            <p className="text-slate-500">Target</p>
+            <p className="text-lg font-black tabular-nums text-brand-700">{fmt2(target)}</p>
+          </div>
+        </div>
+
+        {analysis.status !== 'unknown' && (
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Metric label="Required future QP" value={analysis.requiredFuturePoints} />
+            <Metric label="Required future GPA" value={analysis.requiredFutureGpa} strong />
+            <Metric label="Max possible final" value={analysis.maxFinalCgpa} />
+            <Metric label="Scale ceiling" value={analysis.maxGradePoints} />
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowWhy((v) => !v)}
+          className="mt-3 text-[11px] font-bold text-brand-700 underline"
+        >
+          {showWhy ? '▾ Hide explanation' : '❓ Why am I seeing this?'}
+        </button>
+        {showWhy && (
+          <ul className="mt-2 space-y-2 rounded-xl bg-white/70 p-3 ring-1 ring-slate-200">
+            {analysis.explanation.map((line, i) => (
+              <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-slate-700">
+                <span className="mt-0.5 text-brand-500">▸</span>
+                <span>{line}</span>
+              </li>
+            ))}
+            <li className="pt-1 text-[10px] italic text-slate-400">
+              Figures use full internal precision and are rounded only for
+              display. Everything is temporary and stays on this device.
+            </li>
+          </ul>
+        )}
+      </Card>
+
+      {/* ── Pending results (Prompt 7) ──────────────────────────────── */}
+      {record.pendingCount > 0 && (
+        <PendingProjectionPanel pending={d.pending} target={state.targetCgpa} />
       )}
+
+      <Note>
+        A target is shown as 🔴 mathematically impossible only when the average
+        future GPA it requires exceeds the maximum grade point of your configured
+        grading system ({d.maxPoints.toFixed(2)}). All other statuses mean it is
+        within the possible range — the colours show how hard you would have to
+        push. Nothing is saved.
+      </Note>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: number | null;
+  strong?: boolean;
+}) {
+  return (
+    <div className="rounded-xl bg-white/80 p-2.5 text-center ring-1 ring-slate-200">
+      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p
+        className={`text-lg font-black tabular-nums ${
+          strong ? 'text-brand-700' : 'text-slate-800'
+        }`}
+      >
+        {value === null ? '—' : fmt2(value)}
+      </p>
     </div>
   );
 }
