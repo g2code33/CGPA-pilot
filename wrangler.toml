@@ -1,5 +1,9 @@
-# Cloudflare Pages deployment for the web/PWA version.
-# The build emits a fully static site into dist/ — no server runtime.
+# Cloudflare deployment for the web/PWA version.
+# The build emits a fully static site into dist/ — no server runtime — so it
+# deploys as a static-assets Worker (this `[assets]` config also works with
+# `wrangler deploy` on the Cloudflare Workers Builds pipeline).
 name = "cgpa-pilot"
 compatibility_date = "2026-08-31"
-pages_build_output_dir = "dist"
+
+[assets]
+directory = "./dist"
