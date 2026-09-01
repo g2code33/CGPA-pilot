@@ -777,12 +777,16 @@ function CourseRow({
                 ? 'bg-amber-500 text-white ring-amber-500'
                 : 'bg-white text-slate-500 ring-slate-300 hover:bg-amber-50 hover:text-amber-700'
             }`}
+            aria-label={course.pending ? `Mark ${course.code || 'course'} results as released` : `Mark ${course.code || 'course'} results as pending`}
+            title={course.pending ? 'Mark results as released' : 'Results not yet available (pending)'}
           >
             ⏳
           </button>
           <button
             onClick={() => dispatch({ type: 'removeCourse', semesterId, courseId: course.id })}
             className="text-sm text-red-400 hover:text-red-600"
+            aria-label={`Remove course ${course.code || ''}`.trim()}
+            title="Remove course"
           >
             ✕
           </button>

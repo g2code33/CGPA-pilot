@@ -51,6 +51,10 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
       'Publish this curriculum? Students will receive it offline. Publishing archives the previous published version of this programme. Published versions are locked — edit via Duplicate.',
       () => {
         const result = transitionCurriculum(catalog, id, 'published');
+        if (!result.ok) {
+          flash(`⛔ ${result.reason ?? 'Publish blocked by validation.'}`);
+          return;
+        }
         apply(() => result.catalog);
         // Push the newly published configuration into this device's student
         // cache so the student app picks it up offline (config-only; never

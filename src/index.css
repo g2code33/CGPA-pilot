@@ -6,6 +6,18 @@
   color-scheme: light;
 }
 
+/* Visible keyboard focus on every interactive element (accessibility).
+   :focus-visible leaves mouse/touch clicks un-ringed while always showing a
+   clear indicator for keyboard users. */
+:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
 html,
 body,
 #root {

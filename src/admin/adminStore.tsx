@@ -51,6 +51,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       apply: (fn) => setCatalogState((c) => fn(c)),
       setCatalog: (c) => setCatalogState(c),
       async login(pass) {
+        if (!pass || pass.trim().length === 0) return false;
         const auth = readAdminAuth();
         const hash = await hashPasscode(pass);
         // First run: no passcode set yet → accept the factory default and

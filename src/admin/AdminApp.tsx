@@ -7,8 +7,9 @@ import { Curricula } from './views/Curricula';
 import { CurriculumEditor } from './views/CurriculumEditor';
 import { CurriculumPreview } from './views/CurriculumPreview';
 import { Grading } from './views/Grading';
+import { TestLab } from './views/TestLab';
 
-type ViewName = 'overview' | 'universities' | 'curricula' | 'grading' | 'editor' | 'preview';
+type ViewName = 'overview' | 'universities' | 'curricula' | 'grading' | 'testlab' | 'editor' | 'preview';
 type View = { name: ViewName; curriculumId?: string };
 
 const NAV: { id: View['name']; label: string; icon: string }[] = [
@@ -16,6 +17,7 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
   { id: 'universities', label: 'Institutions', icon: '🏛️' },
   { id: 'curricula', label: 'Curricula', icon: '📚' },
   { id: 'grading', label: 'Grading & Classes', icon: '🎯' },
+  { id: 'testlab', label: 'Test Lab', icon: '🧪' },
 ];
 
 export function AdminApp() {
@@ -66,6 +68,7 @@ export function AdminApp() {
             <Curricula onOpen={(id) => setView({ name: 'editor', curriculumId: id })} />
           )}
           {view.name === 'grading' && <Grading />}
+          {view.name === 'testlab' && <TestLab />}
           {view.name === 'editor' && view.curriculumId && (
             <CurriculumEditor
               curriculumId={view.curriculumId}
@@ -82,7 +85,7 @@ export function AdminApp() {
         </main>
 
         <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 sm:hidden">
-          <div className="grid grid-cols-3">
+          <div className="grid grid-cols-5">
             {NAV.map((n) => (
               <button
                 key={n.id}

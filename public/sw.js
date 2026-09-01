@@ -1,7 +1,8 @@
 // CGPA Pilot service worker — offline app shell for web/PWA.
 // Strategy: cache-first for the static shell (the whole app is local and
 // versioned; content never changes between releases for a given build).
-const CACHE = 'cgpa-pilot-v1';
+// Bump when the app shell changes; old caches are deleted on activate.
+const CACHE = 'cgpa-pilot-v2';
 
 const SHELL = [
   './',

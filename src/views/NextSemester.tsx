@@ -201,7 +201,8 @@ export function NextSemester() {
               </p>
             )}
 
-            <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[380px] text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
                   <th className="py-1.5 pr-2">Course</th>
@@ -234,6 +235,7 @@ export function NextSemester() {
                 })}
               </tbody>
             </table>
+            </div>
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
               <span>

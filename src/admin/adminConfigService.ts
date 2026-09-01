@@ -370,6 +370,20 @@ export function transitionCurriculum(
     ),
   };
 
+  // Publishing is BLOCKED at the service layer when critical validation
+  // fails (defense in depth — the UI also disables the action). No
+  // curriculum with blocking errors can ever reach students.
+  if (to === 'published' && !canPublish(cur)) {
+    const blockers = reviewCurriculum(cur)
+      .filter((i) => i.severity === 'error')
+      .map((i) => i.message);
+    return {
+      catalog,
+      ok: false,
+      reason: `Cannot publish — critical validation fails: ${blockers.join(' · ')}`,
+    };
+  }
+
   // Publishing: automatically archive other published versions of the SAME
   // programme (only one active published version is distributed).
   if (to === 'published') {
