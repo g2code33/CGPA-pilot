@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { INSTITUTION_LABEL } from './config/context';
 import { UpdateBanner } from './components/UpdateBanner';
 import { ClearButton } from './components/ClearButton';
+import { useAcademic } from './state/store';
+import {
+  hasEnteredAcademicData,
+  installBeforeUnloadGuard,
+} from './services/sessionGuard';
 import { Dashboard } from './views/Dashboard';
 import { Calculate } from './views/Calculate';
 import { Target } from './views/Target';
@@ -37,6 +42,18 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
+  const { state } = useAcademic();
+
+  // Warn on browser refresh / tab close while temporary calculations exist.
+  // (No-op on platforms without beforeunload; data is in-memory only either
+  // way and never returns after refresh.)
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  useEffect(
+    () =>
+      installBeforeUnloadGuard(() => hasEnteredAcademicData(stateRef.current)),
+    []
+  );
 
   return (
     <div className="app-root mx-auto flex min-h-full max-w-5xl flex-col sm:flex-row">
@@ -60,7 +77,7 @@ export default function App() {
           ))}
         </nav>
         <div className="mt-auto pt-4">
-          <ClearButton onClear={() => setTab('dashboard')} />
+          <ClearButton />
         </div>
       </aside>
 

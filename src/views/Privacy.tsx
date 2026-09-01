@@ -66,6 +66,50 @@ export function Privacy() {
       </Card>
 
       <Card>
+        <SectionTitle
+          icon="🔄"
+          title="Temporary session · Refresh / Clear"
+        />
+        <ul className="space-y-2 text-sm text-slate-700">
+          <li className="flex gap-2">
+            <span className="mt-0.5 text-emerald-600">✔</span>
+            <span>
+              Everything you enter — CGPA, semester GPAs, courses, targets,
+              projections and What-If scenarios — lives in temporary memory
+              only. <strong>After a browser refresh it does not come back.</strong>
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-0.5 text-emerald-600">✔</span>
+            <span>
+              The persistent <strong>🔄 Refresh / Clear</strong> button always
+              asks for confirmation first. <em>Cancel</em> changes nothing;
+              <em> Clear &amp; Refresh</em> wipes the session and restarts the
+              app at a clean starting screen. Nothing is saved to restore.
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-0.5 text-emerald-600">✔</span>
+            <span>
+              On browsers that support it, refreshing or closing the tab while
+              you have temporary calculations shows a warning that they will be
+              lost. Some mobile browsers cannot show this warning — the data is
+              still temporary and still disappears on refresh.
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-0.5 text-emerald-600">✔</span>
+            <span>
+              Reconnecting to the internet never uploads your calculations.
+              Only published, non-personal curriculum configuration may refresh
+              in the background; student data never synchronizes, because there
+              is nowhere it is stored to sync from.
+            </span>
+          </li>
+        </ul>
+      </Card>
+
+      <Card>
         <SectionTitle icon="🖨️" title="A note on printing" />
         <p className="text-sm leading-relaxed text-slate-700">
           Printing or saving a PDF creates a file on <em>your</em> device or

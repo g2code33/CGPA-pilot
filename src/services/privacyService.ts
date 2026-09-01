@@ -10,20 +10,21 @@
 import { resetCurriculumCache } from './curriculumService';
 
 export const PRIVACY_PROMISES: string[] = [
+  'No account required — the app opens straight to the calculator with no sign-up or login.',
+  'No student identity required: you are never asked for your name, student ID, email or phone number.',
   'Every calculation runs locally on your device — CGPA, targets, feasibility, what-ifs, flight path and projections.',
   'Works fully offline after first load. No internet, API calls, cloud functions, online databases, logins or external AI are used for calculations.',
-  'Asks only for the numbers needed for a calculation (e.g. credit hours and grades, or current CGPA and total credits).',
-  'Treats everything you type as a temporary session: close the tab, refresh, or press Refresh/Clear and it is gone.',
-  'Prints an anonymous brief — no name or student ID appears, and the file stays on your device.',
+  'Everything you type is a temporary session: close the tab, refresh the browser, or press 🔄 Refresh / Clear and it is gone.',
+  'Prints are anonymous — no name or student ID appears, and the file stays on your device.',
 ];
 
 export const PRIVACY_NEVERS: string[] = [
-  'Does NOT ask for your name, student ID, email or phone number.',
-  'Does NOT create accounts or a student database.',
-  'Does NOT persist your CGPA, GPA, grades, targets or scenarios in any browser storage or database.',
-  'Does NOT put your academic data in the web address (URL).',
-  'Does NOT upload your transcript or course results anywhere.',
-  'Does NOT use tracking or analytics storage tied to your academic data.',
+  'No grades are stored — grades exist only in temporary memory while you use the app.',
+  'No CGPA is stored — your CGPA, semester GPAs, targets and projections are never written to localStorage, sessionStorage, IndexedDB, cookies or any database.',
+  'There is no student academic database — CGPA PILOT holds no records about any student.',
+  'No academic tracking — no analytics, beacons or telemetry tied to your academic data.',
+  'Your student academic information is never shared and never uploaded — reconnecting to the internet syncs only published curriculum configuration, never your calculations.',
+  'Your academic data is never put in the web address (URL).',
 ];
 
 export const PRIVACY_OFFLINE_NOTE =
