@@ -7,6 +7,7 @@ import { Calculate } from './views/Calculate';
 import { Target } from './views/Target';
 import { WhatIf } from './views/WhatIf';
 import { FlightPathView } from './views/FlightPath';
+import { Milestones } from './views/Milestones';
 import { NextSemester } from './views/NextSemester';
 import { PrintView } from './views/Print';
 import { Privacy } from './views/Privacy';
@@ -17,6 +18,7 @@ type Tab =
   | 'target'
   | 'whatif'
   | 'flight'
+  | 'milestones'
   | 'next'
   | 'print'
   | 'privacy';
@@ -27,6 +29,7 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'target', label: 'Target', icon: '🎯' },
   { id: 'whatif', label: 'What-If', icon: '🔀' },
   { id: 'flight', label: 'Flight Path', icon: '🛩️' },
+  { id: 'milestones', label: 'Milestones', icon: '🏁' },
   { id: 'next', label: 'Next Semester', icon: '▶️' },
   { id: 'print', label: 'Print', icon: '🖨️' },
   { id: 'privacy', label: 'Privacy', icon: '🔒' },
@@ -79,6 +82,7 @@ export default function App() {
           {tab === 'target' && <Target />}
           {tab === 'whatif' && <WhatIf />}
           {tab === 'flight' && <FlightPathView />}
+          {tab === 'milestones' && <Milestones />}
           {tab === 'next' && <NextSemester />}
           {tab === 'print' && <PrintView />}
           {tab === 'privacy' && <Privacy />}
@@ -87,7 +91,7 @@ export default function App() {
 
       {/* ── Bottom navigation (mobile) ────────────────────── */}
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur sm:hidden">
-        <div className="grid grid-cols-8">
+        <div className="grid grid-cols-9">
           {NAV.map((n) => (
             <button
               key={n.id}

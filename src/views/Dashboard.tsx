@@ -210,6 +210,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
             { t: 'target' as Tab, icon: '🎯', label: 'Target & Feasibility' },
             { t: 'whatif' as Tab, icon: '🔀', label: 'What-If Simulator' },
             { t: 'flight' as Tab, icon: '🛩️', label: 'Flight Path' },
+            { t: 'milestones' as Tab, icon: '🏁', label: 'Milestones & Drops' },
             { t: 'next' as Tab, icon: '▶️', label: 'Next Semester Pilot' },
             { t: 'print' as Tab, icon: '🖨️', label: 'Print Brief' },
           ].map((a) => (

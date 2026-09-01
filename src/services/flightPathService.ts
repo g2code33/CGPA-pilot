@@ -53,6 +53,53 @@ export interface FlightPathModel {
   fallback: boolean;
 }
 
+/** A future academic leg (one semester) with its credit load. */
+export interface FlightLeg {
+  credits: number;
+  levelIndex: number;
+  semesterIndex: number;
+  label: string;
+}
+
+/**
+ * Build the ordered future legs from the curriculum's remaining slots,
+ * substituting a flat fallback credit load when the curriculum has no credit
+ * data, or synthesizing two-semesters-per-level legs when there is no
+ * curriculum at all. Shared by the flight path and milestone analyses.
+ */
+export function buildFlightLegs(input: {
+  remainingSlots: SemesterSlot[];
+  currentLevelIndex: number;
+  fallbackCreditsPerSemester: number;
+  fallbackSemesterCount: number;
+}): { legs: FlightLeg[]; fallback: boolean } {
+  const hasCreditData = input.remainingSlots.some((s) => s.credits > 0);
+  if (input.remainingSlots.length > 0) {
+    return {
+      fallback: !hasCreditData,
+      legs: input.remainingSlots.map((s) => ({
+        credits: hasCreditData ? s.credits : input.fallbackCreditsPerSemester,
+        levelIndex: s.levelIndex,
+        semesterIndex: s.semesterIndex,
+        label: s.label,
+      })),
+    };
+  }
+  const legs: FlightLeg[] = [];
+  for (let i = 0; i < input.fallbackSemesterCount; i++) {
+    const n = i + 1;
+    const levelIndex = input.currentLevelIndex + Math.ceil(n / 2);
+    const semesterIndex = ((n - 1) % 2) + 1;
+    legs.push({
+      credits: input.fallbackCreditsPerSemester,
+      levelIndex,
+      semesterIndex,
+      label: `${shortLevel(levelIndex)} · Semester ${semesterIndex}`,
+    });
+  }
+  return { legs, fallback: true };
+}
+
 export interface FlightInput {
   currentPoints: number;
   currentCredits: number;
@@ -81,46 +128,7 @@ export function buildFlightPath(
   const max = maxGradePoints(grading);
   const target = input.targetCgpa;
 
-  // The future legs: { credits, levelIndex, semesterIndex, label } in order.
-  // Use the curriculum's remaining slots for correct level/semester
-  // structure; when the published curriculum carries no credit data yet,
-  // keep its structure but substitute the flat fallback credit load. Only if
-  // there is no curriculum at all do we synthesize two-semesters-per-level.
-  interface Leg {
-    credits: number;
-    levelIndex: number;
-    semesterIndex: number;
-    label: string;
-  }
-  const hasCreditData = input.remainingSlots.some((s) => s.credits > 0);
-  let legs: Leg[];
-  let fallback: boolean;
-
-  if (input.remainingSlots.length > 0) {
-    fallback = !hasCreditData;
-    legs = input.remainingSlots.map((s) => ({
-      credits: hasCreditData ? s.credits : input.fallbackCreditsPerSemester,
-      levelIndex: s.levelIndex,
-      semesterIndex: s.semesterIndex,
-      label: s.label,
-    }));
-  } else {
-    // No curriculum: synthesize the next N semesters, two per level, starting
-    // just after the student's current level (assumes end of current level).
-    fallback = true;
-    legs = [];
-    for (let i = 0; i < input.fallbackSemesterCount; i++) {
-      const n = i + 1;
-      const levelIndex = input.currentLevelIndex + Math.ceil(n / 2);
-      const semesterIndex = ((n - 1) % 2) + 1;
-      legs.push({
-        credits: input.fallbackCreditsPerSemester,
-        levelIndex,
-        semesterIndex,
-        label: `${shortLevel(levelIndex)} · Semester ${semesterIndex}`,
-      });
-    }
-  }
+  const { legs, fallback } = buildFlightLegs(input);
 
   const totalFutureCredits = legs.reduce((s, l) => s + l.credits, 0);
   const totalCredits = input.currentCredits + totalFutureCredits;
