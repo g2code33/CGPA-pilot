@@ -44,12 +44,32 @@ body {
   }
 }
 
-/* ── Printing: only the report sheet should print ── */
+/* ── Printing: app chrome is hidden; the active sheet prints ── */
+.print-only {
+  display: none;
+}
 @media print {
   body {
     background: #fff;
   }
   .no-print {
     display: none !important;
+  }
+  /* Hide the application shell so only the active view's sheet prints. */
+  aside,
+  header,
+  nav {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  /* Inline SVG graphs render as crisp vectors with no background box. */
+  .print-sheet {
+    box-shadow: none !important;
+    ring: 0 !important;
   }
 }
