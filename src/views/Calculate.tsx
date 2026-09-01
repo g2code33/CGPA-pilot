@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Badge, Note } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
-import { bandForScore, effectiveGrade, gradePointsForCourse } from '../services/gradingService';
+import {
+  bandForScore,
+  effectiveGrade,
+  gradePointsForCourse,
+  validateGpa,
+} from '../services/gradingService';
 import { fmt2 } from '../util/format';
 import type { CourseEntry } from '../state/studentState';
 
@@ -19,38 +24,36 @@ export function Calculate() {
           subtitle="Everything is computed on this device. Nothing you type leaves the app or is stored."
         />
 
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => dispatch({ type: 'setMode', mode: 'history' })}
-            className={`rounded-xl px-3 py-2.5 text-xs font-bold transition ring-1 ${
-              state.mode === 'history'
-                ? 'bg-brand-600 text-white ring-brand-600'
-                : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            📚 GPA History Mode
-            <span className="mt-0.5 block text-[10px] font-semibold opacity-80">
-              Enter each semester GPA
-            </span>
-          </button>
-          <button
-            onClick={() => dispatch({ type: 'setMode', mode: 'current' })}
-            className={`rounded-xl px-3 py-2.5 text-xs font-bold transition ring-1 ${
-              state.mode === 'current'
-                ? 'bg-brand-600 text-white ring-brand-600'
-                : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            📍 Current CGPA Mode
-            <span className="mt-0.5 block text-[10px] font-semibold opacity-80">
-              Start from your current level &amp; CGPA
-            </span>
-          </button>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {(
+            [
+              { id: 'quick', icon: '⚡', title: 'Quick', hint: 'Current level + CGPA' },
+              { id: 'history', icon: '📚', title: 'GPA History', hint: 'Enter each semester GPA' },
+              { id: 'planning', icon: '🗺️', title: 'Planning', hint: 'Target + future GPA scenarios' },
+            ] as const
+          ).map((m) => (
+            <button
+              key={m.id}
+              onClick={() => dispatch({ type: 'setInputMode', inputMode: m.id })}
+              className={`rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ring-1 ${
+                state.inputMode === m.id
+                  ? 'bg-brand-600 text-white ring-brand-600'
+                  : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-sm">{m.icon}</span> {m.title}
+              <span className={`mt-0.5 block text-[10px] font-semibold ${state.inputMode === m.id ? 'opacity-80' : 'text-slate-400'}`}>
+                {m.hint}
+              </span>
+            </button>
+          ))}
         </div>
       </Card>
 
-      {state.mode === 'current' ? (
-        <CurrentMode />
+      {state.inputMode === 'planning' ? (
+        <PlanningMode />
+      ) : state.inputMode === 'quick' ? (
+        <CurrentMode quick />
       ) : (
         <>
           {d.semesters.map(({ semester, configuredCredits, effectiveCredits, term }) => {
@@ -143,8 +146,12 @@ export function Calculate() {
                         min={0}
                         max={maxPoints}
                         step={0.01}
-                        className="input text-center text-lg font-black"
-                        placeholder="e.g. 3.42"
+                        className={`input text-center text-lg font-black ${
+                          validateGpa(semester.gpa, d.grading)
+                            ? 'ring-2 ring-red-300 focus:ring-red-400'
+                            : ''
+                        }`}
+                        placeholder={`0.00–${maxPoints.toFixed(2)}`}
                         value={semester.gpa ?? ''}
                         onChange={(e) =>
                           dispatch({
@@ -154,6 +161,11 @@ export function Calculate() {
                           })
                         }
                       />
+                      {validateGpa(semester.gpa, d.grading) && (
+                        <span className="mt-1 block text-[10px] font-semibold text-red-600">
+                          {validateGpa(semester.gpa, d.grading)}
+                        </span>
+                      )}
                     </label>
                     <label className="block">
                       <span className="label">
@@ -199,10 +211,18 @@ export function Calculate() {
 
           <button
             onClick={() => dispatch({ type: 'addSemester' })}
-            className="w-full rounded-2xl border-2 border-dashed border-slate-300 py-3 text-sm font-bold text-slate-500 transition hover:border-brand-400 hover:text-brand-600"
+            disabled={d.slots.length > 0 && state.semesters.length >= d.slots.length}
+            className="w-full rounded-2xl border-2 border-dashed border-slate-300 py-3 text-sm font-bold text-slate-500 transition hover:border-brand-400 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-500"
           >
-            ＋ Add next semester
+            {d.slots.length > 0 && state.semesters.length >= d.slots.length
+              ? 'All semesters entered'
+              : '＋ Add next completed semester'}
           </button>
+          <Note>
+            Only add the semesters you have actually completed — credit loads
+            are taken from the {d.programme?.shortName ?? 'programme'}{' '}
+            curriculum and weighted automatically.
+          </Note>
         </>
       )}
 
@@ -246,9 +266,9 @@ export function Calculate() {
   );
 }
 
-function CurrentMode() {
+function CurrentMode({ quick = false }: { quick?: boolean }) {
   const d = useDerived();
-  const { state, dispatch, progress, curriculumPublished } = d;
+  const { state, dispatch, progress, curriculumPublished, grading } = d;
   const b = state.baseline;
 
   const levels =
@@ -257,16 +277,22 @@ function CurrentMode() {
       : [1, 2, 3, 4, 5, 6];
 
   const creditsKnown = progress.hasCreditData && progress.completedCredits > 0;
+  const cgpaError = validateGpa(b.cgpa, grading);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
     <Card>
       <SectionTitle
-        icon="📍"
-        title="Your current standing"
-        subtitle="Tell us your current level and CGPA — the configured curriculum supplies the credit structure."
+        icon="⚡"
+        title={quick ? 'Quick mode' : 'Your current standing'}
+        subtitle={
+          quick
+            ? 'Just your current level and current CGPA — the configured curriculum works out the rest.'
+            : 'Tell us your current level and CGPA — the configured curriculum supplies the credit structure.'
+        }
       />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className={`grid ${quick ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
         <label className="block">
           <span className="label">Current academic level</span>
           <select
@@ -287,30 +313,16 @@ function CurrentMode() {
           </select>
         </label>
         <label className="block">
-          <span className="label">Last completed semester</span>
-          <select
-            className="input"
-            value={b.semesterIndex}
-            onChange={(e) =>
-              dispatch({
-                type: 'setBaseline',
-                patch: { semesterIndex: Number(e.target.value) },
-              })
-            }
-          >
-            <option value={1}>Semester 1</option>
-            <option value={2}>Semester 2</option>
-          </select>
-        </label>
-        <label className="block">
           <span className="label">Current CGPA</span>
           <input
             type="number"
             min={0}
             max={d.maxPoints}
             step={0.01}
-            className="input text-center text-lg font-black"
-            placeholder="e.g. 3.42"
+            className={`input text-center text-lg font-black ${
+              cgpaError ? 'ring-2 ring-red-300 focus:ring-red-400' : ''
+            }`}
+            placeholder={`0.00–${d.maxPoints.toFixed(2)}`}
             value={b.cgpa ?? ''}
             onChange={(e) =>
               dispatch({
@@ -319,59 +331,17 @@ function CurrentMode() {
               })
             }
           />
-        </label>
-        <div className="block">
-          <span className="label">Credits completed</span>
-          {creditsKnown ? (
-            <div className="rounded-xl bg-emerald-50 px-3 py-2 text-center text-lg font-black text-emerald-700 ring-1 ring-emerald-200">
-              {progress.completedCredits}
-              <span className="block text-[10px] font-semibold text-emerald-600">
-                from {d.university.shortName} curriculum
-              </span>
-            </div>
-          ) : (
-            <input
-              type="number"
-              min={0}
-              className="input text-center text-lg font-black"
-              placeholder="e.g. 64"
-              value={b.creditHours || ''}
-              onChange={(e) =>
-                dispatch({
-                  type: 'setBaseline',
-                  patch: { creditHours: Number(e.target.value) || 0 },
-                })
-              }
-            />
+          {cgpaError && (
+            <span className="mt-1 block text-center text-[10px] font-semibold text-red-600">
+              {cgpaError}
+            </span>
           )}
-        </div>
+        </label>
       </div>
 
-      <label className="mt-3 block">
-        <span className="label">
-          ⏳ Pending-result credits (results not yet released)
-        </span>
-        <input
-          type="number"
-          min={0}
-          className="input text-center text-lg font-black"
-          placeholder="0"
-          value={b.pendingCreditHours || ''}
-          onChange={(e) =>
-            dispatch({
-              type: 'setBaseline',
-              patch: { pendingCreditHours: Math.max(0, Number(e.target.value) || 0) },
-            })
-          }
-        />
-        <span className="mt-1 block text-[10px] text-slate-400">
-          Your CGPA above reflects released results only. Pending credits are
-          excluded from it and used solely for projections.
-        </span>
-      </label>
-
+      {/* The curriculum fills in the academic trajectory automatically. */}
       {creditsKnown && (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
           <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-100">
             <p className="font-black text-slate-800">{progress.completedCredits}</p>
             <p className="text-slate-500">credits completed</p>
@@ -380,15 +350,275 @@ function CurrentMode() {
             <p className="font-black text-brand-700">{progress.remainingCredits}</p>
             <p className="text-slate-500">credits remaining</p>
           </div>
+          <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-100">
+            <p className="font-black text-slate-800">{progress.remainingSlots.length}</p>
+            <p className="text-slate-500">semesters to go</p>
+          </div>
         </div>
       )}
 
-      <Note>
-        {curriculumPublished
-          ? 'Remaining credits and the academic structure are read from the configured published curriculum.'
-          : 'The curriculum has not been published yet — enter your total credits manually. Individual course grades are never required or inferred.'}
-      </Note>
+      {quick ? (
+        <Note>
+          {curriculumPublished
+            ? `That's all we need — credit structure and trajectory come from the ${d.programme?.shortName ?? 'PharmD'} curriculum. Individual course grades are never required or inferred.`
+            : 'The curriculum has not been published yet — your level and CGPA still work; the administrator supplies real credit structure.'}
+          {' '}
+          <button
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="font-bold text-brand-600 underline"
+          >
+            {showAdvanced ? 'Hide' : 'Advanced'} options
+          </button>
+        </Note>
+      ) : null}
+
+      {/* Advanced details: last semester, manual credits, pending results. */}
+      {(showAdvanced || !quick) && (
+        <div className="mt-3 space-y-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="label">Last completed semester</span>
+              <select
+                className="input"
+                value={b.semesterIndex}
+                onChange={(e) =>
+                  dispatch({
+                    type: 'setBaseline',
+                    patch: { semesterIndex: Number(e.target.value) },
+                  })
+                }
+              >
+                <option value={1}>Semester 1</option>
+                <option value={2}>Semester 2</option>
+              </select>
+            </label>
+            <div className="block">
+              <span className="label">Credits completed</span>
+              {creditsKnown ? (
+                <div className="rounded-xl bg-emerald-50 px-3 py-2 text-center text-lg font-black text-emerald-700 ring-1 ring-emerald-200">
+                  {progress.completedCredits}
+                  <span className="block text-[10px] font-semibold text-emerald-600">
+                    from {d.university.shortName} curriculum
+                  </span>
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  min={0}
+                  className="input text-center text-lg font-black"
+                  placeholder="e.g. 64"
+                  value={b.creditHours || ''}
+                  onChange={(e) =>
+                    dispatch({
+                      type: 'setBaseline',
+                      patch: { creditHours: Number(e.target.value) || 0 },
+                    })
+                  }
+                />
+              )}
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="label">
+              ⏳ Pending-result credits (results not yet released)
+            </span>
+            <input
+              type="number"
+              min={0}
+              className="input text-center text-lg font-black"
+              placeholder="0"
+              value={b.pendingCreditHours || ''}
+              onChange={(e) =>
+                dispatch({
+                  type: 'setBaseline',
+                  patch: {
+                    pendingCreditHours: Math.max(0, Number(e.target.value) || 0),
+                  },
+                })
+              }
+            />
+            <span className="mt-1 block text-[10px] text-slate-400">
+              Your CGPA above reflects released results only. Pending credits
+              are excluded and used solely for projections.
+            </span>
+          </label>
+        </div>
+      )}
     </Card>
+  );
+}
+
+/**
+ * MODE C — Planning mode. Current CGPA, a target classification, and future
+ * GPA scenarios. Reuses the current-CGPA baseline and the projection engine;
+ * all inputs are temporary and stay on this device.
+ */
+function PlanningMode() {
+  const d = useDerived();
+  const { state, dispatch, grading, classification, progress, record } = d;
+  const [futureGpa, setFutureGpa] = useState<number>(4.0);
+  const target = state.targetCgpa ?? 3.6;
+
+  const remainingCredits =
+    progress.hasCreditData && state.mode === 'current'
+      ? progress.remainingCredits
+      : Math.max(0, d.totalProgrammeCredits - record.creditHours);
+
+  const futureError = validateGpa(futureGpa, grading);
+  const futureValid = !futureError && remainingCredits > 0 && record.cgpa !== null;
+
+  const projectedFinal = futureValid
+    ? (record.points + futureGpa * remainingCredits) /
+      (record.creditHours + remainingCredits)
+    : null;
+
+  const required = futureValid
+    ? (target * (record.creditHours + remainingCredits) - record.points) /
+      remainingCredits
+    : null;
+
+  const maxFinal =
+    record.cgpa !== null && remainingCredits > 0
+      ? (record.points + d.maxPoints * remainingCredits) /
+        (record.creditHours + remainingCredits)
+      : null;
+
+  return (
+    <>
+      <Card>
+        <SectionTitle
+          icon="🗺️"
+          title="Planning mode"
+          subtitle="Where are you, where do you want to finish, and what future GPA gets you there?"
+        />
+
+        <label className="block">
+          <span className="label">Current CGPA</span>
+          <input
+            type="number"
+            min={0}
+            max={d.maxPoints}
+            step={0.01}
+            className={`input text-center text-lg font-black ${
+              validateGpa(state.baseline.cgpa, grading)
+                ? 'ring-2 ring-red-300'
+                : ''
+            }`}
+            placeholder={`0.00–${d.maxPoints.toFixed(2)}`}
+            value={state.baseline.cgpa ?? ''}
+            onChange={(e) =>
+              dispatch({
+                type: 'setBaseline',
+                patch: { cgpa: e.target.value === '' ? null : Number(e.target.value) },
+              })
+            }
+          />
+          {validateGpa(state.baseline.cgpa, grading) && (
+            <span className="mt-1 block text-center text-[10px] font-semibold text-red-600">
+              {validateGpa(state.baseline.cgpa, grading)}
+            </span>
+          )}
+        </label>
+
+        <div className="mt-3">
+          <span className="label">Target classification</span>
+          <div className="flex flex-wrap gap-2">
+            {classification.bands
+              .filter((b) => b.minCgpa > 0)
+              .map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => dispatch({ type: 'setTarget', target: b.minCgpa })}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 transition ${
+                    target >= b.minCgpa && target <= b.maxCgpa
+                      ? 'bg-brand-600 text-white ring-brand-600'
+                      : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {b.label.split('(')[0].trim()} ({b.minCgpa.toFixed(1)})
+                </button>
+              ))}
+          </div>
+        </div>
+
+        <label className="mt-3 block">
+          <span className="label">Future GPA scenario (semesters ahead)</span>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={d.maxPoints}
+              step={0.05}
+              value={Math.min(futureGpa, d.maxPoints)}
+              onChange={(e) => setFutureGpa(Number(e.target.value))}
+              className="flex-1 accent-brand-600"
+            />
+            <span className="w-16 rounded-xl bg-brand-600 py-2 text-center text-lg font-black text-white">
+              {futureGpa.toFixed(2)}
+            </span>
+          </div>
+          {futureError && (
+            <span className="mt-1 block text-[10px] font-semibold text-red-600">
+              {futureError}
+            </span>
+          )}
+        </label>
+      </Card>
+
+      {record.cgpa === null ? (
+        <Note>Enter your current CGPA above to see your projected finish.</Note>
+      ) : remainingCredits <= 0 ? (
+        <Note>
+          {d.curriculumPublished
+            ? 'No future credits are configured beyond your current point. Publish more of the curriculum to see full scenarios.'
+            : 'The programme curriculum has not been published yet, so the number of future credits is unknown. Scenarios become precise once the administrator publishes real courses. Your current CGPA is recorded above.'}
+        </Note>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Card className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Projected final CGPA
+              </p>
+              <p className="mt-1 text-3xl font-black text-brand-700">
+                {fmt2(projectedFinal)}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                if you average {futureGpa.toFixed(2)} over {remainingCredits} remaining cr
+              </p>
+            </Card>
+            <Card className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Best possible finish
+              </p>
+              <p className="mt-1 text-3xl font-black text-emerald-600">
+                {fmt2(maxFinal)}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                straight {d.maxPoints.toFixed(2)} from here
+              </p>
+            </Card>
+          </div>
+
+          <Card
+            className={
+              required !== null && required <= d.maxPoints + 1e-9
+                ? 'bg-emerald-50 ring-emerald-200'
+                : 'bg-red-50 ring-red-200'
+            }
+          >
+            <p className="text-sm font-bold text-slate-800">
+              {required !== null && required <= 0
+                ? `✅ You'll clear ${fmt2(target)} even with a 0.00 average from here.`
+                : required !== null && required <= d.maxPoints + 1e-9
+                  ? `🟢 Reachable — average about ${fmt2(required)} over your remaining ${remainingCredits} credits to finish at ${fmt2(target)}.`
+                  : `🔴 ${fmt2(target)} isn't reachable on remaining credits alone — best possible is ${fmt2(maxFinal)}.`}
+            </p>
+          </Card>
+        </>
+      )}
+    </>
   );
 }
 

@@ -9,6 +9,7 @@ import type {
   AcademicState,
   CalcMode,
   CourseEntry,
+  InputMode,
   SemesterEntry,
 } from './studentState';
 import { uid } from '../util/format';
@@ -47,8 +48,9 @@ function makeSemester(levelIndex: number, semesterIndex: number): SemesterEntry 
 
 function initialState(): AcademicState {
   return {
-    mode: 'history',
-    semesters: [makeSemester(1, 1)],
+    inputMode: 'quick',
+    mode: 'current',
+    semesters: [],
     baseline: {
       levelIndex: 1,
       semesterIndex: 1,
@@ -61,8 +63,14 @@ function initialState(): AcademicState {
   };
 }
 
+/** Map the student-facing input mode to the engine data mode. */
+function engineModeFor(inputMode: InputMode): CalcMode {
+  return inputMode === 'history' ? 'history' : 'current';
+}
+
 type Action =
   | { type: 'reset' }
+  | { type: 'setInputMode'; inputMode: InputMode }
   | { type: 'setMode'; mode: CalcMode }
   | { type: 'setTarget'; target: number | null }
   | { type: 'setBaseline'; patch: Partial<AcademicState['baseline']> }
@@ -101,6 +109,16 @@ function reducer(state: AcademicState, action: Action): AcademicState {
   switch (action.type) {
     case 'reset':
       return initialState();
+
+    case 'setInputMode': {
+      const mode = engineModeFor(action.inputMode);
+      // History mode needs at least one semester entry to fill in.
+      const semesters =
+        mode === 'history' && state.semesters.length === 0
+          ? [makeSemester(1, 1)]
+          : state.semesters;
+      return { ...state, inputMode: action.inputMode, mode, semesters };
+    }
 
     case 'setMode':
       return { ...state, mode: action.mode };

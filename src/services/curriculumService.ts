@@ -53,6 +53,12 @@ export function getUniversity(id: string): University | undefined {
   return universities.find((u) => u.id === id);
 }
 
+/** All universities known to this build/catalog (for the student selector). */
+export function listUniversities(): University[] {
+  ensureInit();
+  return universities.filter((u) => u.status === 'active');
+}
+
 export function getSchool(
   universityId: string,
   schoolId: string

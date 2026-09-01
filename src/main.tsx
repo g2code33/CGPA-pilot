@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { StoreProvider } from './state/store';
+import { InstitutionProvider } from './state/institutionSelection';
 import App from './App';
 import './index.css';
 
@@ -17,7 +18,9 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <StoreProvider>
-      <App />
+      <InstitutionProvider>
+        <App />
+      </InstitutionProvider>
     </StoreProvider>
   </React.StrictMode>
 );

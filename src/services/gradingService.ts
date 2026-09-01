@@ -28,6 +28,38 @@ export function maxGradePoints(system: GradingSystem): number {
   return system.bands.reduce((m, b) => Math.max(m, b.points), 0);
 }
 
+/** Lowest grade point defined (usually 0.0) — the validation floor. */
+export function minGradePoints(system: GradingSystem): number {
+  return system.bands.reduce((m, b) => Math.min(m, b.points), 0);
+}
+
+/**
+ * Validate a student-entered GPA/CGPA against the configured grading system.
+ * Returns null when valid, or a short human-readable reason. An empty value
+ * (null) is valid — the student simply hasn't entered anything yet.
+ */
+export function validateGpa(
+  value: number | null,
+  system: GradingSystem
+): string | null {
+  if (value === null) return null;
+  if (Number.isNaN(value)) return 'Enter a number.';
+  const min = minGradePoints(system);
+  const max = maxGradePoints(system);
+  if (value < min - 1e-9) {
+    return `GPA cannot be below ${min.toFixed(2)}.`;
+  }
+  if (value > max + 1e-9) {
+    return `GPA cannot exceed ${max.toFixed(2)} on this grading scale.`;
+  }
+  return null;
+}
+
+/** Clamp a numeric entry to the grading scale (for derived/derived defaults). */
+export function clampGpa(value: number, system: GradingSystem): number {
+  return Math.min(maxGradePoints(system), Math.max(minGradePoints(system), value));
+}
+
 /** Lowest grade point above zero, used for worst-case projections. */
 export function minPositiveGradePoints(system: GradingSystem): number {
   const positive = system.bands.filter((b) => b.points > 0).map((b) => b.points);

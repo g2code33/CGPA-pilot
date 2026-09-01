@@ -1,6 +1,7 @@
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Stat } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
+import { InstitutionSelector } from '../components/InstitutionSelector';
 import { buildBrief } from '../services/pilotBriefService';
 import { classifyCgpa } from '../services/classificationService';
 import { fmt2, fmt1 } from '../util/format';
@@ -9,7 +10,13 @@ type Tab = 'calculate' | 'target' | 'whatif' | 'flight' | 'next' | 'print' | 'pr
 
 export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   const d = useDerived();
-  const { record, classBand } = d;
+  const { record, classBand, dispatch } = d;
+
+  // Launch a student input mode: set the mode first, then open Calculate.
+  const start = (mode: 'quick' | 'history' | 'planning') => {
+    dispatch({ type: 'setInputMode', inputMode: mode });
+    onNavigate('calculate');
+  };
 
   const targetClass = d.state.targetCgpa
     ? classifyCgpa(d.state.targetCgpa, d.classification)
@@ -34,6 +41,43 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
 
   return (
     <div className="space-y-4">
+      {/* Institution selection (in-memory, config-driven) */}
+      <InstitutionSelector compact />
+
+      {/* Quick start: the three student input modes */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {[
+          {
+            id: 'quick' as const,
+            icon: '⚡',
+            title: 'Quick mode',
+            hint: 'Current level + CGPA',
+          },
+          {
+            id: 'history' as const,
+            icon: '📚',
+            title: 'GPA History',
+            hint: 'Enter each semester GPA',
+          },
+          {
+            id: 'planning' as const,
+            icon: '🗺️',
+            title: 'Planning mode',
+            hint: 'Target + future scenarios',
+          },
+        ].map((m) => (
+          <button
+            key={m.id}
+            onClick={() => start(m.id)}
+            className="rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-slate-200 transition hover:ring-brand-400"
+          >
+            <span className="text-2xl">{m.icon}</span>
+            <p className="mt-1 text-sm font-extrabold text-slate-800">{m.title}</p>
+            <p className="text-[11px] text-slate-500">{m.hint}</p>
+          </button>
+        ))}
+      </div>
+
       {/* Context strip */}
       <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] font-semibold text-slate-500">
         <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700 ring-1 ring-brand-200">
@@ -146,7 +190,16 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
           )}
         />
         <Stat label="Pending" value={record.pendingCount} sub={`${record.pendingCreditHours} cr.`} />
-        <Stat label="Mode" value={d.state.mode === 'history' ? 'GPA History' : 'Current CGPA'} />
+        <Stat
+          label="Mode"
+          value={
+            d.state.inputMode === 'quick'
+              ? 'Quick'
+              : d.state.inputMode === 'history'
+                ? 'GPA History'
+                : 'Planning'
+          }
+        />
       </div>
 
       <Card>

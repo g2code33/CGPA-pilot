@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAcademic } from './store';
+import { useInstitution } from './institutionSelection';
 import { resolveContext, INSTITUTION_LABEL } from '../config/context';
 import { getActiveCurriculum } from '../services/curriculumService';
 import { classifyCgpa } from '../services/classificationService';
@@ -26,13 +27,14 @@ import {
  */
 export function useDerived() {
   const { state, dispatch } = useAcademic();
+  const { context } = useInstitution();
 
   return useMemo(() => {
     const { university, school, programme, gradingSystem, classificationSystem } =
-      resolveContext();
+      resolveContext(context);
     const grading = gradingSystem!;
     const classification = classificationSystem!;
-    const curriculum = getActiveCurriculum();
+    const curriculum = getActiveCurriculum(context);
 
     const slots: SemesterSlot[] = curriculumSemesters(curriculum);
     const configuredCreditsFor = (levelIndex: number, semesterIndex: number) =>
@@ -108,7 +110,8 @@ export function useDerived() {
       slots,
       totalProgrammeCredits: totalProgrammeCredits(curriculum),
       progress,
-      institutionLabel: INSTITUTION_LABEL,
+      institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
+        || INSTITUTION_LABEL,
       maxPoints: maxGradePoints(grading),
       // derived record
       snapshot,
@@ -117,5 +120,5 @@ export function useDerived() {
       classBand,
       pending,
     };
-  }, [state]);
+  }, [state, context]);
 }

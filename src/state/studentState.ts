@@ -5,6 +5,17 @@
 // configuration (which IS cached offline, non-personal).
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * The three student-facing input experiences (Prompt 8):
+ *  - 'quick'    : current level + current CGPA only.
+ *  - 'history'  : semester-by-semester GPA history.
+ *  - 'planning' : current CGPA + target classification + future scenarios.
+ * Internally 'quick' and 'planning' both resolve to the current-CGPA engine
+ * mode; 'history' resolves to the history engine mode.
+ */
+export type InputMode = 'quick' | 'history' | 'planning';
+
+/** Engine data mode: a history of semesters, or a current-CGPA baseline. */
 export type CalcMode = 'history' | 'current';
 
 /**
@@ -75,6 +86,9 @@ export interface CurrentBaseline {
 }
 
 export interface AcademicState {
+  /** The student-facing input experience (quick / history / planning). */
+  inputMode: InputMode;
+  /** Engine data mode derived from inputMode ('current' for quick/planning). */
   mode: CalcMode;
   semesters: SemesterEntry[];
   baseline: CurrentBaseline;

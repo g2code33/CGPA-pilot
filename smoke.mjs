@@ -137,6 +137,26 @@ for (const f of sources.filter((x) => x.includes(join('src', 'views')))) {
   );
 }
 
+// ── 4. Student academic values never go into URLs or to a server ──────────
+// The student state/store/institution-selection layer must not touch the
+// URL/history or network — inputs are in-memory and never transmitted.
+const noLeakFiles = sources.filter(
+  (f) =>
+    f.includes(join('src', 'state')) ||
+    /coreCgpaService|pendingService|structureService|gradingService|classificationService|scenarioService/.test(
+      f
+    )
+);
+const URL_NET_RE =
+  /window\.location(?:\.href|\.search|\.hash|=)|\.pushState|\.replaceState|location\.search|new URLSearchParams|history\.(?:push|replace)|fetch\s*\(|XMLHttpRequest|navigator\.sendBeacon/;
+for (const f of noLeakFiles) {
+  const code = stripNoise(readFileSync(f, 'utf8'));
+  assert(
+    !URL_NET_RE.test(code),
+    `${f.slice(root.length + 1)} never writes student values to a URL or the network`
+  );
+}
+
 if (failures > 0) {
   console.error(`\n${failures} smoke check(s) failed.`);
   process.exit(1);
