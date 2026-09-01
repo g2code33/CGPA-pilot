@@ -3,32 +3,53 @@ import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
 import { targetableBands } from '../services/classificationService';
 import {
-  requiredFutureGpa,
-  maxPossibleCgpa,
   creditHoursToTargetAtStraightA,
   assessFeasibility,
 } from '../services/projectionService';
+import {
+  requiredFutureGpaPrecise,
+  maximumFinalCgpa,
+  targetFeasible,
+} from '../services/coreCgpaService';
 import { fmt2 } from '../util/format';
 
 export function Target() {
   const d = useDerived();
-  const { record, dispatch, classification } = d;
-  const [remaining, setRemaining] = useState(120);
+  const { record, dispatch, classification, grading, progress, maxPoints } = d;
+
+  // Default remaining credits come from the configured curriculum (in current
+  // mode) or the total programme structure; the student can override.
+  const defaultRemaining =
+    d.state.mode === 'current' && progress.hasCreditData
+      ? progress.remainingCredits
+      : Math.max(0, d.totalProgrammeCredits - record.creditHours);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const remainingCredits = remaining ?? defaultRemaining;
 
   const target = d.state.targetCgpa ?? 3.6;
   const cgpa = record.cgpa;
 
-  const maxPoints = d.maxPoints;
-  const req = requiredFutureGpa(record.points, record.creditHours, remaining, target);
-  const max = maxPossibleCgpa(record.points, record.creditHours, remaining, maxPoints);
+  const reqPrecise = requiredFutureGpaPrecise(
+    record.points,
+    record.creditHours,
+    remainingCredits,
+    target
+  );
+  const max = maximumFinalCgpa(
+    record.points,
+    record.creditHours,
+    remainingCredits,
+    grading
+  );
   const feasibility = assessFeasibility(
     record.points,
     record.creditHours,
-    remaining,
+    remainingCredits,
     target,
     cgpa,
     maxPoints
   );
+  const feasible = targetFeasible(reqPrecise, grading);
   const atStraightA = creditHoursToTargetAtStraightA(
     record.points,
     record.creditHours,
@@ -36,8 +57,9 @@ export function Target() {
     maxPoints
   );
   const projected =
-    req !== null && req >= 0 && req <= maxPoints
-      ? (record.points + req * remaining) / (record.creditHours + remaining)
+    reqPrecise !== null && reqPrecise >= 0 && feasible
+      ? (record.points + reqPrecise * remainingCredits) /
+        (record.creditHours + remainingCredits)
       : null;
 
   return (
@@ -97,12 +119,22 @@ export function Target() {
               min={0}
               max={400}
               className="input w-36 text-center text-lg font-black"
-              value={remaining}
+              value={remaining ?? remainingCredits}
               onChange={(e) =>
-                setRemaining(Math.max(0, Number(e.target.value) || 0))
+                e.target.value === ''
+                  ? setRemaining(null)
+                  : setRemaining(Math.max(0, Number(e.target.value) || 0))
               }
             />
           </div>
+          {d.state.mode === 'current' && progress.hasCreditData && (
+            <button
+              onClick={() => setRemaining(progress.remainingCredits)}
+              className="rounded-lg bg-emerald-100 px-3 py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-200"
+            >
+              Use curriculum ({progress.remainingCredits})
+            </button>
+          )}
           <div className="flex gap-1.5">
             {[30, 60, 90, 120, 180].map((v) => (
               <button
@@ -144,19 +176,19 @@ export function Target() {
                     ? '🟢 Target reachable'
                     : '🔴 Out of range'}
               </p>
-              {req !== null && feasibility.zone !== 'achieved' && (
+              {reqPrecise !== null && feasibility.zone !== 'achieved' && (
                 <p
                   className={`my-1 text-5xl font-black ${
                     feasibility.zone === 'off' ? 'text-red-600' : 'text-sky-700'
                   }`}
                 >
-                  {req < 0 ? '0.00' : fmt2(req)}
+                  {reqPrecise < 0 ? "0.00" : fmt2(reqPrecise)}
                 </p>
               )}
               <p className="text-sm font-medium text-slate-700">{feasibility.message}</p>
               {projected !== null && feasibility.zone === 'on' && (
                 <p className="mt-1 text-xs font-semibold text-sky-800">
-                  Finish on {fmt2(projected)} after {remaining} more credits.
+                  Finish on {fmt2(projected)} after {remainingCredits} more credits.
                 </p>
               )}
             </>

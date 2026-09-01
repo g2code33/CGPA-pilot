@@ -32,15 +32,23 @@ function makeCourse(): CourseEntry {
   };
 }
 
-function makeSemester(label: string): SemesterEntry {
-  return { id: uid(), label, courses: [makeCourse()] };
+function makeSemester(levelIndex: number, semesterIndex: number): SemesterEntry {
+  return {
+    id: uid(),
+    label: `Level ${levelIndex * 100} · Semester ${semesterIndex}`,
+    levelIndex,
+    semesterIndex,
+    gpa: null,
+    creditHoursOverride: null,
+    courses: [],
+  };
 }
 
 function initialState(): AcademicState {
   return {
     mode: 'history',
-    semesters: [makeSemester('Level 100 · Semester 1')],
-    baseline: { cgpa: null, creditHours: 0 },
+    semesters: [makeSemester(1, 1)],
+    baseline: { levelIndex: 1, semesterIndex: 1, cgpa: null, creditHours: 0 },
     targetCgpa: 3.6, // First Class (UCC)
     plannedNextCreditHours: 18,
   };
@@ -55,9 +63,31 @@ type Action =
   | { type: 'addSemester' }
   | { type: 'removeSemester'; semesterId: string }
   | { type: 'renameSemester'; semesterId: string; label: string }
+  | { type: 'setSemesterGpa'; semesterId: string; gpa: number | null }
+  | {
+      type: 'setSemesterCredits';
+      semesterId: string;
+      creditHours: number | null;
+    }
   | { type: 'addCourse'; semesterId: string }
   | { type: 'removeCourse'; semesterId: string; courseId: string }
-  | { type: 'updateCourse'; semesterId: string; courseId: string; patch: Partial<CourseEntry> };
+  | {
+      type: 'updateCourse';
+      semesterId: string;
+      courseId: string;
+      patch: Partial<CourseEntry>;
+    };
+
+function nextLevelSemester(semesters: SemesterEntry[]): {
+  level: number;
+  semester: number;
+} {
+  // Follow the conventional two-semesters-per-level progression.
+  const n = semesters.length + 1;
+  const level = Math.ceil(n / 2);
+  const semester = ((n - 1) % 2) + 1;
+  return { level, semester };
+}
 
 function reducer(state: AcademicState, action: Action): AcademicState {
   switch (action.type) {
@@ -80,15 +110,10 @@ function reducer(state: AcademicState, action: Action): AcademicState {
       };
 
     case 'addSemester': {
-      const n = state.semesters.length + 1;
-      const level = Math.ceil(n / 2);
-      const sem = ((n - 1) % 2) + 1;
+      const { level, semester } = nextLevelSemester(state.semesters);
       return {
         ...state,
-        semesters: [
-          ...state.semesters,
-          makeSemester(`Level ${level * 100} · Semester ${sem}`),
-        ],
+        semesters: [...state.semesters, makeSemester(level, semester)],
       };
     }
 
@@ -103,6 +128,24 @@ function reducer(state: AcademicState, action: Action): AcademicState {
         ...state,
         semesters: state.semesters.map((s) =>
           s.id === action.semesterId ? { ...s, label: action.label } : s
+        ),
+      };
+
+    case 'setSemesterGpa':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId ? { ...s, gpa: action.gpa } : s
+        ),
+      };
+
+    case 'setSemesterCredits':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId
+            ? { ...s, creditHoursOverride: action.creditHours }
+            : s
         ),
       };
 

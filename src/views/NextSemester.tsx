@@ -5,8 +5,17 @@ import { fmt2 } from '../util/format';
 
 export function NextSemester() {
   const d = useDerived();
-  const { record, dispatch, grading, classification } = d;
-  const credits = d.state.plannedNextCreditHours;
+  const { record, dispatch, grading, classification, progress, slots } = d;
+  // Next semester's configured credit load, when the curriculum is published
+  // (the slot immediately after the current position in current mode;
+  // otherwise the first un-planned slot after the history semesters).
+  const configuredNext =
+    d.state.mode === 'current' && progress.hasCreditData
+      ? progress.remainingSlots[0]?.credits
+      : slots[d.state.semesters.length]?.credits;
+  const credits = configuredNext && configuredNext > 0
+    ? configuredNext
+    : d.state.plannedNextCreditHours;
   const target = d.state.targetCgpa;
 
   const scenarios =

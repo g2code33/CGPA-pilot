@@ -1,22 +1,27 @@
 import { useMemo } from 'react';
 import { useAcademic } from './store';
 import { resolveContext, INSTITUTION_LABEL } from '../config/context';
-import {
-  getActiveCurriculum,
-  isPublished,
-  curriculumTotalCredits,
-} from '../services/curriculumService';
-import {
-  confirmedRecord,
-  historyTotals,
-  semesterTotals,
-} from '../services/cgpaCalculationService';
+import { getActiveCurriculum } from '../services/curriculumService';
 import { classifyCgpa } from '../services/classificationService';
 import { maxGradePoints } from '../services/gradingService';
+import {
+  computeSnapshot,
+  semesterTerm,
+  type SemesterTerm,
+} from '../services/coreCgpaService';
+import {
+  curriculumSemesters,
+  progressThrough,
+  semesterCredits as configuredSemesterCredits,
+  totalProgrammeCredits,
+  type CurriculumProgress,
+  type SemesterSlot,
+} from '../services/structureService';
 
 /**
  * Single derived-data hook for the UI. Components never calculate directly
- * from configuration — they call the services exposed here.
+ * from configuration or grade values — they read the results of the core
+ * engine exposed here.
  */
 export function useDerived() {
   const { state, dispatch } = useAcademic();
@@ -28,13 +33,49 @@ export function useDerived() {
     const classification = classificationSystem!;
     const curriculum = getActiveCurriculum();
 
-    const record = confirmedRecord(state, grading);
-    const history = historyTotals(state.semesters, grading);
-    const semesters = state.semesters.map((semester) => ({
-      semester,
-      totals: semesterTotals(semester, grading),
-    }));
-    const classBand = classifyCgpa(record.cgpa, classification);
+    const slots: SemesterSlot[] = curriculumSemesters(curriculum);
+    const configuredCreditsFor = (levelIndex: number, semesterIndex: number) =>
+      configuredSemesterCredits(curriculum, levelIndex, semesterIndex);
+
+    // Current-CGPA mode: the configured curriculum tells us completed and
+    // remaining credit structure from the student's current level/semester.
+    const progress: CurriculumProgress = progressThrough(
+      curriculum,
+      state.baseline.levelIndex,
+      state.baseline.semesterIndex
+    );
+    const curriculumCompletedCredits =
+      curriculum && progress.hasCreditData ? progress.completedCredits : null;
+
+    const snapshot = computeSnapshot(state, grading, {
+      configuredCreditsFor,
+      curriculumCompletedCredits,
+    });
+
+    // Backwards-compatible record shape for the views.
+    const record = {
+      points: snapshot.qualityPoints,
+      creditHours: snapshot.creditHours,
+      cgpa: snapshot.cgpa,
+      pendingCount: snapshot.pendingCount,
+      pendingCreditHours: snapshot.pendingCreditHours,
+    };
+
+    const semesters = state.semesters.map((semester) => {
+      const configured = configuredCreditsFor(
+        semester.levelIndex,
+        semester.semesterIndex
+      );
+      const term: SemesterTerm = semesterTerm(semester, grading, configured);
+      return {
+        semester,
+        configuredCredits: configured,
+        effectiveCredits: term.creditHours,
+        term,
+      };
+    });
+
+    const classBand = classifyCgpa(snapshot.cgpa, classification);
 
     return {
       state,
@@ -46,15 +87,17 @@ export function useDerived() {
       grading,
       classification,
       curriculum,
-      curriculumPublished: isPublished(curriculum),
-      curriculumCredits: curriculum ? curriculumTotalCredits(curriculum) : 0,
+      curriculumPublished: !!curriculum,
+      slots,
+      totalProgrammeCredits: totalProgrammeCredits(curriculum),
+      progress,
       institutionLabel: INSTITUTION_LABEL,
+      maxPoints: maxGradePoints(grading),
       // derived record
+      snapshot,
       record,
-      history,
       semesters,
       classBand,
-      maxPoints: maxGradePoints(grading),
     };
   }, [state]);
 }

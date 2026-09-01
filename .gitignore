@@ -20,3 +20,4 @@ android/captures/
 *.p12
 keystore.properties
 android/app/release-keystore.p12
+.test-build/

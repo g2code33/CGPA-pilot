@@ -15,6 +15,7 @@
     "build:web": "vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit",
+    "test": "node test/run-tests.mjs",
     "preview": "vite preview",
     "smoke": "npm run build:web && node smoke.mjs",
     "dist": "npm run build:web && npm run build:electron && electron-builder",
