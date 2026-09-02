@@ -752,6 +752,123 @@ export function bulkAddCourses(
   });
 }
 
+/** One imported period (semester or Level-600 cycle) with its courses. */
+export interface ImportedLevelSpec {
+  levelIndex: number;
+  label?: string;
+  semesters: {
+    semesterIndex: number;
+    label?: string;
+    rows: BulkRow[];
+  }[];
+}
+
+/**
+ * Apply an ENTIRE imported curriculum structure at once: ensures the needed
+ * levels (1..N) and two semester slots per level exist, then appends the
+ * imported courses (skipping codes already present). Works for draft/review
+ * curricula only — published versions are locked.
+ */
+export function importAllCourses(
+  catalog: AdminCatalog,
+  id: string,
+  levels: ImportedLevelSpec[]
+): { catalog: AdminCatalog; added: number; skipped: number } {
+  let added = 0;
+  let skipped = 0;
+
+  const next = editCurriculum(catalog, id, (c) => {
+    if (!mutatable(c.status)) return c;
+
+    // Ensure enough levels, each with at least two semesters.
+    const maxLevel = Math.max(c.levels.length, ...levels.map((l) => l.levelIndex));
+    let levelsArr = c.levels.map((l) => ({ ...l, semesters: l.semesters.map((s) => ({ ...s, courses: [...s.courses] })) }));
+    for (let i = levelsArr.length; i < maxLevel; i++) {
+      const index = i + 1;
+      levelsArr.push({
+        index,
+        label: `Level ${index * 100}`,
+        semesters: [
+          { index: 1, label: 'Semester 1', courses: [] },
+          { index: 2, label: 'Semester 2', courses: [] },
+        ],
+      });
+    }
+
+    for (const lvSpec of levels) {
+      const lv = levelsArr.find((l) => l.index === lvSpec.levelIndex);
+      if (!lv) continue;
+      if (lvSpec.label) lv.label = lvSpec.label;
+      for (const semSpec of lvSpec.semesters) {
+        let sem = lv.semesters.find((s) => s.index === semSpec.semesterIndex);
+        if (!sem) {
+          sem = { index: semSpec.semesterIndex, label: semSpec.label ?? `Semester ${semSpec.semesterIndex}`, courses: [] };
+          lv.semesters.push(sem);
+          lv.semesters.sort((a, b) => a.index - b.index);
+        }
+        const existing = new Set(sem.courses.map((x) => x.code.toUpperCase()));
+        for (const row of semSpec.rows) {
+          if (!row.code) continue;
+          if (existing.has(row.code)) {
+            skipped++;
+            continue;
+          }
+          // Split combined codes like "PHM608, 610, 612, 614" into one course per code.
+          const codes = expandCombinedCodes(row.code);
+          for (const code of codes) {
+            if (existing.has(code)) {
+              skipped++;
+              continue;
+            }
+            sem.courses.push({
+              id: cid('crs'),
+              code,
+              name: row.name,
+              creditHours: row.creditHours,
+              level: lv.index,
+              semester: sem.index,
+              programmeId: c.programmeId,
+              curriculumId: id,
+              status: 'active' as const,
+              core: true,
+            });
+            existing.add(code);
+            added++;
+          }
+        }
+      }
+    }
+
+    return { ...c, levels: levelsArr };
+  });
+
+  return { catalog: next, added, skipped };
+}
+
+/**
+ * Expand a combined code cell into individual course codes.
+ * "PHM608, 610, 612, 614" → ["PHM608", "PHM610", "PHM612", "PHM614"].
+ * Plain codes pass through unchanged.
+ */
+export function expandCombinedCodes(code: string): string[] {
+  const parts = code.split(/[,/;]|\s+and\s+/i).map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return [code.toUpperCase()];
+  const out: string[] = [];
+  let prefix = '';
+  for (const part of parts) {
+    const withPrefix = /^[A-Za-z]+\d/.test(part);
+    if (withPrefix) {
+      prefix = part.replace(/\d+.*$/, '');
+      out.push(part.toUpperCase());
+    } else if (/^\d{2,3}[A-Z]?$/.test(part) && prefix) {
+      out.push((prefix + part).toUpperCase());
+    } else {
+      out.push(part.toUpperCase());
+    }
+  }
+  return out;
+}
+
 // ── Totals ────────────────────────────────────────────────────────────────
 
 export interface SemesterStat {

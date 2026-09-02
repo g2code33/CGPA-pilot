@@ -19,14 +19,23 @@ export interface ImportedSemester {
   semesterIndex: number; // 1-based within the level
   label: string;
   rows: BulkRow[];
+  totalCredits?: number;
+}
+
+export interface ImportedLevel {
+  levelIndex: number; // 1-based
+  label: string;
+  semesters: ImportedSemester[];
 }
 
 export interface ImportResult {
   semesters: ImportedSemester[];
+  levels: ImportedLevel[];
   /** Unparseable / ignored lines, shown so the admin can verify. */
   ignored: string[];
   format: 'json' | 'xlsx' | 'pdf';
   fileName: string;
+  program?: string;
 }
 
 // ── Row parsing shared by XLSX/PDF ───────────────────────────────────────
@@ -53,11 +62,17 @@ function toCreditNumber(v: unknown): number {
   return Number.isFinite(n) && n >= 0 && n <= 20 ? n : 0;
 }
 
+/** Parse a semester/period total-credits value (can exceed a single course's credits). */
+function toTotalNumber(v: unknown): number {
+  const n = Number(String(v).trim());
+  return Number.isFinite(n) && n >= 0 && n <= 400 ? n : 0;
+}
+
 /**
  * Convert a matrix of string cells (a worksheet or PDF text lines split into
  * columns) into semester groups of course rows.
  */
-export function parseMatrix(lines: string[][]): { semesters: ImportedSemester[]; ignored: string[] } {
+export function parseMatrix(lines: string[][]): { semesters: ImportedSemester[]; levels: ImportedLevel[]; ignored: string[] } {
   const semesters: ImportedSemester[] = [];
   const ignored: string[] = [];
   let level = 0;
@@ -108,7 +123,13 @@ export function parseMatrix(lines: string[][]): { semesters: ImportedSemester[];
         continue;
       }
     }
-    if (/^(TOTAL|GRAND TOTAL|CREDITS?\s*$)/i.test(cells[0])) continue;
+    if (/^(TOTAL|GRAND TOTAL|CREDITS?\s*$)/i.test(cells[0])) {
+      // Capture the semester total if present (trailing number).
+      const total = numbersTrailing(cells);
+      const { sem } = ensure();
+      if (total > 0) sem.totalCredits = total;
+      continue;
+    }
 
     // Course row: code first, credits among the trailing numeric cells.
     const codeCell = cells[0];
@@ -150,10 +171,82 @@ export function parseMatrix(lines: string[][]): { semesters: ImportedSemester[];
     });
   }
 
-  return { semesters, ignored };
+  // Group semesters into levels.
+  const levels: ImportedLevel[] = [];
+  for (const sem of semesters) {
+    let lv = levels.find((l) => l.levelIndex === sem.levelIndex);
+    if (!lv) {
+      lv = {
+        levelIndex: sem.levelIndex,
+        label: `Level ${sem.levelIndex * 100}`,
+        semesters: [],
+      };
+      levels.push(lv);
+    }
+    lv.semesters.push(sem);
+  }
+
+  return { semesters, levels, ignored };
+}
+
+function numbersTrailing(cells: string[]): number {
+  const nums = cells
+    .slice(1)
+    .map(toTotalNumber)
+    .filter((n) => n > 0);
+  return nums[nums.length - 1] ?? 0;
 }
 
 // ── JSON ────────────────────────────────────────────────────────────────
+
+/** Decode the level number from "Level 100", "level 400", or a raw 1..8. */
+function levelFromValue(v: unknown, fallback: number): number {
+  if (typeof v === 'number') return v >= 100 ? Math.round(v / 100) : v;
+  const m = String(v ?? '').match(/(\d{3})\b|level\s*([1-8])\b/i);
+  if (m) {
+    if (m[1]) return Math.round(Number(m[1]) / 100);
+    if (m[2]) return Number(m[2]);
+  }
+  return fallback;
+}
+
+/** Decode semester (or "cycle") number from "1st semester", "Cycle two", 1/2. */
+function periodFromValue(v: unknown, fallback: number): number {
+  if (typeof v === 'number') return v;
+  const s = String(v ?? '').toLowerCase();
+  const word: Record<string, number> = {
+    first: 1, one: 1, second: 2, two: 2, third: 3, fourth: 4,
+  };
+  for (const [w, n] of Object.entries(word)) if (s.includes(w)) return n;
+  const m = s.match(/(\d)\s*(?:st|nd|rd|th)?/);
+  return m ? Number(m[1]) : fallback;
+}
+
+function creditsFromCourse(c: Record<string, unknown>): number {
+  const raw = c.C ?? c.creditHours ?? c.credits ?? c.credit ?? c.credit_hours;
+  if (raw !== undefined) return toCreditNumber(raw);
+  // Fall back to T + P.
+  return toCreditNumber(c.T ?? 0) + toCreditNumber(c.P ?? 0);
+}
+
+function unescapeHtml(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+function courseCodeFrom(c: Record<string, unknown>): string {
+  return String(c.code ?? c.courseCode ?? c.id ?? '').toUpperCase().trim();
+}
+function courseNameFrom(c: Record<string, unknown>): string {
+  return unescapeHtml(
+    String(c.title ?? c.name ?? c.courseTitle ?? c.course_name ?? '(untitled)')
+  ).trim();
+}
 
 interface JsonCourse {
   code?: string;
@@ -166,80 +259,185 @@ interface JsonCourse {
   credits?: number | string;
   credit?: number | string;
   C?: number | string;
-  level?: number;
+  T?: number | string;
+  P?: number | string;
+  level?: number | string;
   levelIndex?: number;
-  semester?: number;
+  semester?: number | string;
   semesterIndex?: number;
+}
+
+function makeSemester(levelIndex: number, periodIndex: number, label: string): ImportedSemester {
+  return {
+    levelIndex,
+    semesterIndex: periodIndex,
+    label: label || `Level ${levelIndex * 100} · Semester ${periodIndex}`,
+    rows: [],
+  };
+}
+
+/**
+ * Rich full-curriculum format:
+ *   { program, levels: [ { level: "Level 100", semesters: [ { semester:
+ *     "1st semester", courses: [{code,title,T,P,C}], total_credits } ] } ] }
+ * Level 600 may use "cycles" instead of "semesters" (Cycle one/two) — these
+ * are treated as the two slots of that level.
+ */
+function parseStructuredJson(data: {
+  program?: string;
+  levels?: Record<string, unknown>[];
+}): { levels: ImportedLevel[]; ignored: string[]; program?: string } {
+  const ignored: string[] = [];
+  const out: ImportedLevel[] = [];
+
+  (data.levels ?? []).forEach((lvRaw, li) => {
+    const lv = lvRaw as Record<string, unknown>;
+    const levelIndex = levelFromValue(lv.level ?? lv.label ?? lv.index ?? li + 1, li + 1);
+    const level: ImportedLevel = {
+      levelIndex,
+      label: String(lv.level ?? lv.label ?? `Level ${levelIndex * 100}`),
+      semesters: [],
+    };
+    // A level may have "semesters" or "cycles" (Level 600).
+    const periods =
+      (lv.semesters as Record<string, unknown>[] | undefined) ??
+      (lv.cycles as Record<string, unknown>[] | undefined) ??
+      [];
+    periods.forEach((pRaw, pi) => {
+      const p = pRaw as Record<string, unknown>;
+      const periodIndex = periodFromValue(p.semester ?? p.cycle ?? p.index ?? pi + 1, pi + 1);
+      const sem = makeSemester(
+        levelIndex,
+        periodIndex,
+        String(p.semester ?? p.cycle ?? `Semester ${periodIndex}`)
+      );
+      const total = toTotalNumber(p.total_credits ?? p.totalCredits ?? 0);
+      if (total > 0) sem.totalCredits = total;
+      for (const cRaw of (p.courses as Record<string, unknown>[] | undefined) ?? []) {
+        const code = courseCodeFrom(cRaw);
+        if (!code) {
+          ignored.push(JSON.stringify(cRaw));
+          continue;
+        }
+        const credits = creditsFromCourse(cRaw);
+        sem.rows.push({
+          code,
+          name: courseNameFrom(cRaw),
+          creditHours: credits,
+          valid: credits > 0,
+        });
+      }
+      level.semesters.push(sem);
+    });
+    out.push(level);
+  });
+
+  out.sort((a, b) => a.levelIndex - b.levelIndex);
+  return { levels: out, ignored, program: data.program };
 }
 
 function parseJson(text: string, fileName: string): ImportResult {
   const data = JSON.parse(text) as unknown;
-  const list: JsonCourse[] = [];
-  const levels = (data as { levels?: unknown[] })?.levels;
-
-  const pushCourse = (c: JsonCourse, levelFallback?: number, semFallback?: number) => {
-    list.push({
-      ...c,
-      level: levelFallback ?? c.level ?? c.levelIndex,
-      semester: semFallback ?? c.semester ?? c.semesterIndex,
-    });
-  };
-
-  if (Array.isArray(data)) {
-    for (const item of data as JsonCourse[]) {
-      if (item && typeof item === 'object') pushCourse(item);
-    }
-  } else if (Array.isArray(levels)) {
-    for (const lv of levels as { index?: number; label?: string; semesters?: { index?: number; courses?: JsonCourse[] }[] }[]) {
-      const li = lv.index;
-      for (const sem of lv.semesters ?? []) {
-        for (const c of sem.courses ?? []) pushCourse(c, li, sem.index);
-      }
-    }
-  } else if (Array.isArray((data as { courses?: JsonCourse[] })?.courses)) {
-    for (const c of (data as { courses: JsonCourse[] }).courses) pushCourse(c);
-  } else {
-    throw new Error('JSON must be a course array or contain levels[].semesters[].courses[]');
-  }
-
-  const grouped = new Map<string, ImportedSemester>();
   const ignored: string[] = [];
-  for (const c of list) {
-    const code = String(c.code ?? c.courseCode ?? c.id ?? '').toUpperCase().trim();
-    const credits = toCreditNumber(c.creditHours ?? c.credits ?? c.credit ?? c.C ?? 0);
-    const level = Number(c.level) || 1;
-    const semester = Number(c.semester) || 1;
-    if (!code) {
-      ignored.push(JSON.stringify(c));
-      continue;
+
+  const finalize = (
+    levels: ImportedLevel[],
+    program?: string
+  ): ImportResult => {
+    const semesters = levels.flatMap((l) => l.semesters);
+    return {
+      levels,
+      semesters: semesters.sort(
+        (a, b) => a.levelIndex - b.levelIndex || a.semesterIndex - b.semesterIndex
+      ),
+      ignored,
+      format: 'json',
+      fileName,
+      program,
+    };
+  };
+
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const obj = data as Record<string, unknown>;
+
+    // Rich full-curriculum structure ({ program, levels: [{semesters|cycles}] }).
+    if (Array.isArray(obj.levels)) {
+      const { levels, ignored: ig, program } = parseStructuredJson(
+        obj as { program?: string; levels?: Record<string, unknown>[] }
+      );
+      return finalize(levels, program ?? String(obj.program ?? ''));
     }
-    const key = `${level}-${semester}`;
-    let sem = grouped.get(key);
-    if (!sem) {
-      sem = {
-        levelIndex: level,
-        semesterIndex: semester,
-        label: `Level ${level * 100} · Semester ${semester}`,
-        rows: [],
-      };
-      grouped.set(key, sem);
+
+    // Flat { courses: [...] } with optional level/semester on each course.
+    if (Array.isArray(obj.courses)) {
+      const groups = new Map<string, ImportedSemester>();
+      for (const cRaw of obj.courses as Record<string, unknown>[]) {
+        const c = cRaw as JsonCourse;
+        const code = courseCodeFrom(c as Record<string, unknown>);
+        const credits = creditsFromCourse(c as Record<string, unknown>);
+        const level = levelFromValue(c.level ?? c.levelIndex, 1);
+        const semIdx = periodFromValue(c.semester ?? c.semesterIndex, 1);
+        if (!code) {
+          ignored.push(JSON.stringify(c));
+          continue;
+        }
+        const key = `${level}-${semIdx}`;
+        let sem = groups.get(key);
+        if (!sem) {
+          sem = makeSemester(level, semIdx, `Semester ${semIdx}`);
+          groups.set(key, sem);
+        }
+        sem.rows.push({ code, name: courseNameFrom(c as Record<string, unknown>), creditHours: credits, valid: credits > 0 });
+      }
+      const levels: ImportedLevel[] = [];
+      for (const sem of groups.values()) {
+        let lv = levels.find((l) => l.levelIndex === sem.levelIndex);
+        if (!lv) {
+          lv = { levelIndex: sem.levelIndex, label: `Level ${sem.levelIndex * 100}`, semesters: [] };
+          levels.push(lv);
+        }
+        lv.semesters.push(sem);
+      }
+      return finalize(levels);
     }
-    sem.rows.push({
-      code,
-      name: String(c.name ?? c.title ?? c.courseTitle ?? '(untitled)'),
-      creditHours: credits,
-      valid: credits > 0,
-    });
   }
 
-  return {
-    semesters: [...grouped.values()].sort(
-      (a, b) => a.levelIndex - b.levelIndex || a.semesterIndex - b.semesterIndex
-    ),
-    ignored,
-    format: 'json',
-    fileName,
-  };
+  // Bare array of courses.
+  if (Array.isArray(data)) {
+    const groups = new Map<string, ImportedSemester>();
+    for (const cRaw of data as Record<string, unknown>[]) {
+      const c = cRaw as JsonCourse;
+      const code = courseCodeFrom(c as Record<string, unknown>);
+      const credits = creditsFromCourse(c as Record<string, unknown>);
+      const level = levelFromValue(c.level ?? c.levelIndex, 1);
+      const semIdx = periodFromValue(c.semester ?? c.semesterIndex, 1);
+      if (!code) {
+        ignored.push(JSON.stringify(c));
+        continue;
+      }
+      const key = `${level}-${semIdx}`;
+      let sem = groups.get(key);
+      if (!sem) {
+        sem = makeSemester(level, semIdx, `Semester ${semIdx}`);
+        groups.set(key, sem);
+      }
+      sem.rows.push({ code, name: courseNameFrom(c as Record<string, unknown>), creditHours: credits, valid: credits > 0 });
+    }
+    const levels: ImportedLevel[] = [];
+    for (const sem of groups.values()) {
+      let lv = levels.find((l) => l.levelIndex === sem.levelIndex);
+      if (!lv) {
+        lv = { levelIndex: sem.levelIndex, label: `Level ${sem.levelIndex * 100}`, semesters: [] };
+        levels.push(lv);
+      }
+      lv.semesters.push(sem);
+    }
+    return finalize(levels);
+  }
+
+  throw new Error(
+    'JSON must be { levels: [{ semesters|cycles: [{ courses: [] }] }] }, { courses: [] }, or a course array.'
+  );
 }
 
 // ── XLSX (dynamic import keeps SheetJS out of the base admin chunk) ──────
@@ -256,8 +454,8 @@ async function parseXlsx(file: File): Promise<ImportResult> {
       lines.push(r.map((c) => String(c ?? '')));
     }
   }
-  const { semesters, ignored } = parseMatrix(lines);
-  return { semesters, ignored, format: 'xlsx', fileName: file.name };
+  const { semesters, levels, ignored } = parseMatrix(lines);
+  return { semesters, levels, ignored, format: 'xlsx', fileName: file.name };
 }
 
 // ── PDF (dynamic import of pdfjs; worker disabled for local parsing) ─────
@@ -295,8 +493,8 @@ async function parsePdf(file: File): Promise<ImportResult> {
       if (text) lines.push([text]);
     }
   }
-  const { semesters, ignored } = parseMatrix(lines.map((l) => splitPdfLine(l[0])));
-  return { semesters, ignored, format: 'pdf', fileName: file.name };
+  const { semesters, levels, ignored } = parseMatrix(lines.map((l) => splitPdfLine(l[0])));
+  return { semesters, levels, ignored, format: 'pdf', fileName: file.name };
 }
 
 /**
@@ -330,8 +528,8 @@ export async function importCoursesFile(file: File): Promise<ImportResult> {
       const lines = text
         .split(/\r?\n/)
         .map((l) => l.split(',').map((c) => c.trim()));
-      const { semesters, ignored } = parseMatrix(lines);
-      return { semesters, ignored, format: 'xlsx', fileName: file.name };
+      const { semesters, levels, ignored } = parseMatrix(lines);
+      return { semesters, levels, ignored, format: 'xlsx', fileName: file.name };
     }
     return parseXlsx(file);
   }

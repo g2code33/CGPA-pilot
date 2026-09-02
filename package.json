@@ -33,8 +33,10 @@
     "@capacitor/android": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "electron-updater": "^6.3.9",
+    "pdfjs-dist": "^4.9.155",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",

@@ -17,6 +17,8 @@ import {
   curriculumStats,
   type BulkRow,
 } from '../adminConfigService';
+import { CourseImport } from './CourseImport';
+import { WholeCurriculumImport } from './WholeCurriculumImport';
 
 export function CurriculumEditor({
   curriculumId,
@@ -66,6 +68,10 @@ export function CurriculumEditor({
           👁 Curriculum preview
         </button>
       </div>
+
+      {!locked && (
+        <WholeCurriculumImport curriculumId={version.id} locked={locked} />
+      )}
 
       {/* Programme totals */}
       <header className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
@@ -517,6 +523,14 @@ function SemesterCard({
               </div>
             )}
           </>
+        )}
+        {!locked && (
+          <CourseImport
+            curriculumId={versionId}
+            levelIndex={levelIndex}
+            semesterIndex={semesterIndex}
+            locked={locked}
+          />
         )}
       </div>
     </div>

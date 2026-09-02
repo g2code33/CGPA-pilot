@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { INSTITUTION_LABEL } from './config/context';
 import { UpdateBanner } from './components/UpdateBanner';
 import { ClearButton } from './components/ClearButton';
@@ -127,17 +127,63 @@ export default function App() {
   );
 }
 
+/**
+ * Open the admin console. Works on web (new tab), Electron (new window) and
+ * Android/Capacitor (window.open is unreliable there → navigate in place;
+ * the admin console is a separate page).
+ */
+function openAdminConsole() {
+  const url = './admin.html';
+  // @ts-expect-error Capacitor global present only on the Android build
+  const inCapacitor = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.() ?? false);
+  if (inCapacitor) {
+    window.location.href = url;
+    return;
+  }
+  const win = window.open(url, '_blank');
+  if (!win) {
+    // Pop-up blocker / Electron quirk → fall back to in-place navigation.
+    window.location.href = url;
+  }
+}
+
 function Brand({ compact = false }: { compact?: boolean }) {
+  // Discreet admin entry: triple-tap/click the logo or wordmark within
+  // 900ms to open the admin console.
+  const clicks = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function onLogoTap(e: MouseEvent) {
+    e.preventDefault();
+    clicks.current += 1;
+    if (timer.current) clearTimeout(timer.current);
+    if (clicks.current >= 3) {
+      clicks.current = 0;
+      openAdminConsole();
+      return;
+    }
+    timer.current = setTimeout(() => {
+      clicks.current = 0;
+    }, 900);
+  }
+
   return (
     <div className="flex items-center gap-2.5">
       <img
         src="./icon-512.png"
-        alt=""
-        className="h-9 w-9 rounded-xl shadow-sm"
+        alt="CGPA Pilot"
+        onClick={onLogoTap}
+        title="CGPA Pilot"
+        className="h-9 w-9 cursor-pointer select-none rounded-xl shadow-sm"
         width={36}
         height={36}
       />
-      <div>
+      <button
+        type="button"
+        onClick={onLogoTap}
+        className="cursor-pointer select-none text-left"
+        title="CGPA Pilot"
+      >
         <h1 className="text-sm font-black uppercase tracking-wide text-slate-900">
           CGPA <span className="text-brand-600">Pilot</span>
         </h1>
@@ -149,7 +195,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
         <p className="text-[10px] font-semibold text-brand-700">
           {INSTITUTION_LABEL}
         </p>
-      </div>
+      </button>
     </div>
   );
 }
