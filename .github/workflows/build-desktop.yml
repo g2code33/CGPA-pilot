@@ -1,0 +1,207 @@
+name: Build & Release CGPA Pilot
+
+# ─────────────────────────────────────────────────────────────────────────
+# WHAT THIS DOES
+# Every push to main (or an arena/* branch):
+#   • build job  → non-main branches: typecheck + web build + Electron packages
+#                  on Ubuntu AND Windows (uploaded as artifacts, no release) +
+#                  an Android debug APK on the Ubuntu leg
+#   • release job → main branch only: electron-builder --publish always creates
+#                  a GitHub Release with the Windows .exe (+latest.yml), Linux
+#                  .deb + .AppImage (+latest-linux.yml), then builds the signed
+#                  (or debug-fallback) Android APK and uploads cgpa-pilot-<v>.apk
+#                  to the same release.
+# No tags, no manual steps. Bump "version" in package.json to ship an update;
+# the desktop app reads latest.yml and shows the 🔄 update button.
+#
+# OPTIONAL — signed release APK: add repository secrets
+#   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
+#   ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+# Without them the release APK is signed with the debug key (installable).
+# ─────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main, arena/*]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    if: github.ref != 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build renderer (web build)
+        run: npm run build:web
+
+      - name: Build Electron main process
+        run: npm run build:electron
+
+      - name: Package Electron app
+        run: npm run dist -- --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node 22 (Capacitor)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up JDK 21
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        if: matrix.os == 'ubuntu-latest'
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare Android project
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if [ ! -d android ]; then
+            npm run mobile:add
+          fi
+          npx cap sync android
+
+      - name: Build Android APK (debug)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Android APK artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgpa-pilot-android-apk
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgpa-pilot-${{ matrix.os }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.exe
+            release/*.yml
+          if-no-files-found: warn
+
+  release:
+    name: Release ${{ matrix.os }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build renderer (web build)
+        run: npm run build:web
+
+      - name: Build Electron main process
+        run: npm run build:electron
+
+      - name: Build & publish desktop app to GitHub Releases
+        run: npm run dist -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_GH_IGNORE_TIME: 'true'
+
+      - name: Set up Node 22 (Capacitor)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up JDK 21
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        if: matrix.os == 'ubuntu-latest'
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android release APK
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          if [ ! -d android ]; then
+            npm run mobile:add
+          fi
+          npx cap sync android
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release-keystore.p12
+            echo "Keystore injected."
+          else
+            echo "No keystore secret — release APK uses the debug key (installable)."
+          fi
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload Android APK to release
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          APK=$(ls android/app/build/outputs/apk/release/app-release.apk 2>/dev/null || true)
+          if [ -z "$APK" ]; then echo "No release APK found."; exit 0; fi
+          cp "$APK" "cgpa-pilot-$VERSION.apk"
+          echo "Uploading cgpa-pilot-$VERSION.apk to $TAG ..."
+          gh release upload "$TAG" "cgpa-pilot-$VERSION.apk" --clobber 2>/dev/null \
+            || gh release create "$TAG" "cgpa-pilot-$VERSION.apk" --title "CGPA Pilot $VERSION" --notes "Android APK for $VERSION" \
+            || echo "Upload failed (release busy) — retries on next push."
