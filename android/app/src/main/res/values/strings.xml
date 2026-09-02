@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CGPA Pilot</string>
+    <string name="title_activity_main">CGPA Pilot</string>
+    <string name="package_name">com.cgpapilot.app</string>
+    <string name="custom_url_scheme">com.cgpapilot.app</string>
+</resources>
