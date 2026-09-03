@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { INSTITUTION_LABEL, resolveContext } from './config/context';
-import { appLogoImage, appName, iconElement, tagline } from './config/branding';
+import { appLogoImage, appName, iconElement } from './config/branding';
 import type { AppAppearance } from './config/types';
 import { readCachedAppearance } from './services/configCache';
 import { useInstitution, listUniversities } from './state/institutionSelection';
@@ -219,27 +219,25 @@ export default function App() {
     const next = isTool(screen) && idx < TOOL_ORDER.length - 1 ? TOOLS[idx + 1] : null;
     return (
       <div className="h-[100dvh] flex flex-col bg-slate-50">
-        <header className="no-print shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur px-3 py-2.5 flex items-center gap-2">
+        <header className="no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
           <button
             onClick={() => setScreen('home')}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
             aria-label="Back to home"
           >
             ←
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-extrabold text-slate-900">
-              <span className="mr-1.5">
-                {meta && (
-                  <SlotGlyph
-                    appearance={appearance}
-                    slot={screen}
-                    fallback={meta.icon}
-                    imgCls="h-4 w-4 object-contain"
-                  />
-                )}
-              </span>
-              {meta?.title}
+            <h1 className="flex items-center gap-1 truncate text-[13px] font-extrabold text-slate-900">
+              {meta && (
+                <SlotGlyph
+                  appearance={appearance}
+                  slot={screen}
+                  fallback={meta.icon}
+                  imgCls="h-4 w-4 shrink-0 object-contain"
+                />
+              )}
+              <span className="truncate">{meta?.title}</span>
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -324,9 +322,9 @@ export default function App() {
         : d.state.baseline.cgpa;
   return (
     <div className="h-[100dvh] flex flex-col bg-gradient-to-b from-brand-50 to-white">
-      <header className="no-print shrink-0 flex items-center justify-between px-4 pt-3 pb-1">
+      <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
         <Brand appearance={appearance} />
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <UpdateButton />
           <ClearButton />
         </div>
@@ -587,10 +585,10 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
     if (!win) window.location.href = url;
   }
   return (
-    <div className="flex items-center gap-2.5">
-      <img src={logoUrl} alt={appName(appearance)} onClick={onLogoTap} title={appName(appearance)} className="h-9 w-9 cursor-pointer select-none rounded-xl shadow-sm" width={36} height={36} />
-      <button type="button" onClick={onLogoTap} className="cursor-pointer select-none text-left" title={appName(appearance)}>
-        <h1 className="text-sm font-black uppercase tracking-wide text-slate-900">
+    <div className="flex min-w-0 items-center gap-2">
+      <img src={logoUrl} alt={appName(appearance)} onClick={onLogoTap} title={appName(appearance)} className="h-8 w-8 shrink-0 cursor-pointer select-none rounded-lg shadow-sm" width={32} height={32} />
+      <button type="button" onClick={onLogoTap} className="min-w-0 cursor-pointer select-none text-left leading-tight" title={appName(appearance)}>
+        <h1 className="truncate text-[13px] font-extrabold tracking-tight text-slate-900">
           {appearance?.appName?.trim() ? (
             appearance.appName
           ) : (
@@ -600,11 +598,10 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
           )}
         </h1>
         {!compact && (
-          <p className="text-[10px] font-semibold italic text-slate-400">
-            {tagline(appearance)}
+          <p className="truncate text-[10px] font-medium text-slate-500">
+            {INSTITUTION_LABEL}
           </p>
         )}
-        <p className="text-[10px] font-semibold text-brand-700">{INSTITUTION_LABEL}</p>
       </button>
     </div>
   );
