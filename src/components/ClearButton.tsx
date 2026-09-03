@@ -64,37 +64,37 @@ export function ClearButton() {
             onClick={() => setOpen(false)} // backdrop click = Cancel
           >
             <div
-              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+              className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-2xl">
+              <div className="bg-gradient-to-r from-brand-700 to-indigo-800 px-5 py-4 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-white/15 text-2xl ring-1 ring-white/25">
                   🔄
                 </span>
                 <h2
                   id="clear-session-title"
-                  className="text-lg font-black text-slate-900"
+                  className="mt-2 text-lg font-black text-white"
                 >
                   Clear Your Session?
                 </h2>
               </div>
 
-              <div className="mt-4 space-y-2 text-sm leading-relaxed text-slate-600">
+              <div className="px-5 py-4 text-center text-sm leading-relaxed text-slate-600">
                 <p>
                   All information currently entered into CGPA PILOT will be
                   cleared.
                 </p>
-                <p>
-                  <strong className="text-slate-800">Nothing is saved or shared.</strong>
-                </p>
-                <p>
+                <p className="mt-1">
                   This includes your CGPA, semester GPAs, targets, projections
                   and What-If calculations.
                 </p>
-                <p className="font-bold text-red-600">
-                  This action cannot be undone.
+                <p className="mt-1">
+                  <strong className="text-slate-800">Nothing is saved or shared.</strong>
                 </p>
-                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-100">
+                <p className="mt-3 inline-block rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600 ring-1 ring-red-100">
+                  ⚠️ This action cannot be undone.
+                </p>
+                <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500 ring-1 ring-slate-100">
                   Your temporary calculations are removed from memory and will
                   not come back after the refresh. The offline curriculum
                   configuration (no personal data) stays, so the app keeps
@@ -102,19 +102,19 @@ export function ClearButton() {
                 </p>
               </div>
 
-              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 px-5 py-4 sm:flex-row sm:justify-center sm:gap-3">
                 <button
                   onClick={() => setOpen(false)}
                   autoFocus
-                  className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-200"
+                  className="w-full rounded-xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-200 sm:w-auto sm:min-w-[110px]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmClear}
-                  className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
+                  className="w-full rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 active:scale-[0.98] sm:w-auto sm:min-w-[110px]"
                 >
-                  Clear &amp; Refresh
+                  Yes, clear it
                 </button>
               </div>
             </div>
