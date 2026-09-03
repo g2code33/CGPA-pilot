@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAcademic } from '../state/store';
 import { markIntentionalReload } from '../services/sessionGuard';
 import { wipeDeviceStorage } from '../services/configCache';
@@ -53,71 +54,73 @@ export function ClearButton() {
         🔄
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 backdrop-blur-sm sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="clear-session-title"
-          onClick={() => setOpen(false)} // backdrop click = Cancel
-        >
+      {open &&
+        createPortal(
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-session-title"
+            onClick={() => setOpen(false)} // backdrop click = Cancel
           >
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-2xl">
-                🔄
-              </span>
-              <h2
-                id="clear-session-title"
-                className="text-lg font-black text-slate-900"
-              >
-                Clear Your Session?
-              </h2>
-            </div>
+            <div
+              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-2xl">
+                  🔄
+                </span>
+                <h2
+                  id="clear-session-title"
+                  className="text-lg font-black text-slate-900"
+                >
+                  Clear Your Session?
+                </h2>
+              </div>
 
-            <div className="mt-4 space-y-2 text-sm leading-relaxed text-slate-600">
-              <p>
-                All information currently entered into CGPA PILOT will be
-                cleared.
-              </p>
-              <p>
-                <strong className="text-slate-800">Nothing is saved or shared.</strong>
-              </p>
-              <p>
-                This includes your CGPA, semester GPAs, targets, projections
-                and What-If calculations.
-              </p>
-              <p className="font-bold text-red-600">
-                This action cannot be undone.
-              </p>
-              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-100">
-                Your temporary calculations are removed from memory and will
-                not come back after the refresh. The offline curriculum
-                configuration (no personal data) stays, so the app keeps
-                working offline.
-              </p>
-            </div>
+              <div className="mt-4 space-y-2 text-sm leading-relaxed text-slate-600">
+                <p>
+                  All information currently entered into CGPA PILOT will be
+                  cleared.
+                </p>
+                <p>
+                  <strong className="text-slate-800">Nothing is saved or shared.</strong>
+                </p>
+                <p>
+                  This includes your CGPA, semester GPAs, targets, projections
+                  and What-If calculations.
+                </p>
+                <p className="font-bold text-red-600">
+                  This action cannot be undone.
+                </p>
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-100">
+                  Your temporary calculations are removed from memory and will
+                  not come back after the refresh. The offline curriculum
+                  configuration (no personal data) stays, so the app keeps
+                  working offline.
+                </p>
+              </div>
 
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                onClick={() => setOpen(false)}
-                autoFocus
-                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmClear}
-                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
-              >
-                Clear &amp; Refresh
-              </button>
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  onClick={() => setOpen(false)}
+                  autoFocus
+                  className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClear}
+                  className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
+                >
+                  Clear &amp; Refresh
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }
