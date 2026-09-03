@@ -46,10 +46,11 @@ export function ClearButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-red-50 hover:text-red-600 hover:ring-red-200 sm:w-auto"
-        title="Clear your session (nothing is stored)"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-base text-slate-600 ring-1 ring-slate-200 transition hover:bg-red-50 hover:text-red-600 hover:ring-red-200"
+        title="Refresh / Clear — clears your session (nothing is stored)"
+        aria-label="Refresh / Clear session"
       >
-        🔄 <span>Refresh / Clear</span>
+        🔄
       </button>
 
       {open && (

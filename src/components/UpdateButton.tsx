@@ -143,15 +143,18 @@ export function UpdateButton() {
     else window.location.reload();
   }
 
+  const chip = 'grid h-8 w-8 shrink-0 place-items-center rounded-lg text-base ring-1 transition';
+
   if (phase === 'ready') {
     return (
       <button
         type="button"
         onClick={restart}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-green-700"
-        title="Restart to install the latest version"
+        className={`${chip} bg-green-600 text-white ring-green-700 hover:bg-green-700`}
+        title={`Restart to install the latest version${version ? ` (v${version})` : ''}`}
+        aria-label="Restart to update"
       >
-        ✅ Restart to update {version && <span className="opacity-90">v{version}</span>}
+        ✅
       </button>
     );
   }
@@ -161,26 +164,35 @@ export function UpdateButton() {
       <button
         type="button"
         onClick={download}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-700"
+        className={`${chip} bg-brand-600 text-white ring-brand-700 hover:bg-brand-700`}
         title={`Update v${version} available — download and install`}
+        aria-label="Update available"
       >
-        🔄 Update available {version && <span className="opacity-90">v{version}</span>}
+        🔄
       </button>
     );
   }
 
   if (phase === 'downloading') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand-100 px-3 py-1.5 text-xs font-bold text-brand-800">
-        ⬇️ Downloading… {percent}%
+      <span
+        className={`${chip} cursor-default bg-brand-100 text-brand-800 ring-brand-200`}
+        title={`Downloading… ${percent}%`}
+        aria-label="Downloading update"
+      >
+        ⬇️
       </span>
     );
   }
 
   if (phase === 'checking') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">
-        ⏳ Checking…
+      <span
+        className={`${chip} cursor-default bg-slate-100 text-slate-500 ring-slate-200`}
+        title="Checking for updates…"
+        aria-label="Checking for updates"
+      >
+        ⏳
       </span>
     );
   }
@@ -190,20 +202,23 @@ export function UpdateButton() {
     <button
       type="button"
       onClick={check}
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold shadow-sm transition ${
+      className={`${chip} ${
         phase === 'error'
-          ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+          ? 'bg-amber-100 text-amber-800 ring-amber-200 hover:bg-amber-200'
           : showLatest
-            ? 'bg-slate-100 text-emerald-700 hover:bg-slate-200'
-            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            ? 'bg-slate-100 text-emerald-700 ring-slate-200 hover:bg-slate-200'
+            : 'bg-slate-100 text-slate-700 ring-slate-200 hover:bg-slate-200'
       }`}
-      title={phase === 'error' ? detail : 'Check for updates'}
+      title={
+        phase === 'error'
+          ? detail || 'Update check failed — tap to retry'
+          : showLatest
+            ? 'You’re up to date — tap to check again'
+            : 'Check for updates'
+      }
+      aria-label={phase === 'error' ? 'Update check failed — retry' : showLatest ? 'You’re up to date' : 'Check for updates'}
     >
-      {phase === 'error'
-        ? '⚠️ Update check failed — retry'
-        : showLatest
-          ? '✓ You’re up to date'
-          : '⟳ Check for updates'}
+      {phase === 'error' ? '⚠️' : showLatest ? '✓' : '⟳'}
     </button>
   );
 }

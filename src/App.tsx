@@ -587,8 +587,8 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
   return (
     <div className="flex min-w-0 items-center gap-2">
       <img src={logoUrl} alt={appName(appearance)} onClick={onLogoTap} title={appName(appearance)} className="h-8 w-8 shrink-0 cursor-pointer select-none rounded-lg shadow-sm" width={32} height={32} />
-      <button type="button" onClick={onLogoTap} className="min-w-0 cursor-pointer select-none text-left leading-tight" title={appName(appearance)}>
-        <h1 className="truncate text-[13px] font-extrabold tracking-tight text-slate-900">
+      <button type="button" onClick={onLogoTap} className="cursor-pointer select-none text-left leading-tight" title={appName(appearance)}>
+        <h1 className="font-extrabold tracking-tight text-slate-900" style={{ fontSize: 13 }}>
           {appearance?.appName?.trim() ? (
             appearance.appName
           ) : (
@@ -598,7 +598,7 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
           )}
         </h1>
         {!compact && (
-          <p className="truncate text-[10px] font-medium text-slate-500">
+          <p className="text-[10px] font-medium leading-tight text-slate-500">
             {INSTITUTION_LABEL}
           </p>
         )}
