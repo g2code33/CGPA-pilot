@@ -428,13 +428,17 @@ function CurrentStanding() {
       <>
         <strong>Not released</strong> — you’ve written the current semester but none of
         its results are out. Your CGPA and everything below are based on the{' '}
-        <strong>immediate past semester</strong>.
+        <strong>immediate past semester</strong>. The tools therefore plan what your
+        results will be <strong>on release</strong> of the semester you just wrote —
+        not a semester after it.
       </>
     ) : (
       <>
         <strong>Just started</strong> — you’ve just begun this semester and have no
         results. Your CGPA and everything below are based on the{' '}
-        <strong>immediate past semester</strong>.
+        <strong>immediate past semester</strong>. The tools therefore plan how to{' '}
+        <strong>finish the current semester</strong> (its exams are still ahead) —
+        not a semester after it.
       </>
     );
 
@@ -561,9 +565,20 @@ function CurrentStanding() {
         )}
         {status !== 'released' && (
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500 ring-1 ring-slate-100">
-            Because your current semester isn’t released yet, everything is based on your
-            immediate past semester. When results come out, come back and set this to{' '}
-            <strong>Released</strong> to add them.
+            {status === 'justStarted' ? (
+              <>
+                Your confirmed CGPA is based on the semester you just finished. The
+                planning tools now target <strong>finishing this semester</strong> —
+                write its exams at the end, then come back and set this to{' '}
+                <strong>Released</strong> to add those results.
+              </>
+            ) : (
+              <>
+                Your confirmed CGPA is based on the semester you just finished. The tools
+                show what your results will be <strong>on release</strong> — when the
+                marks come out, confirm them by setting this to <strong>Released</strong>.
+              </>
+            )}
           </p>
         )}
 

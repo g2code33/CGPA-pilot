@@ -214,6 +214,16 @@ export default function App() {
   // a Previous / Next / Home bottom bar for simple navigation.
   if (screen !== 'home') {
     const meta = SCREEN_TITLES[screen];
+    // The "Next Semester" tab title adapts to the student's standing so a
+    // mid-semester student never sees their current semester called "next".
+    const screenTitle =
+      screen === 'next' && d.state.mode !== 'history'
+        ? d.standing === 'justStarted'
+          ? 'Finish This Semester'
+          : d.standing === 'notReleased'
+            ? 'Results on Release'
+            : 'Next Semester'
+        : meta?.title;
     const idx = TOOL_ORDER.indexOf(screen as ToolId);
     const prev = isTool(screen) && idx > 0 ? TOOLS[idx - 1] : null;
     const next = isTool(screen) && idx < TOOL_ORDER.length - 1 ? TOOLS[idx + 1] : null;
@@ -237,7 +247,7 @@ export default function App() {
                   imgCls="h-4 w-4 shrink-0 object-contain"
                 />
               )}
-              <span className="truncate">{meta?.title}</span>
+              <span className="truncate">{screenTitle}</span>
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">

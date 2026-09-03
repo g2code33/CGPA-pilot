@@ -17,10 +17,51 @@ const STATUS_TONE: Record<string, string> = {
   'no-data': 'bg-slate-100 ring-slate-200 text-slate-600',
 };
 
+// Standing-aware naming for the semester this screen plans, so it never calls
+// a mid-semester student's CURRENT semester "next":
+//  • 'released'    → a true next semester is ahead → "Next semester".
+//  • 'justStarted' → the student is enrolled now and will write its exams at
+//    the end → the semester is CURRENT, framed as "finish this semester".
+//  • 'notReleased' → exams written, results pending → "on release" the student
+//    confirms what the written semester delivered.
+type Standing = 'released' | 'notReleased' | 'justStarted';
+const MISSION_META: Record<Standing, {
+  kicker: string;          // small uppercase eyebrow on the hero card
+  descriptor: string;      // noun shown above the semester name
+  planPrefix: string;      // heading prefix on the grade plan card
+  statusLead: string;      // opening phrase of the status line
+}> = {
+  released: {
+    kicker: '🧭 Your next mission',
+    descriptor: 'Next semester',
+    planPrefix: '🎯 Next semester —',
+    statusLead: 'Aim for about',
+  },
+  justStarted: {
+    kicker: '🧭 Finish this semester',
+    descriptor: 'This semester',
+    planPrefix: '🎯 Finish this semester —',
+    statusLead: 'Aim for about',
+  },
+  notReleased: {
+    kicker: '📋 When results are released',
+    descriptor: 'This semester · results pending',
+    planPrefix: '📋 On release —',
+    statusLead: 'You needed about',
+  },
+};
+
 export function NextSemester() {
   const d = useDerived();
   const { record, grading, classification, state, progress } = d;
   const target = state.targetCgpa ?? 3.6;
+  // Mid-semester wording (finish this / on release) only applies to the
+  // current-CGPA engine mode. In GPA-history mode every entered level is
+  // complete, so the target is always the true next semester.
+  const standing: Standing = state.mode === 'history' ? 'released' : d.standing;
+  const meta = MISSION_META[standing];
+  const isOnRelease = standing === 'notReleased';
+  const isJustStarted = standing === 'justStarted';
 
   const [comboId, setComboId] = useState<'efficient' | 'balanced' | 'top'>('efficient');
   const [locked, setLocked] = useState<Record<string, string>>({});
@@ -34,22 +75,23 @@ export function NextSemester() {
       curriculumVersion: d.curriculum?.versionName,
     });
 
-  // Current position → next semester.
-  const position = useMemo(() => {
-    if (state.mode === 'current') {
-      return { level: state.baseline.levelIndex, sem: state.baseline.semesterIndex };
-    }
-    const last = state.semesters[state.semesters.length - 1];
-    return last
-      ? { level: last.levelIndex, sem: last.semesterIndex }
-      : { level: 1, sem: 1 };
-  }, [state.mode, state.baseline.levelIndex, state.baseline.semesterIndex, state.semesters]);
-
+  // The semester this screen acts on = the one immediately after the CONFIRMED
+  // position. For a 'released' standing that is the true next semester; for a
+  // 'just started'/'not released' standing the confirmed position is the
+  // previous semester, so this lands on the CURRENT semester the student is in.
   const next = useMemo(
-    () => nextSemesterAfter(d.curriculum, position.level, position.sem),
-    [d.curriculum, position.level, position.sem]
+    () =>
+      nextSemesterAfter(
+        d.curriculum,
+        d.confirmedPosition.levelIndex,
+        d.confirmedPosition.semesterIndex
+      ),
+    [d.curriculum, d.confirmedPosition.levelIndex, d.confirmedPosition.semesterIndex]
   );
 
+  // Credits genuinely ahead: for a mid-semester student this INCLUDES the
+  // current semester (they will finish it), so all the required-GPA math tallies
+  // exactly to the target over the credits that truly remain.
   const remainingCredits =
     state.mode === 'current' && progress.hasCreditData
       ? progress.remainingCredits
@@ -118,12 +160,12 @@ export function NextSemester() {
       {/* ── YOUR NEXT MISSION ─────────────────────────────────────────── */}
       <Card className="bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 text-white ring-0">
         <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-brand-200">
-          🧭 Your next mission
+          {meta.kicker}
         </p>
         <div className="mt-2 grid grid-cols-3 gap-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-200">
-              Next semester
+              {meta.descriptor}
             </p>
             <p className="text-sm font-black leading-tight">{next.label}</p>
             <p className="mt-0.5 text-[11px] text-brand-200">{plan.next.credits} credits</p>
@@ -150,10 +192,29 @@ export function NextSemester() {
         <div className="mt-3 flex justify-end">
           <Info label="How is this worked out?" className="text-white ring-white/25 [&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25">
             <span className="text-slate-700">
-              The <strong>Required GPA</strong> is the semester average you’d need to
-              stay on course for your chosen {fmt2(target)} target over the credits
-              that remain. The plan then breaks that into a realistic set of target
-              grades.
+              {isJustStarted && (
+                <>
+                  Because you’ve <strong>just started</strong> the semester shown, this
+                  works out the average you need to <strong>finish it</strong> to stay
+                  on course for your {fmt2(target)} target. It counts this semester’s
+                  credits together with everything still after it, so the numbers add
+                  up exactly.
+                </>
+              )}
+              {isOnRelease && (
+                <>
+                  You’ve already <strong>written</strong> the semester shown but its
+                  results aren’t out. This is the average you needed to have earned
+                  (and the CGPA you’ll land on) once those results are released.
+                </>
+              )}
+              {!isJustStarted && !isOnRelease && (
+                <>
+                  The <strong>Required GPA</strong> is the semester average you’d need
+                  to stay on course for your {fmt2(target)} target over the credits
+                  that remain.
+                </>
+              )}
               <br />
               <br />
               Everything is computed locally and works offline. Nothing is saved or
@@ -172,11 +233,17 @@ export function NextSemester() {
           {/* Status line */}
           <div className={`rounded-2xl px-4 py-3 text-xs font-semibold ring-1 ${STATUS_TONE[plan.status]}`}>
             {plan.status === 'already-above' &&
-              `You're already above your target — even modest results this semester keep a ${fmt2(target)} average in reach.`}
+              (isOnRelease
+                ? `Good news — the semester you just wrote keeps a ${fmt2(target)} average in reach even before its results are added.`
+                : `You're already above your target — even modest results in ${meta.descriptor.toLowerCase()} keep a ${fmt2(target)} average in reach.`)}
             {plan.status === 'on-track' &&
-              `Aim for about ${fmt2(plan.requiredNextGpa)} this semester (${plan.next.credits} credits) to stay on the ${plan.targetClassLabel} trajectory; your CGPA then sits around ${fmt2(plan.projectedCgpaAfter)}.`}
+              (isOnRelease
+                ? `You needed about ${fmt2(plan.requiredNextGpa)} across the ${plan.next.credits} credits you just wrote to stay on the ${plan.targetClassLabel} trajectory; once released, your CGPA will sit around ${fmt2(plan.projectedCgpaAfter)}.`
+                : `${meta.statusLead} ${fmt2(plan.requiredNextGpa)} across ${plan.next.credits} credits this semester to stay on the ${plan.targetClassLabel} trajectory; your CGPA then sits around ${fmt2(plan.projectedCgpaAfter)}.`)}
             {plan.status === 'impossible' &&
-              `Even a straight ${plan.maxNextGpa.toFixed(2)} semester can't protect a ${fmt2(target)} finish — the target is out of range on the credits that remain. Consider a nearby classification.`}
+              (isOnRelease
+                ? `Even straight ${plan.maxNextGpa.toFixed(2)} results can't protect a ${fmt2(target)} finish on the credits that remain. Consider a nearby classification.`
+                : `Even a straight ${plan.maxNextGpa.toFixed(2)} semester can't protect a ${fmt2(target)} finish — the target is out of range on the credits that remain. Consider a nearby classification.`)}
           </div>
 
           {/* ── Target-grade combinations ─────────────────────────────── */}
@@ -184,23 +251,34 @@ export function NextSemester() {
           <Card className="print-sheet">
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="text-sm font-extrabold text-slate-800">🎯 Next semester — {next.label}</h3>
+                <h3 className="text-sm font-extrabold text-slate-800">{meta.planPrefix} {next.label}</h3>
                 <p className="text-[11px] text-slate-500">
                   Required GPA <strong className="text-brand-700">{fmt2(plan.requiredNextGpa)}</strong> · Target {plan.targetClassLabel}
                 </p>
               </div>
-              <Info className="shrink-0" label="About these targets">
-                The <strong>target grades</strong> below are mathematically derived from
-                your configured grading scale and each course’s credits — the easiest
-                realistic combination that lands your required GPA.
-                <br />
-                <br />
-                They are <strong>planning targets, not predicted grades</strong>. Your
-                results may differ, and nothing is saved.
+              <Info className="shrink-0" label={isOnRelease ? 'About this estimate' : 'About these targets'}>
+                {isOnRelease ? (
+                  <>
+                    These results are <strong>pending</strong> — you’ve written the
+                    semester but its grades aren’t out yet. The average shown is what
+                    you needed to have earned; once you confirm the real results, the
+                    released CGPA replaces this estimate.
+                  </>
+                ) : (
+                  <>
+                    The <strong>target grades</strong> below are mathematically derived
+                    from your configured grading scale and each course’s credits — the
+                    easiest realistic combination that lands your required GPA.
+                    <br />
+                    <br />
+                    They are <strong>planning targets, not predicted grades</strong>.
+                    Your results may differ, and nothing is saved.
+                  </>
+                )}
               </Info>
             </div>
 
-            {plan.combos.length > 0 && (
+            {!isOnRelease && plan.combos.length > 0 && (
               <div className="no-print mb-3 flex flex-wrap gap-2">
                 {plan.combos.map((c) => (
                   <button
@@ -218,12 +296,20 @@ export function NextSemester() {
               </div>
             )}
 
-            {activeCombo && (
+            {!isOnRelease && activeCombo && (
               <p className="no-print mb-2 text-[11px] text-slate-500">
                 {activeCombo.description}
               </p>
             )}
 
+            {isOnRelease ? (
+              <div className="rounded-xl bg-white/80 px-3 py-2 text-[12px] leading-relaxed text-slate-600 ring-1 ring-slate-200">
+                This is the result you’ll receive when your {next.label} results are
+                released. Keep the grades you actually got on the Calculate tab — once
+                you set this semester to <strong>Released</strong>, your confirmed CGPA
+                updates automatically and this estimate disappears.
+              </div>
+            ) : (
             <div className="overflow-x-auto">
             <table className="w-full min-w-[380px] text-left text-xs">
               <thead>
@@ -259,22 +345,32 @@ export function NextSemester() {
               </tbody>
             </table>
             </div>
+            )}
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
-              <span>
-                Semester average: <span className="text-brand-700">
-                  {showWhatIf && whatIf ? whatIf.semesterGpa.toFixed(2) : activeCombo?.semesterGpa.toFixed(2)}
+              {!isOnRelease && (
+                <span>
+                  Semester average: <span className="text-brand-700">
+                    {showWhatIf && whatIf ? whatIf.semesterGpa.toFixed(2) : activeCombo?.semesterGpa.toFixed(2)}
+                  </span>
                 </span>
-              </span>
+              )}
               <span>
-                Projected CGPA after: <span className="text-brand-700">{fmt2(projectedAfter)}</span>
+                {isOnRelease ? 'CGPA once released:' : 'Projected CGPA after:'} <span className="text-brand-700">{fmt2(projectedAfter)}</span>
                 {projectedClass && <span className="ml-1 text-slate-400">· {projectedClass.label}</span>}
               </span>
             </div>
 
+            {isOnRelease ? (
+              <p className="mt-2 rounded-lg bg-sky-50 px-2 py-1.5 text-[10px] font-semibold text-sky-800 ring-1 ring-sky-200">
+                These results are pending — confirm them once released and the app
+                recalculates from your real grades.
+              </p>
+            ) : (
             <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">
               These are planning targets, not predicted grades.
             </p>
+            )}
 
             {!plan.curriculumPublished && plan.next.courses[0]?.name === 'Curriculum not published' && (
               <p className="no-print mt-2 text-[10px] text-slate-400">
@@ -283,17 +379,19 @@ export function NextSemester() {
             )}
 
             <div className="no-print mt-3 flex flex-wrap gap-2">
-              <button
-                onClick={() => setShowWhatIf((v) => !v)}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
-              >
-                {showWhatIf ? '✕ Close what-if' : '🔀 What if I get a specific grade?'}
-              </button>
+              {!isOnRelease && (
+                <button
+                  onClick={() => setShowWhatIf((v) => !v)}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
+                >
+                  {showWhatIf ? '✕ Close what-if' : '🔀 What if I get a specific grade?'}
+                </button>
+              )}
               <button
                 onClick={printPlan}
                 className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
               >
-                🖨️ Print Next Semester Plan
+                {isOnRelease ? '🖨️ Print On-Release Plan' : '🖨️ Print Next Semester Plan'}
               </button>
               {showWhatIf && lockedCodes.length > 0 && (
                 <button

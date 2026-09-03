@@ -28,6 +28,9 @@ const STATUS_TONE: Record<string, string> = {
 export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   const d = useDerived();
   const { record, dispatch, state } = d;
+  // Mid-semester wording applies only in the current-CGPA engine mode.
+  const standing =
+    state.mode === 'history' ? 'released' : d.standing;
 
   const start = (mode: 'quick' | 'history' | 'planning') => {
     dispatch({ type: 'setInputMode', inputMode: mode });
@@ -160,11 +163,18 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
 
         <Card className="print-sheet">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            ▶️ Next mission
+            {standing === 'notReleased' ? '📋 Results on release' : '▶️ Next mission'}
           </p>
           {model.next ? (
             <>
-              <p className="mt-1 text-sm font-black text-slate-800">{model.next.next.label}</p>
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                {standing === 'justStarted'
+                  ? 'Finish this semester'
+                  : standing === 'notReleased'
+                    ? 'Semester you just wrote'
+                    : 'Next semester'}
+              </p>
+              <p className="mt-0.5 text-sm font-black text-slate-800">{model.next.next.label}</p>
               <p className="mt-1 text-2xl font-black tabular-nums text-brand-700">
                 {fmt2(model.next.requiredNextGpa)}
               </p>
@@ -176,7 +186,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
               </p>
             </>
           ) : (
-            <p className="mt-1 text-xs text-slate-400">Enter your CGPA to plan the next semester.</p>
+            <p className="mt-1 text-xs text-slate-400">Enter your CGPA to see what lies ahead.</p>
           )}
           <button
             onClick={() => onNavigate('next')}

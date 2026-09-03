@@ -70,6 +70,26 @@ export function totalProgrammeCredits(curriculum?: CurriculumVersion): number {
   return curriculumSemesters(curriculum).reduce((sum, s) => sum + s.credits, 0);
 }
 
+/**
+ * The semester slot immediately BEFORE the given one in programme order, or
+ * null when the given slot is the very first semester. Used to locate the
+ * "confirmed/completed" position when the user is mid-semester (Just started /
+ * Not released): they have finished every slot up to the previous one, and the
+ * given (current) semester is the next one to act on / finish.
+ */
+export function previousSlot(
+  curriculum: CurriculumVersion | undefined,
+  levelIndex: number,
+  semesterIndex: number
+): SemesterSlot | null {
+  const slots = curriculumSemesters(curriculum);
+  const idx = slots.findIndex(
+    (s) => s.levelIndex === levelIndex && s.semesterIndex === semesterIndex
+  );
+  if (idx <= 0) return null;
+  return slots[idx - 1];
+}
+
 export interface CurriculumProgress {
   completedSlots: SemesterSlot[];
   remainingSlots: SemesterSlot[];

@@ -26,6 +26,9 @@ export function Milestones() {
   const d = useDerived();
   const { record, grading, classification, state, progress } = d;
   const target = state.targetCgpa ?? 3.6;
+  // Mid-semester wording only applies in the current-CGPA engine mode.
+  const standing =
+    state.mode === 'history' ? 'released' : d.standing;
 
   const [userGpa, setUserGpa] = useState<number>(3.2);
   const [fallbackCredits, setFallbackCredits] = useState(18);
@@ -41,7 +44,7 @@ export function Milestones() {
 
   const currentLevel =
     state.mode === 'current'
-      ? state.baseline.levelIndex
+      ? d.confirmedPosition.levelIndex
       : Math.max(1, Math.ceil(state.semesters.length / 2));
 
   const remainingSlots = useMemo(() => {
@@ -164,7 +167,15 @@ export function Milestones() {
           )}
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          <strong className="text-indigo-700">“If I get {userGpa.toFixed(2)} next semester, can I still reach {target.toFixed(2)}?”</strong>
+          <strong className="text-indigo-700">
+            “If I get {userGpa.toFixed(2)}{' '}
+            {standing === 'justStarted'
+              ? 'this semester (finishing it)'
+              : standing === 'notReleased'
+                ? 'in the semester I just wrote'
+                : 'next semester'}
+            , can I still reach {target.toFixed(2)}?”
+          </strong>
         </p>
       </Card>
 

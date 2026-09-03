@@ -332,6 +332,46 @@ test('structureService reports no credit data for an unpublished/empty curriculu
   assert.equal(progress.completedCredits, 0);
 });
 
+test('previousSlot returns the semester immediately before in programme order', () => {
+  const c = curriculumWithCredits();
+  // Slots: L100S1(16), L100S2(20), L200S1(16), L200S2(20), ...
+  const beforeL200S1 = structure.previousSlot(c, 2, 1);
+  assert.equal(beforeL200S1?.levelIndex, 1);
+  assert.equal(beforeL200S1?.semesterIndex, 2);
+  assert.equal(beforeL200S1?.credits, 20);
+
+  const beforeL100S2 = structure.previousSlot(c, 1, 2);
+  assert.equal(beforeL100S2?.levelIndex, 1);
+  assert.equal(beforeL100S2?.semesterIndex, 1);
+});
+
+test('previousSlot returns null for the very first semester', () => {
+  const c = curriculumWithCredits();
+  assert.equal(structure.previousSlot(c, 1, 1), null);
+  assert.equal(structure.previousSlot(undefined, 1, 1), null);
+});
+
+test('mid-semester remaining credits INCLUDE the current semester (tallies to target)', () => {
+  // A student who has 'just started' L200 S1 (the current semester, 16 cr).
+  // Their CONFIRMED position is the immediately previous semester, L100 S2:
+  // confirmed = L100S1(16)+L100S2(20) = 36 credits. What remains must therefore
+  // be programme total (216) − 36 = 180, which INCLUDES the current L200 S1
+  // (16) they are about to finish — the current semester is never dropped.
+  const c = curriculumWithCredits();
+  const prev = structure.previousSlot(c, 2, 1); // confirmed position for L200 S1
+  assert.equal(prev?.levelIndex, 1);
+  assert.equal(prev?.semesterIndex, 2);
+  const confirmed = structure.progressThrough(c, prev.levelIndex, prev.semesterIndex);
+  assert.equal(confirmed.completedCredits, 36);
+  assert.equal(confirmed.remainingCredits, 216 - 36); // 180 — includes current L200 S1
+  // The current semester the student must finish is the slot right AFTER the
+  // confirmed position (= the baseline L200 S1), and it is part of what remains.
+  const currentL200S1 = confirmed.remainingSlots[0];
+  assert.equal(currentL200S1?.levelIndex, 2);
+  assert.equal(currentL200S1?.semesterIndex, 1);
+  assert.equal(currentL200S1?.credits, 16);
+});
+
 test('inactive courses do not count toward configured semester credits', () => {
   const c = {
     ...curriculumWithCredits(),
