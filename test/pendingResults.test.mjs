@@ -152,6 +152,48 @@ test('pending semester credits fall back to the curriculum load', () => {
   assert.equal(t.pendingCreditHours, 20);
 });
 
+// ── 3b. Released history level with specific pending courses ───────────────
+// A GPA-history semester that is "released" but has a few flagged not-released
+// courses: those credits are pulled OUT of the counted load (the typed GPA is
+// over the released portion) and reported as pending for projections.
+
+test('released GPA semester subtracts flagged not-released course credits', () => {
+  const s = sem({
+    gpa: 3.5,
+    creditHoursOverride: null,
+    levelIndex: 1,
+    semesterIndex: 1,
+    courses: [
+      course({ id: 'cfg-pend-x', code: 'PHM111', name: 'Course A', creditHours: 6, pending: true }),
+    ],
+  });
+  // Configured curriculum load = 18 → 6 pending → 12 released counted.
+  const t = core.semesterTerm(s, uccGrading, 18);
+  assert.equal(t.source, 'gpa');
+  assert.equal(t.creditHours, 12);
+  assert.ok(Math.abs(t.qualityPoints - 3.5 * 12) < 1e-9);
+  assert.equal(t.pendingCreditHours, 6);
+  assert.equal(t.pendingCount, 1);
+});
+
+test('history snapshot: pending course credits reduce the weighted CGPA', () => {
+  const semesters = [
+    sem({ gpa: 3.0, levelIndex: 1, semesterIndex: 1, creditHoursOverride: 18 }),
+    // Level 2 released overall, but 6 credits still pending in the current level.
+    sem({
+      gpa: 4.0,
+      levelIndex: 2,
+      semesterIndex: 1,
+      courses: [course({ id: 'cfg-pend-y', code: 'PHM211', name: 'Course B', creditHours: 6, pending: true })],
+    }),
+  ];
+  const r = core.weightedCgpa(semesters, uccGrading, () => 18);
+  // Confirmed: 18cr @3.0 + (18−6=12)cr @4.0 = 30cr, points = 54 + 48 = 102.
+  assert.equal(r.totalCreditHours, 30);
+  assert.equal(r.pendingCreditHours, 6);
+  assert.ok(Math.abs(r.cgpa - 102 / 30) < 1e-9);
+});
+
 // ── 4. Current-mode baseline with pending credits ──────────────────────────
 
 test('current mode: pending credits are removed from the confirmed base', () => {

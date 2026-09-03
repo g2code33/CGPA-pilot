@@ -58,6 +58,7 @@ export function Overview({
     writeCachedConfig({
       universities: payload.universities,
       curricula: payload.curricula,
+      appearance: payload.appearance,
       cachedAt: payload.generatedAt,
       schemaVersion: 1,
     });
@@ -76,7 +77,11 @@ export function Overview({
         return;
       }
       if (!confirm('Import this configuration? It will replace the current admin catalog.')) return;
-      setCatalog({ universities: doc.universities, curricula: doc.curricula });
+      setCatalog({
+        universities: doc.universities,
+        curricula: doc.curricula,
+        appearance: doc.appearance,
+      });
       flash('Configuration imported.');
     } catch {
       flash('Could not read that file.');
@@ -118,7 +123,7 @@ export function Overview({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Universities" value={catalog.universities.length} />
-        <Stat label="Schools" value={schools} />
+        <Stat label="Departments" value={schools} />
         <Stat label="Programmes" value={programmes} />
         <Stat label="Curricula" value={catalog.curricula.length} />
       </div>
@@ -127,7 +132,7 @@ export function Overview({
       <div className="rounded-2xl bg-gradient-to-r from-brand-700 to-indigo-800 p-4 text-white shadow-sm ring-1 ring-brand-300/30 sm:p-5">
         <h2 className="text-sm font-black">Autosave & Cross-device sync</h2>
         <p className="mt-1 text-[11px] leading-relaxed text-brand-100">
-          Your admin data is saved automatically to <code className="text-white">localStorage</code> after every edit. Because browsers keep storage per-device, download your full admin backup below and upload it on any other device to restore everything instantly.
+          Your admin data is saved automatically to this browser's storage after every edit. Because browsers keep storage per-device, download your full admin backup below and upload it on any other device to restore everything instantly.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -250,7 +255,7 @@ export function Overview({
         onClick={() => onNavigate({ name: 'universities' })}
         className="w-full rounded-2xl border-2 border-dashed border-slate-300 py-3 text-sm font-bold text-slate-500 transition hover:border-slate-400"
       >
-        🏛️ Manage universities, schools &amp; programmes
+        🏛️ Manage universities, departments &amp; programmes
       </button>
     </div>
   );

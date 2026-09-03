@@ -33,6 +33,35 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   SPLASH — an aeroplane flies across the sky with a gentle bobbing path.
+   The plane starts off-screen left and finishes off-screen right.
+   ───────────────────────────────────────────────────────────────────── */
+.splash-plane {
+  position: absolute;
+  top: 18%;
+  left: 0;
+  z-index: 5;
+  animation: plane-fly 4s linear infinite;
+  will-change: transform;
+}
+@keyframes plane-fly {
+  0%   { transform: translate3d(-20vw, 4px, 0) rotate(3deg); }
+  22%  { transform: translate3d(12vw, -26px, 0) rotate(-6deg); }
+  45%  { transform: translate3d(42vw, 6px, 0) rotate(2deg); }
+  70%  { transform: translate3d(80vw, -20px, 0) rotate(-5deg); }
+  100% { transform: translate3d(130vw, 0px, 0) rotate(4deg); }
+}
+.splash-ground {
+  position: absolute;
+  bottom: 8%;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  opacity: 0.7;
+}
+
 @layer components {
   .card {
     @apply rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5;
@@ -136,4 +165,77 @@ body {
     padding: 10px 12px;
     margin-bottom: 10px;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SKY DASH — opening mini-game (plane + clouds + catchable stars)
+   ───────────────────────────────────────────────────────────────────── */
+.sky-sun {
+  position: absolute;
+  top: 7%;
+  left: 8%;
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #fef3c7 0%, #fcd34d 55%, rgba(252,211,77,0) 75%);
+  opacity: 0.9;
+  filter: blur(0px);
+  box-shadow: 0 0 40px 6px rgba(253, 224, 71, 0.55);
+  animation: sun-glow 4s ease-in-out infinite;
+}
+@keyframes sun-glow {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+.sky-cloud {
+  position: absolute;
+  display: block;
+  width: 130px;
+  height: 42px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.16);
+  filter: blur(4px);
+  opacity: 0.9;
+}
+.sky-cloud::before,
+.sky-cloud::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  background: inherit;
+}
+.sky-cloud::before { width: 62px; height: 62px; left: 26px; top: -30px; }
+.sky-cloud::after  { width: 46px; height: 46px; right: 26px; top: -20px; }
+.sky-cloud-a { top: 16%; animation: drift 26s linear infinite; }
+.sky-cloud-b { top: 40%; width: 110px; transform: scale(0.8); animation: drift 34s linear infinite reverse; }
+.sky-cloud-c { top: 62%; width: 150px; transform: scale(1.1); animation: drift 44s linear infinite; }
+@keyframes drift {
+  0%   { left: -160px; }
+  100% { left: 110vw; }
+}
+.sky-star {
+  position: absolute;
+  font-size: 30px;
+  line-height: 1;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.25));
+  animation: star-bob 1.6s ease-in-out infinite;
+}
+@keyframes star-bob {
+  0%, 100% { transform: translate(-50%, -50%) scale(0.9); }
+  50% { transform: translate(-50%, -58%) scale(1.08); }
+}
+.sky-spark {
+  position: absolute;
+  z-index: 12;
+  transform: translate(-50%, -50%);
+  font-weight: 900;
+  font-size: 13px;
+  white-space: nowrap;
+  color: #fde68a;
+  text-shadow: 0 0 6px rgba(0,0,0,0.35);
+  animation: spark-pop 0.9s ease-out forwards;
+}
+@keyframes spark-pop {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
+  100% { opacity: 0; transform: translate(-50%, -170%) scale(1.25); }
 }

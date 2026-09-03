@@ -77,6 +77,7 @@ type Action =
   | { type: 'setBaseline'; patch: Partial<AcademicState['baseline']> }
   | { type: 'setPlannedNext'; creditHours: number }
   | { type: 'addSemester' }
+  | { type: 'addSemesterAt'; levelIndex: number; semesterIndex: number }
   | { type: 'removeSemester'; semesterId: string }
   | { type: 'renameSemester'; semesterId: string; label: string }
   | { type: 'setSemesterGpa'; semesterId: string; gpa: number | null }
@@ -93,6 +94,12 @@ type Action =
       semesterId: string;
       courseId: string;
       patch: Partial<CourseEntry>;
+    }
+  | {
+      type: 'setSemesterPendingCourses';
+      semesterId: string;
+      /** Pending course entries to attach (id prefix 'cfg-pend-'); existing ones replaced. */
+      pending: CourseEntry[];
     };
 
 function nextLevelSemester(semesters: SemesterEntry[]): {
@@ -141,6 +148,20 @@ function reducer(state: AcademicState, action: Action): AcademicState {
       return {
         ...state,
         semesters: [...state.semesters, makeSemester(level, semester)],
+      };
+    }
+
+    case 'addSemesterAt': {
+      const existing = state.semesters.find(
+        (s) => s.levelIndex === action.levelIndex && s.semesterIndex === action.semesterIndex
+      );
+      if (existing) return state;
+      return {
+        ...state,
+        semesters: [
+          ...state.semesters,
+          makeSemester(action.levelIndex, action.semesterIndex),
+        ],
       };
     }
 
@@ -216,6 +237,24 @@ function reducer(state: AcademicState, action: Action): AcademicState {
                 courses: s.courses.map((c) =>
                   c.id === action.courseId ? { ...c, ...action.patch } : c
                 ),
+              }
+            : s
+        ),
+      };
+
+    case 'setSemesterPendingCourses':
+      return {
+        ...state,
+        semesters: state.semesters.map((s) =>
+          s.id === action.semesterId
+            ? {
+                ...s,
+                // Keep any user-entered (non cfg-pend-) courses; replace the
+                // curriculum-pending set wholesale from the provided list.
+                courses: [
+                  ...s.courses.filter((c) => !c.id.startsWith('cfg-pend-')),
+                  ...action.pending,
+                ],
               }
             : s
         ),

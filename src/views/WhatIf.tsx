@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note } from '../components/ui';
+import { Card, SectionTitle, Note, Info } from '../components/ui';
 import {
   collectPending,
   runWhatIf,
@@ -172,7 +172,19 @@ export function WhatIf() {
         <SectionTitle
           icon="🔀"
           title="What-If Simulator"
-          subtitle="Try a future GPA — “what if my next GPA is 3.0 / 3.5 / 4.0?” This never changes your confirmed calculation, is never saved, and never invents individual grades."
+          subtitle="Try a future GPA — “what if my next GPA is 3.0 / 3.5 / 4.0?”"
+          info={
+            <>
+              Ask “what if my next GPA is 3.0 / 3.5 / 4.0?” and see how your CGPA
+              would move.
+              <br />
+              <br />
+              This <strong>never changes your confirmed calculation</strong>, is{' '}
+              <strong>never saved</strong>, and <strong>never invents individual
+              grades</strong> — it only blends a hypothetical average with your real
+              record.
+            </>
+          }
         />
 
         {noData && (
@@ -330,13 +342,25 @@ export function WhatIf() {
           </table>
         </div>
 
-        <p className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5 text-[10px] leading-relaxed text-slate-500 ring-1 ring-slate-100">
-          Projected CGPA is your confirmed CGPA blended with the hypothetical
-          next period (credit-weighted). “Final if held” extrapolates the same
-          average over all {rem} remaining credits. Scenarios are projections
-          over results not yet earned — not guaranteed outcomes. No individual
-          course grades are inferred.
-        </p>
+        <div className="mt-2 flex items-start gap-2 rounded-xl bg-slate-50 px-2 py-1.5 ring-1 ring-slate-100">
+          <p className="flex-1 text-[10px] leading-relaxed text-slate-500">
+            Scenarios are projections over results not yet earned — not guaranteed.
+          </p>
+          <Info
+            label="What do the scenario results mean?"
+            className="shrink-0"
+          >
+            <strong>Projected CGPA</strong> is your confirmed CGPA blended
+            (credit-weighted) with the hypothetical next period.
+            <br />
+            <strong>“Final if held”</strong> extrapolates that same average over all{' '}
+            {rem} remaining credits.
+            <br />
+            <br />
+            None of these are guaranteed outcomes, and no individual course grades are
+            inferred.
+          </Info>
+        </div>
       </Card>
 
       <PendingGradesCard key={resetKey} />

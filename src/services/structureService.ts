@@ -4,7 +4,7 @@
 // credit hours rather than assumptions. Fully offline/config-driven.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { CurriculumVersion } from '../config/types';
+import type { CurriculumVersion, CurriculumCourse } from '../config/types';
 
 export interface SemesterSlot {
   levelIndex: number; // 1-based
@@ -52,6 +52,18 @@ export function semesterCredits(
       (s) => s.levelIndex === levelIndex && s.semesterIndex === semesterIndex
     )?.credits ?? 0
   );
+}
+
+/** Active courses configured for one specific semester ([] if none published). */
+export function curriculumSemesterCourses(
+  curriculum: CurriculumVersion | undefined,
+  levelIndex: number,
+  semesterIndex: number
+): CurriculumCourse[] {
+  if (!curriculum) return [];
+  const level = curriculum.levels.find((l) => l.index === levelIndex);
+  const sem = level?.semesters.find((s) => s.index === semesterIndex);
+  return (sem?.courses ?? []).filter((c) => c.status === 'active');
 }
 
 export function totalProgrammeCredits(curriculum?: CurriculumVersion): number {

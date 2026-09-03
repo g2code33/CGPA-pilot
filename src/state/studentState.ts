@@ -85,6 +85,22 @@ export interface CurrentBaseline {
   pendingCreditHours: number;
   /** True when the student just entered this level/semester — completed credits exclude the current semester. */
   justEntered?: boolean;
+  /**
+   * Which "where am I now" status the user chose. Drives the engine flags:
+   *  - 'released'     : whole current standing confirmed (Advanced may carve
+   *                     out specific still-pending courses).
+   *  - 'notReleased'  : the entire current semester's results are not out yet —
+   *                     calculations/CGPA are based on the immediate past semester.
+   *  - 'justStarted'  : brand-new semester, no results — same immediate-past basis.
+   */
+  standing?: 'released' | 'notReleased' | 'justStarted';
+  /**
+   * Curriculum course ids tagged by the user as "result not released yet"
+   * within the current reported semester (used under the 'released' standing).
+   * Kept purely for UI selection state; the engine consumes the derived
+   * `pendingCreditHours` (= sum of these courses' credit hours).
+   */
+  pendingCourseIds?: string[];
 }
 
 export interface AcademicState {

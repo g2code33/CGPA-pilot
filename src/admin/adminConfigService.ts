@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type {
+  AppAppearance,
   ClassificationBand,
   ClassificationSystem,
   CurriculumCourse,
@@ -23,7 +24,8 @@ import type {
 } from '../config/types';
 import { ucc } from '../config/institutions/ucc';
 import { uccPharmDCurriculum } from '../config/curricula/ucc-pharmd';
-import type { AdminCatalog } from './adminStorage';
+import type { AdminCatalog, TrashEntry, TrashKind } from './adminStorage';
+import { trashOf } from './adminStorage';
 
 // Official UCC rules (seed) — used for the "reset to official" action.
 export function uccOfficialGrading(): GradingSystem {
@@ -37,7 +39,18 @@ export function seedCatalog(): AdminCatalog {
   return {
     universities: [ucc],
     curricula: [uccPharmDCurriculum],
+    trash: [],
   };
+}
+
+// ── Branding / appearance (non-personal) ───────────────────────────────────
+
+/** Set (or clear) the branding the admin wants the student app to use. */
+export function setAppearance(
+  catalog: AdminCatalog,
+  appearance: AppAppearance | undefined
+): AdminCatalog {
+  return { ...catalog, appearance };
 }
 
 // ── Deep clone / ids ──────────────────────────────────────────────────────
@@ -136,11 +149,33 @@ export function canDeleteUniversity(
   return !!u && u.schools.length === 0;
 }
 
-export function deleteUniversity(catalog: AdminCatalog, id: string): AdminCatalog {
-  return {
-    ...catalog,
-    universities: catalog.universities.filter((u) => u.id !== id),
+/** Move an entity into the recycle bin instead of hard-removing it. */
+function moveToTrash(
+  catalog: AdminCatalog,
+  kind: TrashKind,
+  label: string,
+  data: unknown,
+  parent: TrashEntry['parent']
+): AdminCatalog {
+  const entry: TrashEntry = {
+    id: (data as { id?: string })?.id ?? cid(kind),
+    kind,
+    label,
+    deletedAt: new Date().toISOString(),
+    data: clone(data),
+    parent,
   };
+  return { ...catalog, trash: [entry, ...trashOf(catalog)] };
+}
+
+export function deleteUniversity(catalog: AdminCatalog, id: string): AdminCatalog {
+  const u = catalog.universities.find((x) => x.id === id);
+  if (!u) return catalog;
+  const next = {
+    ...catalog,
+    universities: catalog.universities.filter((x) => x.id !== id),
+  };
+  return moveToTrash(next, 'university', u.name, u, {});
 }
 
 // ── Schools ───────────────────────────────────────────────────────────────
@@ -190,10 +225,20 @@ export function canDeleteSchool(catalog: AdminCatalog, schoolId: string): boolea
 }
 
 export function deleteSchool(catalog: AdminCatalog, schoolId: string): AdminCatalog {
-  return mapUniversities(catalog, (u) => ({
-    ...u,
-    schools: u.schools.filter((s) => s.id !== schoolId),
-  }));
+  let removed: School | undefined;
+  let parentUniversityId: string | undefined;
+  const next = mapUniversities(catalog, (u) => {
+    const s = u.schools.find((x) => x.id === schoolId);
+    if (s) {
+      removed = s;
+      parentUniversityId = u.id;
+    }
+    return { ...u, schools: u.schools.filter((x) => x.id !== schoolId) };
+  });
+  if (!removed) return catalog;
+  return moveToTrash(next, 'school', removed.name, removed, {
+    universityId: parentUniversityId,
+  });
 }
 
 // ── Programmes ────────────────────────────────────────────────────────────
@@ -259,13 +304,23 @@ export function canDeleteProgramme(
 }
 
 export function deleteProgramme(catalog: AdminCatalog, programmeId: string): AdminCatalog {
-  return mapUniversities(catalog, (u) => ({
+  let removed: Programme | undefined;
+  let parentSchoolId: string | undefined;
+  const next = mapUniversities(catalog, (u) => ({
     ...u,
-    schools: u.schools.map((s) => ({
-      ...s,
-      programmes: s.programmes.filter((p) => p.id !== programmeId),
-    })),
+    schools: u.schools.map((s) => {
+      const p = s.programmes.find((x) => x.id === programmeId);
+      if (p) {
+        removed = p;
+        parentSchoolId = s.id;
+      }
+      return { ...s, programmes: s.programmes.filter((x) => x.id !== programmeId) };
+    }),
   }));
+  if (!removed) return catalog;
+  return moveToTrash(next, 'programme', `${removed.name} (${removed.shortName})`, removed, {
+    schoolId: parentSchoolId,
+  });
 }
 
 // ── Curriculum versions ───────────────────────────────────────────────────
@@ -422,7 +477,110 @@ export function deleteCurriculum(
     ...p,
     curriculumVersionIds: p.curriculumVersionIds.filter((x) => x !== id),
   }));
+  next = moveToTrash(
+    next,
+    'curriculum',
+    cur.versionName,
+    cur,
+    { programmeId: cur.programmeId }
+  );
   return { catalog: next, ok: true };
+}
+
+// ── Recycle bin ───────────────────────────────────────────────────────────
+
+function removeTrashEntry(catalog: AdminCatalog, trashId: string): AdminCatalog {
+  return {
+    ...catalog,
+    trash: trashOf(catalog).filter((t) => t.id !== trashId),
+  };
+}
+
+/** Restore a trashed item back into its original place in the tree. */
+export function restoreTrashItem(
+  catalog: AdminCatalog,
+  trashId: string
+): { catalog: AdminCatalog; ok: boolean; reason?: string } {
+  const entry = trashOf(catalog).find((t) => t.id === trashId);
+  if (!entry) return { catalog, ok: false, reason: 'Item not found in trash.' };
+  let next = removeTrashEntry(catalog, trashId);
+
+  if (entry.kind === 'university') {
+    const data = entry.data as University;
+    if (catalog.universities.some((u) => u.id === data.id)) {
+      return { catalog, ok: false, reason: 'A university with that id already exists.' };
+    }
+    next = { ...next, universities: [...next.universities, data] };
+    return { catalog: next, ok: true };
+  }
+
+  if (entry.kind === 'school') {
+    const data = entry.data as School;
+    const uid = entry.parent.universityId ?? data.universityId;
+    const uni = catalog.universities.find((u) => u.id === uid);
+    if (!uni) {
+      return {
+        catalog,
+        ok: false,
+        reason: `Cannot restore — parent ${catalog.universities.find((u) => u.id === uid)?.name ?? 'university'} was also deleted. Restore that first.`,
+      };
+    }
+    if (uni.schools.some((s) => s.id === data.id)) {
+      return { catalog, ok: false, reason: 'A department with that id already exists.' };
+    }
+    next = mapUniversities(next, (u) =>
+      u.id === uid ? { ...u, schools: [...u.schools, data] } : u
+    );
+    return { catalog: next, ok: true };
+  }
+
+  if (entry.kind === 'programme') {
+    const data = entry.data as Programme;
+    const sid = entry.parent.schoolId ?? data.schoolId;
+    let found = false;
+    next = mapUniversities(next, (u) => ({
+      ...u,
+      schools: u.schools.map((s) => {
+        if (s.id !== sid) return s;
+        found = true;
+        return { ...s, programmes: [...s.programmes, data] };
+      }),
+    }));
+    if (!found) {
+      return { catalog, ok: false, reason: 'Cannot restore — its department no longer exists.' };
+    }
+    return { catalog: next, ok: true };
+  }
+
+  if (entry.kind === 'curriculum') {
+    const data = entry.data as CurriculumVersion;
+    if (catalog.curricula.some((c) => c.id === data.id)) {
+      return { catalog, ok: false, reason: 'A curriculum with that id already exists.' };
+    }
+    next = { ...next, curricula: [...next.curricula, data] };
+    next = withProgramme(next, data.programmeId, (p) => ({
+      ...p,
+      curriculumVersionIds: p.curriculumVersionIds.includes(data.id)
+        ? p.curriculumVersionIds
+        : [...p.curriculumVersionIds, data.id],
+    }));
+    return { catalog: next, ok: true };
+  }
+
+  return { catalog, ok: false, reason: 'Unknown item type.' };
+}
+
+/** Permanently delete a trashed item (irreversible). */
+export function purgeTrashItem(
+  catalog: AdminCatalog,
+  trashId: string
+): AdminCatalog {
+  return removeTrashEntry(catalog, trashId);
+}
+
+/** Empty the entire recycle bin permanently. */
+export function clearTrash(catalog: AdminCatalog): AdminCatalog {
+  return { ...catalog, trash: [] };
 }
 
 // ── Academic structure (levels / semesters / courses) ──────────────────────
@@ -1100,13 +1258,16 @@ export interface DistributionPayload {
   generatedAt: string;
   universities: University[];
   curricula: CurriculumVersion[];
+  /** Optional non-personal branding/icons the admin set for the student app. */
+  appearance?: AppAppearance;
 }
 
 /**
  * Build the versioned configuration document for offline distribution.
  * Includes the full university catalog plus PUBLISHED curricula only
- * (drafts/review/archived are never distributed). This document contains
- * non-personal configuration — no student academic data exists in it.
+ * (drafts/review/archived are never distributed), and the optional
+ * non-personal branding/appearance. This document contains no student
+ * academic data.
  */
 export function buildDistribution(catalog: AdminCatalog): DistributionPayload {
   return {
@@ -1115,6 +1276,7 @@ export function buildDistribution(catalog: AdminCatalog): DistributionPayload {
     generatedAt: new Date().toISOString(),
     universities: clone(catalog.universities),
     curricula: catalog.curricula.filter((c) => c.status === 'published').map(clone),
+    appearance: catalog.appearance ? clone(catalog.appearance) : undefined,
   };
 }
 

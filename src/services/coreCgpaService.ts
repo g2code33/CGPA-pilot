@@ -134,9 +134,12 @@ export function semesterTerm(
 
   // 2) GPA-history mode: student entered only the semester GPA. Weight it by
   //    the configured/override credit load. Never infers course grades.
+  //    If specific courses were flagged "not released", their credits are
+  //    pulled out of the counted load (the typed GPA is over the released
+  //    portion) and reported as pending for projections.
   if (semester.gpa !== null && !Number.isNaN(semester.gpa)) {
-    const credits =
-      semester.creditHoursOverride ?? configuredCredits ?? 0;
+    const grossCredits = semester.creditHoursOverride ?? configuredCredits ?? 0;
+    const credits = Math.max(0, grossCredits - pendingCreditHours);
     return {
       creditHours: credits,
       qualityPoints: semester.gpa * credits,

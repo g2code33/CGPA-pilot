@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { UpdaterStatus } from '../desktop';
+import { wipeDeviceStorage } from '../services/configCache';
 
 /**
  * Manual "check for updates" control, placed at the top of the app.
@@ -137,9 +138,7 @@ export function UpdateButton() {
   }
 
   function restart() {
-    try { localStorage.clear(); } catch (e) {}
-    try { sessionStorage.clear(); } catch (e) {}
-    if ('caches' in window) { caches.keys().then((names) => { names.forEach((name) => caches.delete(name)); }).catch(() => {}); }
+    wipeDeviceStorage();
     if (desktop) window.cgpaPilot?.installUpdate();
     else window.location.reload();
   }

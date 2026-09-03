@@ -151,3 +151,28 @@ export interface InstitutionContext {
   /** Optional explicit curriculum; default = latest published for programme. */
   curriculumId?: string;
 }
+
+/** A replaceable app icon: an emoji OR an uploaded image (data URL). */
+export interface AppIcon {
+  /** Emoji used when no image is supplied (fallback). */
+  emoji: string;
+  /** Optional uploaded image (png/jpg/jpeg/webp as a data URL). */
+  image?: string;
+}
+
+/**
+ * Non-personal branding / appearance that the administrator can set and which
+ * is shipped to the student app as part of its offline config (so it shows
+ * even without a network). Only ever contains non-personal assets.
+ */
+export interface AppAppearance {
+  /** App logo image (data URL) overriding the bundled icon-512. */
+  logo?: string;
+  /** Replaces the app icon used on the home hub / hero when present. */
+  appIcon?: AppIcon;
+  /** Overridable icons keyed by a slot name (e.g. a tool id). */
+  icons?: Record<string, AppIcon>;
+  /** Optional product wordmark / tagline override. */
+  appName?: string;
+  tagline?: string;
+}

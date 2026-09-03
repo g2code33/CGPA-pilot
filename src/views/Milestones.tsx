@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info } from '../components/ui';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
 import { progressThrough } from '../services/structureService';
 import { printSection } from '../services/scopedPrint';
@@ -102,7 +102,19 @@ export function Milestones() {
         <SectionTitle
           icon="🏁"
           title="Milestones & affordable drop"
-          subtitle="Stage-by-stage targets to graduation — and how far you can let a future result slip before your target slips away."
+          subtitle="Stage-by-stage targets to graduation."
+          info={
+            <>
+              Shows the milestones you need to hit each level to reach your target — and
+              how far you can let a future result <strong>slip</strong> before the goal
+              gets out of reach.
+              <br />
+              <br />
+              Move the <strong>“if I get”</strong> slider to test a possible dip in your
+              next GPA. All three scenarios are computed locally and temporarily — nothing
+              is saved or sent.
+            </>
+          }
         />
 
         {noData && (

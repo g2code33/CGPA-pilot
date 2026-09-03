@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAcademic } from '../state/store';
 import { markIntentionalReload } from '../services/sessionGuard';
+import { wipeDeviceStorage } from '../services/configCache';
 
 /**
  * Persistent 🔄 Refresh / Clear control.
@@ -31,13 +32,8 @@ export function ClearButton() {
   function confirmClear() {
     // 1. Clear all student application state + temporary calculation objects.
     dispatch({ type: 'reset' });
-    // 2. Clear localStorage and sessionStorage completely.
-    try { localStorage.clear(); } catch (e) { console.warn('localStorage clear failed', e); }
-    try { sessionStorage.clear(); } catch (e) { console.warn('sessionStorage clear failed', e); }
-    // 3. Clear any service worker caches.
-    if ('caches' in window) {
-      caches.keys().then((names) => { names.forEach((name) => caches.delete(name)); }).catch(() => {});
-    }
+    // 2. Clear this device's temporary storage and service-worker caches.
+    wipeDeviceStorage();
     // Suppress the beforeunload loss warning for our own intentional reload.
     markIntentionalReload();
     setOpen(false);

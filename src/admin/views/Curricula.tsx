@@ -208,8 +208,8 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
                   onClick={() =>
                     confirmThen(
                       c.status === 'archived'
-                        ? 'Permanently delete this archived version?'
-                        : 'Delete this version? This cannot be undone.',
+                        ? 'Delete this archived version? It moves to the Recycle bin and can be restored later.'
+                        : 'Delete this version? It moves to the Recycle bin and can be restored later.',
                       () => {
                         const res = deleteCurriculum(catalog, c.id);
                         if (!res.ok) {

@@ -7,14 +7,39 @@
 // separate application/entry; the student app cannot read admin secrets.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { CurriculumVersion, University } from '../config/types';
+import type { AppAppearance, CurriculumVersion, University } from '../config/types';
 
 const CFG_KEY = 'cgpa-pilot.admin.config.v1';
 const AUTH_KEY = 'cgpa-pilot.admin.auth.v1';
 
+/** What kind of entity a recycled/trashed item was. */
+export type TrashKind = 'university' | 'school' | 'programme' | 'curriculum';
+
+/** A soft-deleted item, kept so an administrator can restore or purge it. */
+export interface TrashEntry {
+  id: string;
+  kind: TrashKind;
+  /** Human label shown in the recycle bin (name / code etc.). */
+  label: string;
+  deletedAt: string;
+  /** Deep snapshot of the deleted entity (University | School | Programme | CurriculumVersion). */
+  data: unknown;
+  /** Parent ids needed to restore into the correct place in the tree. */
+  parent: { universityId?: string; schoolId?: string; programmeId?: string };
+}
+
 export interface AdminCatalog {
   universities: University[];
   curricula: CurriculumVersion[];
+  /** Soft-deleted items awaiting restore or permanent deletion. */
+  trash?: TrashEntry[];
+  /** Optional branding the admin has set for the student app. */
+  appearance?: AppAppearance;
+}
+
+/** Accessor that treats older catalogs without a trash array as empty. */
+export function trashOf(catalog: AdminCatalog): TrashEntry[] {
+  return catalog.trash ?? [];
 }
 
 export interface AdminAuthData {
@@ -43,6 +68,8 @@ export function readAdminCatalog(seed: AdminCatalog): AdminCatalog {
       Array.isArray(parsed.universities) &&
       Array.isArray(parsed.curricula)
     ) {
+      // Normalise for older saved catalogs that predate trash/appearance.
+      if (!Array.isArray(parsed.trash)) parsed.trash = [];
       return parsed as AdminCatalog;
     }
     return seed;

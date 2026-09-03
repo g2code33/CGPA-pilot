@@ -93,7 +93,7 @@ export function InstitutionSelector({ compact = false }: { compact?: boolean }) 
             </select>
           </label>
           <label className="block">
-            <span className="label">School</span>
+            <span className="label">Department</span>
             <select
               className={selectClass}
               value={context.schoolId}

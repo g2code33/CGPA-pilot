@@ -14,7 +14,11 @@
 // requests; configuration refresh is independent and optional.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { CurriculumVersion, University } from '../config/types';
+import type {
+  AppAppearance,
+  CurriculumVersion,
+  University,
+} from '../config/types';
 import { BUNDLED_CURRICULA, UNIVERSITIES } from '../config/context';
 
 const STORAGE_KEY = 'cgpa-pilot.config.v1';
@@ -24,6 +28,8 @@ interface CachedConfig {
   universities: University[];
   /** Non-personal curriculum versions. */
   curricula: CurriculumVersion[];
+  /** Optional non-personal branding/icons set by the administrator. */
+  appearance?: AppAppearance;
   cachedAt: string; // ISO timestamp
   schemaVersion: 1;
 }
@@ -107,4 +113,48 @@ export function seedCacheIfEmpty(): CachedConfig {
     /* ignore */
   }
   return cached;
+}
+
+// ── Branding / appearance (non-personal) ─────────────────────────────────
+// The administrator can set a logo + icon overrides and "apply to this
+// device", which stores them here so the offline student app reflects them.
+// This module remains the only student storage boundary and stores no
+// student data — only the admin's branding config.
+
+/** Read the administrator-set appearance, if any. */
+export function readCachedAppearance(): AppAppearance | undefined {
+  return readCachedConfig().appearance;
+}
+
+/** Store (or clear) the administrator-set appearance for the student app. */
+export function setCachedAppearance(appearance: AppAppearance | undefined): void {
+  const cfg = readCachedConfig();
+  writeCachedConfig({ ...cfg, appearance });
+}
+
+/**
+ * Wipe this device's temporary browser storage and service-worker caches. Used
+ * by the student "Refresh / Clear session" and "Restart to update" controls so
+ * every storage touch stays inside this single boundary module.
+ */
+export function wipeDeviceStorage(): void {
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* ignore */
+  }
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof caches !== 'undefined') {
+      caches.keys().then((names) => {
+        names.forEach((name) => void caches.delete(name));
+      });
+    }
+  } catch {
+    /* ignore */
+  }
 }

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info } from '../components/ui';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
 import { progressThrough } from '../services/structureService';
@@ -139,7 +139,17 @@ export function FlightPathView() {
         <SectionTitle
           icon="🛩️"
           title="The CGPA Flight Path"
-          subtitle="Your trajectory from today to graduation. Projected and required lines are scenarios, not promises — your actual route changes with each result."
+          subtitle="Your trajectory from today to graduation."
+          info={
+            <>
+              This plots where your CGPA is heading, term by term, to graduation.
+              <br />
+              <br />
+              <strong>Projected</strong> and <strong>required</strong> lines are{' '}
+              <strong>scenarios, not promises</strong> — your actual route changes with
+              each real result. Nothing is saved.
+            </>
+          }
         />
 
         {noData && (

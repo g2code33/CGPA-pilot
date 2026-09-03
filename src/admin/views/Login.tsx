@@ -63,7 +63,23 @@ export function Login() {
             curriculum configuration. It never accesses student data.
           </p>
         </div>
+
+        <button
+          onClick={backToStudentApp}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-brand-50 hover:text-brand-700"
+        >
+          ← Back to the app
+        </button>
       </div>
     </div>
   );
+}
+
+/** Leave the admin console and return to the students' app. */
+function backToStudentApp() {
+  try {
+    window.location.assign('./index.html');
+  } catch {
+    window.location.href = './index.html';
+  }
 }

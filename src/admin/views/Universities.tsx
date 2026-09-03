@@ -33,7 +33,7 @@ export function Universities() {
       <header>
         <h1 className="text-xl font-black text-slate-900">Institutions</h1>
         <p className="text-xs text-slate-500">
-          Universities, schools/colleges and programmes. Deactivation hides an
+          Universities, departments and programmes. Deactivation hides an
           entity from students; deletion is blocked where published curricula
           or child records exist.
         </p>
@@ -138,12 +138,10 @@ function UniversityCard({
             apply((c) => updateUniversity(c, university.id, { country: e.target.value }))
           }
         />
-        <input
-          className="input w-40 text-xs"
-          placeholder="Logo URL/path"
+        <LogoField
           value={university.logo ?? ''}
-          onChange={(e) =>
-            apply((c) => updateUniversity(c, university.id, { logo: e.target.value || undefined }))
+          onValue={(v) =>
+            apply((c) => updateUniversity(c, university.id, { logo: v || undefined }))
           }
         />
         <div className="ml-auto flex items-center gap-2">
@@ -167,7 +165,7 @@ function UniversityCard({
             <button
               className="rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
               onClick={() =>
-                onConfirm(`Delete university "${university.name}"?`, () =>
+                onConfirm(`Delete university "${university.name}"? It moves to the Recycle bin and can be restored later.`, () =>
                   apply((c) => deleteUniversity(c, university.id))
                 )
               }
@@ -187,7 +185,7 @@ function UniversityCard({
           <div className="flex flex-wrap gap-2">
             <input
               className="input max-w-xs"
-              placeholder="New school / college name"
+              placeholder="New department name"
               value={schoolName}
               onChange={(e) => setSchoolName(e.target.value)}
               autoFocus
@@ -212,7 +210,7 @@ function UniversityCard({
             className="text-xs font-bold text-brand-600 hover:underline"
             onClick={() => setShowSchool(true)}
           >
-            ＋ Add school / college
+            ＋ Add department
           </button>
         )}
       </div>
@@ -243,11 +241,11 @@ function SchoolRow({
           value={school.name}
           onChange={(e) => apply((c) => updateSchool(c, school.id, { name: e.target.value }))}
         />
-        <input
-          className="input w-40 text-xs"
-          placeholder="Dept logo URL/path"
+        <LogoField
           value={school.logo ?? ''}
-          onChange={(e) => apply((c) => updateSchool(c, school.id, { logo: e.target.value || undefined }))}
+          onValue={(v) =>
+            apply((c) => updateSchool(c, school.id, { logo: v || undefined }))
+          }
         />
         <div className="ml-auto flex items-center gap-2">
           <StatusToggle
@@ -263,7 +261,7 @@ function SchoolRow({
           {canDelete && (
             <button
               className="rounded-lg bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
-              onClick={() => onConfirm(`Delete school "${school.name}"?`, () => apply((c) => deleteSchool(c, school.id)))}
+              onClick={() => onConfirm(`Delete department "${school.name}"? It moves to the Recycle bin and can be restored later.`, () => apply((c) => deleteSchool(c, school.id)))}
             >
               🗑
             </button>
@@ -329,6 +327,99 @@ function SchoolRow({
   );
 }
 
+/**
+ * Logo picker for an institution/school: a straight image-file upload (read as
+ * a data URL so it works fully offline) OR a URL/path field, with a live
+ * thumbnail preview. Whatever is set is stored on the `logo` field and shown
+ * nicely to students via the same logo lookup.
+ */
+function LogoField({
+  value,
+  onValue,
+}: {
+  value: string;
+  onValue: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState('');
+
+  function handleFile(file?: File | null) {
+    setErr('');
+    if (!file) return;
+    if (file.size > 2_000_000) {
+      setErr('Keep logos under ~2 MB.');
+      return;
+    }
+    if (!/^image\//.test(file.type)) {
+      setErr('Please choose an image file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => onValue(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => setErr('Could not read that file.');
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-white p-1.5 ring-1 ring-slate-200">
+      {value ? (
+        <img
+          src={value}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-lg bg-slate-100 object-contain ring-1 ring-slate-200"
+        />
+      ) : (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-400">
+          🖼️
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`rounded-lg px-2 py-1 text-[11px] font-bold ring-1 transition ${
+          open ? 'bg-brand-600 text-white ring-brand-600' : 'bg-brand-50 text-brand-700 ring-brand-200'
+        }`}
+        title="Set a logo image"
+      >
+        Logo
+      </button>
+      {open && (
+        <div className="flex items-center gap-2">
+          <label className="cursor-pointer rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-200">
+            ⬆ Upload
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleFile(e.target.files?.[0])}
+            />
+          </label>
+          <input
+            className="input w-40 py-1 text-xs"
+            placeholder="…or paste an image URL"
+            value={value.startsWith('data:') ? '' : value}
+            onChange={(e) => {
+              setErr('');
+              onValue(e.target.value);
+            }}
+          />
+          {value && (
+            <button
+              type="button"
+              className="rounded-lg px-2 py-1 text-[11px] font-bold text-slate-400 hover:text-red-500"
+              title="Remove logo"
+              onClick={() => onValue('')}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+      {err && <span className="text-[10px] font-bold text-red-500">{err}</span>}
+    </div>
+  );
+}
+
 function ProgrammeRow({
   programme,
   apply,
@@ -385,7 +476,7 @@ function ProgrammeRow({
       {canDelete ? (
         <button
           className="rounded-lg bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
-          onClick={() => onConfirm(`Delete programme "${programme.name}" and its curriculum references?`, () => apply((c) => deleteProgramme(c, programme.id)))}
+          onClick={() => onConfirm(`Delete programme "${programme.name}" and its curriculum references? It moves to the Recycle bin and can be restored later.`, () => apply((c) => deleteProgramme(c, programme.id)))}
         >
           🗑
         </button>

@@ -13,11 +13,16 @@ export function Privacy() {
 
   return (
     <div className="space-y-4">
-      <Card className="bg-emerald-600 text-white ring-0">
-        <h2 className="text-lg font-black">🔒 Your privacy is the design.</h2>
-        <p className="mt-1 text-sm text-emerald-50">
-          No account required. Your academic information is not saved or shared.
-        </p>
+      <Card className="bg-emerald-50 ring-emerald-200">
+        <div className="flex items-start gap-3">
+          <span className="text-3xl leading-none">🔒</span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-black text-slate-900">Your privacy is the design.</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-800">
+              No account required. Your academic information is not saved or shared.
+            </p>
+          </div>
+        </div>
       </Card>
 
       <Card>

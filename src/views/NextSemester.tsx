@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note } from '../components/ui';
+import { Card, SectionTitle, Note, Info } from '../components/ui';
 import {
   nextSemesterAfter,
   planNextSemester,
@@ -147,6 +147,20 @@ export function NextSemester() {
             <p className="mt-0.5 text-[11px] text-brand-200">{fmt2(target)}</p>
           </div>
         </div>
+        <div className="mt-3 flex justify-end">
+          <Info label="How is this worked out?" className="text-white ring-white/25 [&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25">
+            <span className="text-slate-700">
+              The <strong>Required GPA</strong> is the semester average you’d need to
+              stay on course for your chosen {fmt2(target)} target over the credits
+              that remain. The plan then breaks that into a realistic set of target
+              grades.
+              <br />
+              <br />
+              Everything is computed locally and works offline. Nothing is saved or
+              sent.
+            </span>
+          </Info>
+        </div>
       </Card>
 
       {record.cgpa === null ? (
@@ -168,13 +182,22 @@ export function NextSemester() {
           {/* ── Target-grade combinations ─────────────────────────────── */}
           <div ref={planRef}>
           <Card className="print-sheet">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
                 <h3 className="text-sm font-extrabold text-slate-800">🎯 Next semester — {next.label}</h3>
                 <p className="text-[11px] text-slate-500">
-                  Required GPA <strong className="text-brand-700">{fmt2(plan.requiredNextGpa)}</strong> · Target {plan.targetClassLabel} · Target grade combinations are mathematically derived from the configured grading and course credits.
+                  Required GPA <strong className="text-brand-700">{fmt2(plan.requiredNextGpa)}</strong> · Target {plan.targetClassLabel}
                 </p>
               </div>
+              <Info className="shrink-0" label="About these targets">
+                The <strong>target grades</strong> below are mathematically derived from
+                your configured grading scale and each course’s credits — the easiest
+                realistic combination that lands your required GPA.
+                <br />
+                <br />
+                They are <strong>planning targets, not predicted grades</strong>. Your
+                results may differ, and nothing is saved.
+              </Info>
             </div>
 
             {plan.combos.length > 0 && (
@@ -332,9 +355,6 @@ export function NextSemester() {
             </Card>
           )}
 
-          <Note>
-            Everything here is computed locally and works offline. Nothing is saved or sent.
-          </Note>
         </>
       )}
     </div>
