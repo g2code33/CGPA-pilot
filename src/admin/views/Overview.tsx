@@ -53,6 +53,28 @@ export function Overview({
     flash('Versioned configuration downloaded — distribute it for offline use.');
   }
 
+  function downloadSeedFile() {
+    // A config-as-code export: the exact AdminCatalog shape the committed
+    // seed loader (src/config/seed.ts) reads. Dropping this into the repo
+    // makes the current admin data the built-in default for every user.
+    const seedDoc = {
+      universities: catalog.universities,
+      curricula: catalog.curricula,
+      trash: catalog.trash ?? [],
+      ...(catalog.appearance ? { appearance: catalog.appearance } : {}),
+    };
+    const blob = new Blob([JSON.stringify(seedDoc, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'admin-catalog.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    flash('Seed file downloaded. Save it into the repo at src/config/seed/admin-catalog.json, commit and push to ship it to every user.');
+  }
+
   function applyToThisDevice() {
     const payload = buildDistribution(catalog);
     writeCachedConfig({
@@ -183,6 +205,33 @@ export function Overview({
               e.target.value = '';
             }}
           />
+        </div>
+      </div>
+
+      {/* Permanence: bake the admin catalog into the shipped build */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
+        <h2 className="text-sm font-bold text-slate-800">
+          🚀 Make this permanent — ship to every user
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          The browser autosave above keeps data only on <em>this device</em>.
+          To make your admin catalog permanent and reach every user (and to
+          survive any redeploy, cleared browser, or new device), bake it into
+          the app itself. Download the seed file, then in the project run{' '}
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] font-bold">
+            npm run seed:apply -- admin-catalog.json
+          </code>{' '}
+          (or save it as{' '}
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] font-bold">
+            src/config/seed/admin-catalog.json
+          </code>
+          ), then commit and push. That file is the built-in default shipped
+          with every build.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={downloadSeedFile} className="btn-primary">
+            ⬇️ Download admin-catalog.json (seed)
+          </button>
         </div>
       </div>
 

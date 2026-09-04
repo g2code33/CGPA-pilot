@@ -18,6 +18,7 @@
     "test": "node test/run-tests.mjs",
     "preview": "vite preview",
     "smoke": "npm run build:web && node smoke.mjs",
+    "seed:apply": "node scripts/seed-apply.mjs",
     "dist": "npm run build:web && npm run build:electron && electron-builder",
     "dist:win": "npm run build:web && npm run build:electron && electron-builder --win",
     "dist:linux": "npm run build:web && npm run build:electron && electron-builder --linux",

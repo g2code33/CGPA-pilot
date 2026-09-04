@@ -23,9 +23,9 @@ import type {
   University,
 } from '../config/types';
 import { ucc } from '../config/institutions/ucc';
-import { uccPharmDCurriculum } from '../config/curricula/ucc-pharmd';
 import type { AdminCatalog, TrashEntry, TrashKind } from './adminStorage';
 import { trashOf } from './adminStorage';
+import { SEED_ADMIN_CATALOG } from '../config/seed';
 
 // Official UCC rules (seed) — used for the "reset to official" action.
 export function uccOfficialGrading(): GradingSystem {
@@ -35,12 +35,15 @@ export function uccOfficialClassification(): ClassificationSystem {
   return clone(ucc.classificationSystem!);
 }
 
+/**
+ * The catalog the admin console boots / resets to. This is the committed
+ * config-as-code seed (admin-catalog.json) — the same data that ships to
+ * students in the bundle — with the hand-authored TS seeds as a fallback.
+ * A deep clone is returned so callers can transform it without mutating the
+ * shared seed.
+ */
 export function seedCatalog(): AdminCatalog {
-  return {
-    universities: [ucc],
-    curricula: [uccPharmDCurriculum],
-    trash: [],
-  };
+  return clone(SEED_ADMIN_CATALOG);
 }
 
 // ── Branding / appearance (non-personal) ───────────────────────────────────

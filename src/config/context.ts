@@ -6,16 +6,17 @@ import type {
   ClassificationSystem,
   InstitutionContext,
 } from './types';
-import { ucc } from './institutions/ucc';
-import { uccPharmDCurriculum } from './curricula/ucc-pharmd';
 import type { CurriculumVersion } from './types';
+import { SEED_UNIVERSITIES, SEED_CURRICULA } from './seed';
 
 // Registry of all universities known to this build. Future institutions are
 // added here — the student app only ever exposes the ACTIVE context below.
-export const UNIVERSITIES: University[] = [ucc];
+// This list is driven by the committed config-as-code seed (admin-catalog.json)
+// so that published admin data ships inside every build.
+export const UNIVERSITIES: University[] = SEED_UNIVERSITIES;
 
 // All curriculum versions known to this build, keyed by id.
-export const BUNDLED_CURRICULA: CurriculumVersion[] = [uccPharmDCurriculum];
+export const BUNDLED_CURRICULA: CurriculumVersion[] = SEED_CURRICULA;
 
 // The single institution/programme context the student app runs under.
 export const ACTIVE_CONTEXT: InstitutionContext = {
