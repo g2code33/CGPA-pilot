@@ -5,13 +5,20 @@
 //   • Default: SAME-ORIGIN — when the app is hosted by the Cloudflare
 //     Worker (static assets + /api on one origin) this just works, with no
 //     configuration and no CORS.
-//   • Override: VITE_CONFIG_API_BASE build env (full URL, e.g. a separate
-//     API-only Worker) for deployments where the site and the API live on
-//     different origins.
+//   • Production split-hosting: the site lives on Cloudflare Pages
+//     (cgpapilot.pages.dev) while the configuration API is the API-only
+//     Worker. On that origin the production API address below is used, so
+//     NO build-time env var is required (a mis-set variable can't break it).
+//   • Override: VITE_CONFIG_API_BASE build env (full URL) always wins when
+//     present — for other deployments or a future API move.
 //
 // On file:// (Electron) or offline the sync simply reports "unavailable"
 // and the app keeps using its local cache / bundled seed.
 // ─────────────────────────────────────────────────────────────────────────
+
+/** Production configuration API (API-only Cloudflare Worker + D1). */
+const PRODUCTION_API_BASE = 'https://cgpa-pilot.calcitoninpay.workers.dev';
+const PAGES_HOST = 'cgpapilot.pages.dev';
 
 /** The API base: '' means same-origin (/api/...). */
 export function configApiBase(): string {
@@ -24,7 +31,15 @@ export function configApiBase(): string {
       return v.trim().replace(/\/+$/, '');
     }
   } catch {
-    /* non-Vite context (tests / bundlers) → same-origin */
+    /* non-Vite context (tests / bundlers) */
+  }
+  // Split-hosting production: Pages site → API-only Worker.
+  try {
+    if (typeof window !== 'undefined' && window.location?.hostname === PAGES_HOST) {
+      return PRODUCTION_API_BASE;
+    }
+  } catch {
+    /* non-browser context */
   }
   return '';
 }
