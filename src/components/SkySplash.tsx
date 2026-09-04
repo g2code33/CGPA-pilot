@@ -200,6 +200,14 @@ export function SkySplash({
     return () => window.clearTimeout(t);
   }, [landed, onDone]);
 
+  // Skip the session (two skip buttons: HUD top-right + above the countdown).
+  const skip = () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    setBudget(0);
+    setLanded(true);
+  };
+
   function moveTo(clientX: number, clientY: number) {
     const el = arenaRef.current;
     if (!el) return;
@@ -289,12 +297,7 @@ export function SkySplash({
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => {
-              if (doneRef.current) return;
-              doneRef.current = true;
-              setBudget(0);
-              setLanded(true);
-            }}
+            onClick={skip}
             className="pointer-events-auto rounded-2xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase tracking-wide ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25 active:scale-95"
           >
             ⏭ Skip
@@ -314,6 +317,17 @@ export function SkySplash({
 
       {/* take-off countdown bar */}
       <div className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-5">
+        {/* second skip button, right above the countdown */}
+        <div className="mx-auto mb-2 flex max-w-xs justify-center">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={skip}
+            className="pointer-events-auto rounded-full bg-white/15 px-4 py-1.5 text-[11px] font-black uppercase tracking-wide ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25 active:scale-95"
+          >
+            ⏭ Skip
+          </button>
+        </div>
         <div className="mx-auto flex max-w-xs items-center gap-3">
           <span className="text-xl drop-shadow">🛫</span>
           <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/25 ring-1 ring-white/20">
