@@ -411,17 +411,12 @@ export default function App() {
                   <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={34} />
                 </p>
                 <h2 className="mt-2 text-lg font-black">Let’s get you off the ground</h2>
-                <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-brand-100">
-                  Start in <strong className="text-white">My results</strong> and enter
-                  your current level + CGPA. Every tool below then works from that one
-                  number — nothing is saved or shared.
-                </p>
-              <button
-                onClick={() => setScreen('calculate')}
-                className="mt-4 rounded-2xl bg-white px-6 py-3 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
-              >
-                📝 Enter my results
-              </button>
+                <button
+                  onClick={() => setScreen('calculate')}
+                  className="mt-4 rounded-2xl bg-white px-6 py-3 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
+                >
+                  📝 Enter my results
+                </button>
             </div>
           )}
           {/* Help tip — same guidance as the onboarding line, always reachable */}
