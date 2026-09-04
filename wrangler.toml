@@ -1,8 +1,46 @@
-# Cloudflare Pages deployment for the web/PWA version.
-# The build emits a fully static site into dist/ — no server runtime.
-# Classic Cloudflare Pages Git integration uses the dashboard build settings
-# (build command "npm run build:web", output directory "dist"); this file also
-# supports CLI deploy via "wrangler pages deploy dist".
+# ─────────────────────────────────────────────────────────────────────────
+# CGPA Pilot — Cloudflare Worker with static assets + D1 configuration API.
+#
+# One deploy serves BOTH the app (student + admin, from dist/) and the
+# configuration API (/api/*, persisted in D1). Same origin → no CORS, no
+# extra env vars: the student app checks /api/config/meta on every boot.
+#
+# One-time setup (see docs/DEPLOYMENT.md for the full walkthrough):
+#   1. npx wrangler login
+#   2. npx wrangler d1 create cgpa-pilot-config
+#      → paste the printed database_id below
+#   3. npm run db:init   (applies 0001_init.sql + 0002_admin_auth.sql)
+#   4. npx wrangler secret put ADMIN_TOKEN   (operator token — setup + automation)
+#   5. npm run build:web && npx wrangler deploy
+#   6. Open /admin.html → First-time setup: paste the token, create the ONE
+#      admin passcode (the only credential you need from then on, on any device)
+#      → Dashboard → Save & Publish (one-time migration of your catalog)
+#
+# Afterwards the admin console's "Save & Publish" is the ONLY way changes
+# reach users — no seed files, no Git, no redeploy for admin edits.
+# ─────────────────────────────────────────────────────────────────────────
+
 name = "cgpa-pilot"
+main = "worker/src/index.ts"
 compatibility_date = "2026-08-31"
-pages_build_output_dir = "dist"
+workers_dev = true
+
+# D1: the authoritative store for the published configuration.
+# ⚠️ REPLACE the placeholder database_id below with the UUID printed by
+#    `wrangler d1 create cgpa-pilot-config` (see docs/DEPLOYMENT.md).
+#    The zeroed UUID lets `wrangler dev` run locally before that step;
+#    `wrangler deploy` will refuse it until you replace it.
+[[d1_databases]]
+binding = "CONFIG_DB"
+database_name = "cgpa-pilot-config"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Static site: the built student + admin app (npm run build:web → dist/).
+[assets]
+directory = "dist"
+binding = "ASSETS"
+# Unknown non-API routes fall back to the student app shell (SPA).
+not_found = "single-page-application"
+
+[observability]
+enabled = true
