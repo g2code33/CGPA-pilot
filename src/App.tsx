@@ -27,6 +27,7 @@ import { FlightPathView } from './views/FlightPath';
 import { Milestones } from './views/Milestones';
 import { Privacy } from './views/Privacy';
 import { InstitutionSelector } from './components/InstitutionSelector';
+import { Info } from './components/ui';
 import { SkySplash } from './components/SkySplash';
 import { AppGlyph } from './components/AppGlyph';
 import { fmt2 } from './util/format';
@@ -415,15 +416,26 @@ export default function App() {
                   your current level + CGPA. Every tool below then works from that one
                   number — nothing is saved or shared.
                 </p>
-                <button
-                  onClick={() => setScreen('calculate')}
-                  className="mt-4 rounded-2xl bg-white px-6 py-3 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
-                >
-                  📝 Enter my results
-                </button>
-              </div>
-            )}
-          </section>
+              <button
+                onClick={() => setScreen('calculate')}
+                className="mt-4 rounded-2xl bg-white px-6 py-3 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
+              >
+                📝 Enter my results
+              </button>
+            </div>
+          )}
+          {/* Help tip — same guidance as the onboarding line, always reachable */}
+          <div className="mt-3 flex justify-end">
+            <Info
+              label="How does this work?"
+              className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25 [&>p]:bg-white/15 [&>p]:text-white [&>p]:ring-white/25"
+            >
+              Start in <strong>My results</strong> and enter your current level +
+              CGPA. Every tool below then works from that one number — nothing is
+              saved or shared.
+            </Info>
+          </div>
+        </section>
 
           {hasData && (
             <button
