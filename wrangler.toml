@@ -1,20 +1,26 @@
 # ─────────────────────────────────────────────────────────────────────────
-# CGPA Pilot — Cloudflare Worker with static assets + D1 configuration API.
+# CGPA Pilot — configuration API (Cloudflare Worker + D1), API-ONLY deploy.
 #
-# One deploy serves BOTH the app (student + admin, from dist/) and the
-# configuration API (/api/*, persisted in D1). Same origin → no CORS, no
-# extra env vars: the student app checks /api/config/meta on every boot.
+# The static site (student app + admin console) is hosted on Cloudflare
+# PAGES (cgpapilot.pages.dev) from the same repo's dist/. This Worker only
+# serves /api/* (public config reads + passcode-gated admin writes),
+# persisted in D1 (the source of truth). The site's build bakes in
+#   VITE_CONFIG_API_BASE=https://cgpa-pilot.<account>.workers.dev
+# (a Pages production environment variable) so the app talks to THIS
+# origin for /api. Same-origin mode (Worker serving dist/ too) remains
+# available — re-add the commented [assets] section below.
 #
 # One-time setup (see docs/DEPLOYMENT.md for the full walkthrough):
-#   1. npx wrangler login
-#   2. npx wrangler d1 create cgpa-pilot-config
-#      → paste the printed database_id below
+#   1. npx wrangler login  (or do everything in the Cloudflare dashboard)
+#   2. D1: create `cgpa-pilot-config` (already created — see database_id)
 #   3. npm run db:init   (applies 0001_init.sql + 0002_admin_auth.sql)
 #   4. npx wrangler secret put ADMIN_TOKEN   (operator token — setup + automation)
-#   5. npm run build:web && npx wrangler deploy
-#   6. Open /admin.html → First-time setup: paste the token, create the ONE
-#      admin passcode (the only credential you need from then on, on any device)
-#      → Dashboard → Save & Publish (one-time migration of your catalog)
+#   5. npx wrangler deploy   (or Workers Builds: connect this repo, build
+#      command `npm ci --ignore-scripts`)
+#   6. Cloudflare Pages project `cgpapilot`: build from this repo, output
+#      dist, production env var VITE_CONFIG_API_BASE=<this worker's URL>
+#   7. Open https://cgpapilot.pages.dev/admin.html → First-time setup:
+#      paste the token, create the ONE admin passcode → Save & Publish
 #
 # Afterwards the admin console's "Save & Publish" is the ONLY way changes
 # reach users — no seed files, no Git, no redeploy for admin edits.
@@ -31,12 +37,12 @@ binding = "CONFIG_DB"
 database_name = "cgpa-pilot-config"
 database_id = "c6f5f8ca-e6d8-4fb0-9e09-f8b5874107a1"
 
-# Static site: the built student + admin app (npm run build:web → dist/).
-[assets]
-directory = "dist"
-binding = "ASSETS"
-# Unknown non-API routes fall back to the student app shell (SPA).
-not_found = "single-page-application"
+# Single-origin mode (optional): re-add to serve the site from this Worker
+# too (then the app needs no VITE_CONFIG_API_BASE):
+# [assets]
+# directory = "dist"
+# binding = "ASSETS"
+# not_found = "single-page-application"
 
 [observability]
 enabled = true

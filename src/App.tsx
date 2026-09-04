@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { INSTITUTION_LABEL, resolveContext } from './config/context';
+import { resolveContext, institutionLabel } from './config/context';
 import { appLogoImage, appName, iconElement } from './config/branding';
 import type { AppAppearance } from './config/types';
-import { readCachedAppearance } from './services/configCache';
+import { getRuntimeCatalog } from './config/runtime';
+import {
+  getPendingConfigUpdate,
+  clearPendingConfigUpdate,
+  onConfigUpdate,
+} from './services/configSync';
 import { useInstitution, listUniversities } from './state/institutionSelection';
 import { UpdateButton } from './components/UpdateButton';
 import { ClearButton } from './components/ClearButton';
@@ -126,8 +131,14 @@ export default function App() {
   const [splashDone, setSplashDone] = useState(false);
   const [splashRun, setSplashRun] = useState(0);
   const [screen, setScreen] = useState<Screen>('home');
-  // Administrator-set branding/icons ride the non-personal config cache.
-  const [appearance] = useState<AppAppearance | undefined>(() => readCachedAppearance());
+  // Administrator-set branding/icons ride the non-personal runtime catalog
+  // (populated at boot from the synced/cached configuration).
+  const appearance: AppAppearance | undefined = getRuntimeCatalog().appearance;
+
+  // A newer published configuration was stored mid-session → offer an
+  // explicit "reload to apply" (never an automatic reload mid-session).
+  const [pendingCfg, setPendingCfg] = useState(getPendingConfigUpdate());
+  useEffect(() => onConfigUpdate(setPendingCfg), []);
 
   // Replay the Sky Dash mini-game from anywhere on the opening screens.
   function playGameAgain() {
@@ -345,6 +356,20 @@ export default function App() {
         </div>
       </header>
       <UpdateBanner />
+      {pendingCfg && (
+        <div className="no-print flex flex-wrap items-center justify-center gap-2 bg-sky-600 px-4 py-2 text-center text-xs font-semibold text-white">
+          <span>📥 New curriculum configuration{pendingCfg.version ? ` (v${pendingCfg.version})` : ''} is ready on this device.</span>
+          <button
+            className="rounded-lg bg-white/20 px-2.5 py-1 font-bold hover:bg-white/30"
+            onClick={() => {
+              clearPendingConfigUpdate();
+              window.location.reload();
+            }}
+          >
+            Reload to apply
+          </button>
+        </div>
+      )}
       <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
         <div className="mx-auto w-full max-w-md">
           {/* Hero */}
@@ -619,7 +644,7 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
         </h1>
         {!compact && (
           <p className="text-[10px] font-medium leading-tight text-slate-500">
-            {INSTITUTION_LABEL}
+            {institutionLabel()}
           </p>
         )}
       </button>

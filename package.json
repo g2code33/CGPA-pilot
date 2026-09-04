@@ -14,7 +14,9 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "build:web": "vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit && tsc -p worker/tsconfig.json --noEmit",
+    "dev:api": "npx -y wrangler dev",
+    "db:init": "npx -y wrangler d1 execute cgpa-pilot-config --file=worker/migrations/0001_init.sql && npx -y wrangler d1 execute cgpa-pilot-config --file=worker/migrations/0002_admin_auth.sql",
     "test": "node test/run-tests.mjs",
     "preview": "vite preview",
     "smoke": "npm run build:web && node smoke.mjs",
@@ -41,6 +43,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
+    "@cloudflare/workers-types": "^4.20250808.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

@@ -15,6 +15,11 @@ import {
   SEED_ADMIN_CATALOG,
   COMMITTED_CATALOG,
 } from '../src/config/seed.ts';
+import { buildDistribution } from '../src/admin/catalogPublish.ts';
+import {
+  validateCatalogStructure,
+  validateDistributionDocument,
+} from '../src/admin/catalogValidation.ts';
 
 test('a committed admin seed is present (not falling back to an empty file)', () => {
   assert.ok(COMMITTED_CATALOG, 'committed admin-catalog.json should be valid + non-empty');
@@ -46,6 +51,18 @@ test('every programme exposed by the seed references a bundled curriculum versio
       }
     }
   }
+});
+
+test('the committed seed is a valid BOOTSTRAP (backend unavailable fallback)', () => {
+  // Structural integrity — the seed must never leave the app without a
+  // working configuration.
+  const structural = validateCatalogStructure(SEED_ADMIN_CATALOG);
+  assert.equal(structural.ok, true, structural.issues.join(' · '));
+  // And it must produce a valid distribution document for the wire protocol,
+  // even when it contains no published curriculum yet.
+  const dist = buildDistribution(SEED_ADMIN_CATALOG);
+  const distCheck = validateDistributionDocument(dist);
+  assert.equal(distCheck.ok, true, distCheck.issues.join(' · '));
 });
 
 test('a published seed curriculum stays consistent with its programme', () => {

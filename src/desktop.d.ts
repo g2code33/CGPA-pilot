@@ -37,6 +37,11 @@ declare global {
   interface ImportMetaEnv {
     readonly PROD: boolean;
     readonly DEV: boolean;
+    /**
+     * Optional base URL of the configuration API (full URL). Unset =
+     * same-origin /api (the Cloudflare Worker hosts the app and the API).
+     */
+    readonly VITE_CONFIG_API_BASE?: string;
   }
   interface ImportMeta {
     readonly env: ImportMetaEnv;

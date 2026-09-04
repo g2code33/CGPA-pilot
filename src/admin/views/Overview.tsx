@@ -1,10 +1,14 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useAdmin } from '../adminStore';
+import { buildDistribution, isDistributionPayload } from '../adminConfigService';
 import {
-  buildDistribution,
-  isDistributionPayload,
-} from '../adminConfigService';
-import { exportAdminBackup, importAdminBackup } from '../adminStorage';
+  exportAdminBackup,
+  importAdminBackup,
+  readAdminSyncMeta,
+  readApiToken,
+  writeApiToken,
+} from '../adminStorage';
+import { MIN_PASSCODE_LENGTH, preflightPublish } from '../adminApi';
 import { writeCachedConfig } from '../../services/configCache';
 
 export function Overview({
@@ -12,9 +16,13 @@ export function Overview({
 }: {
   onNavigate: (v: { name: 'universities' | 'curricula' }) => void;
 }) {
-  const { catalog, setCatalog, setPasscode } = useAdmin();
+  const { catalog, setCatalog, setPasscode, logout, backend, syncing, checkBackend, publish, pull } =
+    useAdmin();
   const [toast, setToast] = useState<string | null>(null);
+  const [curPass, setCurPass] = useState('');
   const [newPass, setNewPass] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+  const [passBusy, setPassBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const schools = catalog.universities.reduce((n, u) => n + u.schools.length, 0);
@@ -29,15 +37,52 @@ export function Overview({
     archived: catalog.curricula.filter((c) => c.status === 'archived').length,
   };
 
+  // Same validation the backend runs — publish is blocked client-side when
+  // it would be rejected (and the issues are shown, so nothing accidental).
+  const preflight = useMemo(() => preflightPublish(catalog), [catalog]);
+  const syncMeta = readAdminSyncMeta();
+
   function flash(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 6000);
+  }
+
+  async function doPublish(note?: string) {
+    if (!preflight.ok) {
+      flash(`⛔ Cannot publish — ${preflight.issues[0]}`);
+      return;
+    }
+    const r = await publish(note);
+    if (r.ok) {
+      flash(
+        `✅ Published — catalog v${r.adminVersion} / student config v${r.publishedVersion} is on the backend. Every device receives it on its next open (online).`
+      );
+    } else {
+      flash(`⛔ ${r.error}${r.issues?.[0] ? ` — ${r.issues[0]}` : ''}`);
+    }
+  }
+
+  async function doPull() {
+    const r = await pull();
+    if (r.ok && r.applied) {
+      flash(`✅ Loaded the backend catalog (v${r.adminVersion}).`);
+    } else {
+      flash(`⛔ ${r.error ?? 'Pull failed.'}`);
+    }
+  }
+
+  function saveToken(e: React.FormEvent) {
+    e.preventDefault();
+    writeApiToken(tokenInput.trim() === '' ? null : tokenInput);
+    setTokenInput('');
+    flash(tokenInput.trim() === '' ? 'API token cleared.' : 'API token saved.');
+    void checkBackend();
   }
 
   function exportDistribution() {
     const payload = buildDistribution(catalog);
     if (payload.curricula.length === 0) {
-      flash('No PUBLISHED curricula to distribute yet. Review and publish one first.');
+      flash('No PUBLISHED curricula to export yet. Review and publish one first.');
       return;
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -50,43 +95,22 @@ export function Overview({
     a.download = `cgpa-pilot-curriculum-${stamp}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    flash('Versioned configuration downloaded — distribute it for offline use.');
+    flash('Published configuration file downloaded (backup / import utility).');
   }
 
-  function downloadSeedFile() {
-    // A config-as-code export: the exact AdminCatalog shape the committed
-    // seed loader (src/config/seed.ts) reads. Dropping this into the repo
-    // makes the current admin data the built-in default for every user.
-    const seedDoc = {
-      universities: catalog.universities,
-      curricula: catalog.curricula,
-      trash: catalog.trash ?? [],
-      ...(catalog.appearance ? { appearance: catalog.appearance } : {}),
-    };
-    const blob = new Blob([JSON.stringify(seedDoc, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'admin-catalog.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    flash('Seed file downloaded. Save it into the repo at src/config/seed/admin-catalog.json, commit and push to ship it to every user.');
-  }
-
-  function applyToThisDevice() {
+  function previewOnThisDevice() {
     const payload = buildDistribution(catalog);
-    writeCachedConfig({
-      universities: payload.universities,
-      curricula: payload.curricula,
-      appearance: payload.appearance,
-      cachedAt: payload.generatedAt,
-      schemaVersion: 1,
-    });
+    void writeCachedConfig(
+      {
+        universities: payload.universities,
+        curricula: payload.curricula,
+        appearance: payload.appearance,
+      },
+      { version: null, source: 'local' }
+    );
     flash(
       payload.curricula.length
-        ? 'Published configuration applied to the student app on this device.'
+        ? 'Preview stored — the student app on THIS device uses it from its next open (until the next backend sync).'
         : 'No published curriculum yet — the student app shows "awaiting published curriculum".'
     );
   }
@@ -104,7 +128,7 @@ export function Overview({
         curricula: doc.curricula,
         appearance: doc.appearance,
       });
-      flash('Configuration imported.');
+      flash('Configuration imported (local). Use Save & Publish to make it permanent.');
     } catch {
       flash('Could not read that file.');
     }
@@ -112,34 +136,69 @@ export function Overview({
 
   async function savePass(e: React.FormEvent) {
     e.preventDefault();
-    if (newPass.length < 4) {
-      flash('Passcode must be at least 4 characters.');
+    if (curPass.length === 0) {
+      flash('Enter the current passcode first.');
       return;
     }
-    await setPasscode(newPass);
-    setNewPass('');
-    flash('Admin passcode updated.');
+    if (newPass.length < MIN_PASSCODE_LENGTH) {
+      flash(`The new passcode must be at least ${MIN_PASSCODE_LENGTH} characters.`);
+      return;
+    }
+    setPassBusy(true);
+    const r = await setPasscode(curPass, newPass);
+    setPassBusy(false);
+    if (r.ok) {
+      setCurPass('');
+      setNewPass('');
+      flash('✅ Admin passcode updated — the new passcode now works on every device (the backend stores only a salted digest).');
+    } else {
+      flash(`⛔ ${r.message ?? 'Passcode change failed.'}`);
+    }
   }
+
+  const backendAhead =
+    backend.state === 'connected' &&
+    backend.adminVersion != null &&
+    syncMeta.adminVersion != null &&
+    backend.adminVersion > syncMeta.adminVersion;
+  const migrationMode =
+    backend.state === 'connected' &&
+    backend.adminVersion == null &&
+    catalog.universities.length > 0;
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-xl font-black text-slate-900">Admin Dashboard</h1>
-        <p className="text-xs text-slate-500">
-          Manage institutions and published curriculum. Students only ever
-          receive PUBLISHED, non-personal configuration.
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-black text-slate-900">Admin Dashboard</h1>
+          <p className="text-xs text-slate-500">
+            Manage institutions and published curriculum. Students only ever
+            receive PUBLISHED, non-personal configuration.
+          </p>
+        </div>
+        <button
+          onClick={() => void doPublish()}
+          disabled={syncing === 'publishing' || !preflight.ok}
+          className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-black shadow-sm transition ${
+            preflight.ok
+              ? 'bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.98] disabled:opacity-60'
+              : 'cursor-not-allowed bg-slate-200 text-slate-400'
+          }`}
+          title={preflight.ok ? 'Save this catalog and publish it to the backend' : preflight.issues[0]}
+        >
+          {syncing === 'publishing' ? 'Publishing…' : '💾 Save & Publish'}
+        </button>
       </header>
 
       {toast && (
-        <div className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white">
+        <div className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold leading-relaxed text-white">
           {toast}
         </div>
       )}
 
       {/* Autosave indicator */}
       <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-600">
-        <span>● Autosaved</span>
+        <span>● Autosaved on this device</span>
         <span className="text-slate-400">• {new Date().toLocaleTimeString()}</span>
       </div>
 
@@ -150,11 +209,162 @@ export function Overview({
         <Stat label="Curricula" value={catalog.curricula.length} />
       </div>
 
-      {/* Autosave + Cross-device sync */}
+      {/* ── Publish / backend (the permanent store) ─────────────────────── */}
       <div className="rounded-2xl bg-gradient-to-r from-brand-700 to-indigo-800 p-4 text-white shadow-sm ring-1 ring-brand-300/30 sm:p-5">
-        <h2 className="text-sm font-black">Autosave & Cross-device sync</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-black">💾 Save &amp; Publish — permanent for every user</h2>
+          <button
+            onClick={() => void checkBackend()}
+            disabled={syncing !== 'idle'}
+            className="rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-bold hover:bg-white/25 disabled:opacity-50"
+          >
+            {syncing === 'checking' ? 'Checking…' : '🔄 Refresh status'}
+          </button>
+        </div>
+
         <p className="mt-1 text-[11px] leading-relaxed text-brand-100">
-          Your admin data is saved automatically to this browser's storage after every edit. Because browsers keep storage per-device, download your full admin backup below and upload it on any other device to restore everything instantly.
+          Publishing saves this catalog to the backend (the source of truth) and
+          publishes the student configuration in one step. Every student device —
+          and every other admin device — picks it up automatically the next time
+          it opens online. No files, no Git, no redeploy.
+        </p>
+
+        {/* Connection state */}
+        <div className="mt-3 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
+          {backend.state === 'unknown' && syncing === 'checking' && (
+            <p className="text-xs font-bold">Checking backend…</p>
+          )}
+          {backend.state === 'unknown' && syncing !== 'checking' && (
+            <p className="text-xs font-bold">Backend status unknown.</p>
+          )}
+          {backend.state === 'connected' && (
+            <div className="space-y-1 text-xs font-semibold">
+              <p>
+                🟢 Connected
+                {backend.adminVersion != null && <> · admin catalog <strong>v{backend.adminVersion}</strong></>}
+                {backend.publishedVersion != null && <> · student config <strong>v{backend.publishedVersion}</strong></>}
+              </p>
+              {backend.updatedAt && (
+                <p className="text-[10px] font-medium text-brand-200">
+                  Last published {new Date(backend.updatedAt).toLocaleString()}
+                  {syncMeta.lastSyncAt && <> · this device last synced {new Date(syncMeta.lastSyncAt).toLocaleString()}</>}
+                </p>
+              )}
+            </div>
+          )}
+          {backend.state === 'unreachable' && (
+            <p className="text-xs font-bold text-amber-200">
+              ⚠️ Backend unreachable — you are offline, or the configuration API is
+              not deployed at this URL. Local autosave still works; publish when
+              back online.
+            </p>
+          )}
+          {backend.state === 'not-configured' && (
+            <p className="text-xs font-bold text-amber-200">
+              ⚠️ Backend not configured. {backend.message ?? ''} See docs/DEPLOYMENT.md
+              (create the D1 database + set the admin token), then Refresh.
+            </p>
+          )}
+          {backend.state === 'unauthorized' && (
+            <div className="flex items-center justify-between gap-2 text-xs font-bold text-amber-200">
+              <p>⚠️ Your admin session has expired (or the token was rejected). Sign in again.</p>
+              <button
+                onClick={() => {
+                  if (confirm('Return to the sign-in screen? Your unsaved catalog stays on this device.')) logout();
+                }}
+                className="shrink-0 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-bold hover:bg-white/25"
+              >
+                Sign in again
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* First-time migration callout */}
+        {migrationMode && (
+          <div className="mt-3 rounded-xl bg-amber-400/20 p-3 text-xs font-semibold leading-relaxed text-amber-100 ring-1 ring-amber-300/40">
+            ⚠️ First-time migration: the backend has no catalog yet, but THIS
+            device holds your current data. Click <strong>Save &amp; Publish</strong>
+            to upload it once — after that, the backend is the permanent source
+            for all devices and students.
+          </div>
+        )}
+        {backendAhead && (
+          <div className="mt-3 rounded-xl bg-amber-400/20 p-3 text-xs font-semibold leading-relaxed text-amber-100 ring-1 ring-amber-300/40">
+            The backend is ahead (v{backend.adminVersion} vs this device v{syncMeta.adminVersion}).{' '}
+            <button onClick={() => void doPull()} className="underline">
+              Pull to load it
+            </button>{' '}
+            — this replaces the catalog on this device.
+          </div>
+        )}
+        {preflight.ok === false && preflight.issues.length > 0 && (
+          <div className="mt-3 rounded-xl bg-red-500/25 p-3 text-xs font-semibold leading-relaxed text-red-100 ring-1 ring-red-400/40">
+            ⛔ Publish is blocked ({preflight.issues.length} issue{preflight.issues.length === 1 ? '' : 's'}):
+            <span className="mt-1 block font-medium text-red-100/90">
+              {preflight.issues.slice(0, 3).join(' · ')}
+              {preflight.issues.length > 3 ? ` · +${preflight.issues.length - 3} more` : ''}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => void doPublish()}
+            disabled={syncing === 'publishing' || !preflight.ok}
+            className="rounded-lg bg-white px-3 py-2 text-xs font-black text-brand-700 shadow-sm transition hover:bg-brand-50 disabled:opacity-50"
+          >
+            {syncing === 'publishing' ? 'Publishing…' : '💾 Save & Publish'}
+          </button>
+          <button
+            onClick={() => void doPull()}
+            disabled={syncing === 'pulling' || backend.state !== 'connected' || backend.adminVersion == null}
+            className="rounded-lg bg-brand-500/30 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/20 transition hover:bg-brand-500/50 disabled:opacity-50"
+          >
+            {syncing === 'pulling' ? 'Pulling…' : '📥 Pull from backend'}
+          </button>
+        </div>
+
+        {/* Operator token — advanced (setup + automation only) */}
+        <details className="mt-3 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
+          <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wide text-brand-200">
+            Advanced — operator API token (first-time setup &amp; automation)
+          </summary>
+          <p className="mt-2 text-[11px] leading-relaxed text-brand-100">
+            Day-to-day access uses your <strong>passcode</strong> (a server-signed
+            session). This raw operator token is only needed for first-time
+            passcode setup and scripted/automation access. It stays on THIS
+            device.
+          </p>
+          <form onSubmit={saveToken} className="mt-2 flex flex-wrap items-end gap-2">
+            <div className="min-w-[200px] flex-1">
+              <input
+                type="password"
+                className="w-full rounded-lg border-0 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none ring-1 ring-white/20 focus:ring-2"
+                placeholder={readApiToken() ? '•••• (saved on this device)' : 'Paste the ADMIN_TOKEN secret'}
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={tokenInput.trim() === '' && !readApiToken()}
+              className="rounded-lg bg-white/15 px-3 py-2 text-xs font-bold hover:bg-white/25 disabled:opacity-50"
+            >
+              {readApiToken() ? 'Clear / replace token' : 'Save token'}
+            </button>
+          </form>
+        </details>
+      </div>
+
+      {/* Local device utilities (backup files — NOT the publishing workflow) */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
+        <h2 className="text-sm font-bold text-slate-800">Autosave &amp; local backups</h2>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          Every edit autosaves to <em>this device</em> immediately (a working
+          copy). The cross-device permanent store is the backend above. These
+          files remain useful as offline backups or for moving data to a new
+          admin device.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -167,15 +377,15 @@ export function Overview({
               a.download = `cgpa-pilot-admin-backup-${backup.exportedAt.slice(0, 10)}.json`;
               a.click();
               URL.revokeObjectURL(url);
-              flash('Admin backup downloaded — upload this file on any device to restore.');
+              flash('Admin backup downloaded.');
             }}
-            className="rounded-lg bg-white px-3 py-2 text-xs font-black text-brand-700 shadow-sm transition hover:bg-brand-50"
+            className="btn-ghost"
           >
             ⬇️ Download admin backup
           </button>
           <button
             onClick={() => fileRef.current?.click()}
-            className="rounded-lg bg-brand-500/30 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/20 transition hover:bg-brand-500/50"
+            className="btn-ghost"
           >
             ⬆️ Upload admin backup
           </button>
@@ -184,54 +394,12 @@ export function Overview({
             type="file"
             accept="application/json,.json"
             className="hidden"
-            onChange={async (e) => {
+            onChange={(e) => {
               const f = e.target.files?.[0];
-              if (!f) return;
-              try {
-                const text = await f.text();
-                const backup = JSON.parse(text) as { version?: number; catalog?: { universities: any[]; curricula: any[] }; auth?: { passHash?: string; session?: boolean } | null };
-                if (backup.version !== 1 || !backup.catalog) {
-                  flash('Invalid admin backup file.');
-                  return;
-                }
-                if (!confirm('Restore this admin backup? It will replace current institutions, curricula and passcode.')) return;
-                importAdminBackup({ version: 1, exportedAt: new Date().toISOString(), catalog: backup.catalog, auth: backup.auth ? { passHash: backup.auth.passHash ?? '', session: backup.auth.session ?? false } : null });
-                setCatalog(backup.catalog);
-                flash('Admin backup restored from file.');
-                window.location.reload();
-              } catch {
-                flash('Could not read backup file.');
-              }
+              if (f) importFile(f);
               e.target.value = '';
             }}
           />
-        </div>
-      </div>
-
-      {/* Permanence: bake the admin catalog into the shipped build */}
-      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
-        <h2 className="text-sm font-bold text-slate-800">
-          🚀 Make this permanent — ship to every user
-        </h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          The browser autosave above keeps data only on <em>this device</em>.
-          To make your admin catalog permanent and reach every user (and to
-          survive any redeploy, cleared browser, or new device), bake it into
-          the app itself. Download the seed file, then in the project run{' '}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] font-bold">
-            npm run seed:apply -- admin-catalog.json
-          </code>{' '}
-          (or save it as{' '}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] font-bold">
-            src/config/seed/admin-catalog.json
-          </code>
-          ), then commit and push. That file is the built-in default shipped
-          with every build.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={downloadSeedFile} className="btn-primary">
-            ⬇️ Download admin-catalog.json (seed)
-          </button>
         </div>
       </div>
 
@@ -252,50 +420,51 @@ export function Overview({
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
-        <h2 className="text-sm font-bold text-slate-800">Offline distribution</h2>
+        <h2 className="text-sm font-bold text-slate-800">Offline configuration files</h2>
         <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          Publishing a curriculum writes the versioned configuration the student
-          app caches for offline use. Download the file to bundle it into a
-          future app release, or apply it to this device now. Synchronization
-          is one-way (config → student); student academic data is never
-          uploaded.
+          Utilities for the versioned configuration document. Normal distribution
+          happens automatically via the backend (Save &amp; Publish above) —
+          downloads here are backups, and imports feed the local catalog.
+          Synchronization is one-way (config → student); student academic data is
+          never uploaded.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button onClick={exportDistribution} className="btn-primary">
             ⬇️ Download published configuration
           </button>
-          <button onClick={applyToThisDevice} className="btn-ghost">
-            📲 Apply to this device (student app)
+          <button onClick={previewOnThisDevice} className="btn-ghost">
+            📲 Preview on this device
           </button>
           <button onClick={() => fileRef.current?.click()} className="btn-ghost">
             ⬆️ Import configuration file
           </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) importFile(f);
-              e.target.value = '';
-            }}
-          />
         </div>
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
         <h2 className="text-sm font-bold text-slate-800">Change admin passcode</h2>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          There is ONE admin passcode for ALL devices. The backend stores only a
+          salted PBKDF2 digest — never the passcode itself. Changing it updates
+          every device the next time each one signs in. Requires a connection.
+        </p>
         <form onSubmit={savePass} className="mt-3 flex flex-wrap items-end gap-2">
           <input
             type="password"
             className="input max-w-xs"
-            placeholder="New passcode (min 4 characters)"
+            placeholder="Current passcode"
+            value={curPass}
+            onChange={(e) => setCurPass(e.target.value)}
+          />
+          <input
+            type="password"
+            className="input max-w-xs"
+            placeholder={`New passcode (min ${MIN_PASSCODE_LENGTH} characters)`}
             value={newPass}
             onChange={(e) => setNewPass(e.target.value)}
           />
-          <button type="submit" className="btn-primary">
-            Update
+          <button type="submit" className="btn-primary" disabled={passBusy}>
+            {passBusy ? 'Updating…' : 'Update'}
           </button>
         </form>
       </div>

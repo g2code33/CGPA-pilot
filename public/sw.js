@@ -8,10 +8,14 @@
 //   • Static assets (JS/CSS/images) are content-hashed by Vite, so they can be
 //     served CACHE-FIRST safely — a new file name simply isn't in the cache yet
 //     and gets fetched once.
+//   • /api/* requests (configuration sync) BYPASS the service worker entirely:
+//     they are never cached and never fall back to the app shell, so the sync
+//     client always sees a real network outcome (success, HTTP error, or
+//     offline failure) and can handle it gracefully.
 //
 // Bump `CACHE` whenever you change this file's caching rules; old caches are
 // deleted on activate so devices pick up the new rules immediately.
-const CACHE = 'cgpa-pilot-v3';
+const CACHE = 'cgpa-pilot-v4';
 
 const SHELL = [
   './',
@@ -41,6 +45,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
+
+  // Configuration API: let the network answer truthfully (no cache, no
+  // app-shell fallback) — the sync client handles offline/failure itself.
+  try {
+    if (new URL(request.url).pathname.startsWith('/api/')) return;
+  } catch {
+    /* non-URL request — fall through to normal handling */
+  }
 
   // Navigation / page requests → NETWORK-FIRST (fresh build when online).
   if (request.mode === 'navigate') {

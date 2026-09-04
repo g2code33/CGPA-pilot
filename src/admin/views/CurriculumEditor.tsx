@@ -177,14 +177,16 @@ export function CurriculumEditor({
                       const result = transitionCurriculum(catalog, version.id, 'published');
                       if (result.ok) {
                         apply(() => result.catalog);
-                        // Commit new published config to student offline cache so
-                        // the student app picks it up immediately.
-                        writeCachedConfig({
-                          universities: result.catalog.universities,
-                          curricula: result.catalog.curricula,
-                          cachedAt: new Date().toISOString(),
-                          schemaVersion: 1,
-                        });
+                        // Store the updated catalog for the student app on THIS
+                        // device. Every other device gets it via "Save &
+                        // Publish" on the Dashboard (backend).
+                        void writeCachedConfig(
+                          {
+                            universities: result.catalog.universities,
+                            curricula: result.catalog.curricula,
+                          },
+                          { version: null, source: 'local' }
+                        );
                       }
                     })
                   }

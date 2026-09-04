@@ -4,6 +4,14 @@ import { resolve } from 'node:path';
 
 // base: './' is required so the built assets load from relative paths
 // inside Electron (file://) and the Capacitor Android WebView (https://localhost).
+//
+// Local API development:
+//   1. npx wrangler dev            (Worker + D1 on http://127.0.0.1:8787)
+//   2. CF_API_TARGET=http://127.0.0.1:8787 npm run dev
+// → the Vite dev server proxies /api/* to the Worker, so the admin console's
+//   Save & Publish and the student sync work exactly as in production.
+const cfApiTarget = process.env.CF_API_TARGET;
+
 export default defineConfig({
   plugins: [react()],
   base: './',
@@ -22,9 +30,15 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     allowedHosts: true, // accept sandbox/proxy preview hosts
+    proxy: cfApiTarget
+      ? { '/api': { target: cfApiTarget, changeOrigin: true } }
+      : undefined,
   },
   preview: {
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: cfApiTarget
+      ? { '/api': { target: cfApiTarget, changeOrigin: true } }
+      : undefined,
   },
 });

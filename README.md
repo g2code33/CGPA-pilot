@@ -16,10 +16,14 @@ student-facing, no records are stored.
 - Student entries are **temporary in-memory state only** — no `localStorage`,
   `sessionStorage`, IndexedDB, cookies, databases, or URLs carry academic data.
   Refresh or hit **Refresh/Clear** and everything is gone.
-- **Every calculation runs locally on the device** — no APIs, cloud functions,
-  internet, authentication or external AI are required.
-- Only published, non-personal curriculum/grading configuration ships with the
-  app (cached so it works offline).
+- **Every calculation runs locally on the device** — no API, cloud function,
+  authentication or external AI is involved in any calculation.
+- The app is **offline-first**: it always runs from the locally stored
+  configuration (IndexedDB cache, falling back to the committed seed bundled
+  in the app). When online it quietly checks the public configuration API for
+  a **newer published version** and stores it for offline use — only
+  non-personal academic configuration ever syncs, never anything a student
+  typed.
 
 ## Features
 
@@ -44,18 +48,26 @@ administrator — no UCC course data is fabricated.
 npm install
 npm run dev            # web (Vite) — student app at /, admin console at /admin.html
 npm run dev:desktop    # Electron dev window
+npx wrangler dev       # local config backend (Worker + D1) on :8787
+CF_API_TARGET=http://127.0.0.1:8787 npm run dev   # dev with live backend sync
 ```
 
 ### Admin console
 
 A separate application bundle at **`admin.html`** (`/admin.html`), unlinked
 from the student app and `noindex`. It manages institutions and curriculum
-with persistent hashed-passcode auth (factory passcode `pilot-admin` — change
-on first run). Curriculum workflow is **Draft → Review → Published →
-Archived**; only **published** curricula reach students, published versions
-are locked (edit via Duplicate) and cannot be deleted. Publishing writes a
-versioned configuration document the student app caches offline; no student
-data ever enters admin/sync.
+behind **one admin passcode for every device** — created once (first-time
+setup, operator token), verified by the backend, stored only as a salted
+PBKDF2 digest (never plaintext) and also usable offline via the credential
+synced to each signed-in device. Curriculum workflow is **Draft → Review →
+Published → Archived**; only **published** curricula reach students,
+published versions are locked (edit via Duplicate) and cannot be deleted.
+**Dashboard → Save & Publish** pushes the catalog to the configuration
+backend (Cloudflare Worker + D1 — the source of truth, passcode-session
+gated) and publishes the student document in one atomic, validated step;
+every device picks it up on its next open online. No student data ever
+enters admin/sync. Deployment & administration guide:
+**`docs/DEPLOYMENT.md`**.
 
 ## Build
 
@@ -69,7 +81,7 @@ npm run mobile:sync    # build web + cap sync android
 
 ## Ship: one `dist/`, four targets
 
-- **Web/PWA** → static `dist/`; deploy to **Cloudflare Pages** (build `npm run build:web`, output `dist`) — installable & offline via service worker.
+- **Web/PWA** → build `dist/` and deploy to **Cloudflare Pages** (`cgpapilot.pages.dev` — student app + `admin.html`), with the **API-only Worker** (`cgpa-pilot`) holding D1 + the passcode-gated `/api/*`; the Pages build bakes `VITE_CONFIG_API_BASE=<worker URL>` in. Installable & offline via service worker. Full guide: `docs/DEPLOYMENT.md`.
 - **Windows** → NSIS `CGPA-Pilot-Setup-<v>.exe` + `latest.yml`
 - **Linux** → `cgpa-pilot-<v>-x64.deb` + `.AppImage` + `latest-linux.yml`
 - **Android** → Capacitor `cgpa-pilot-<v>.apk`
@@ -88,7 +100,10 @@ otherwise the release APK falls back to the debug key (still installable).
 src/
   config/                      configuration-driven academic model
     types.ts                     University→School→Programme→Curriculum→Level→Semester→Course
-    context.ts                   active institution context + registry
+    context.ts                   active institution context (resolved against the runtime catalog)
+    runtime.ts                   in-memory catalog the app runs under (boot → cache → sync)
+    apiBase.ts                   config API base (same-origin by default)
+    seed/                        COMMITTED SEED — bootstrap / emergency fallback only
     institutions/ucc.ts          UCC grading & classification (ucc.edu.gh)
     curricula/ucc-pharmd.ts      UCC PharmD curriculum (draft; admin publishes courses)
   services/                    pure, offline, config-driven services
@@ -101,16 +116,24 @@ src/
     pilotBriefService.ts         Pilot Brief text
     printService.ts              anonymous printable report
     privacyService.ts            privacy copy + reset/clear
-    configCache.ts               ONLY persistent storage: non-personal curriculum cache
-  state/                        in-memory student state (zero persistence) + derived hook
-  views/                        Dashboard · Calculate · Target · What-If · FlightPath …
+    configCache.ts               ONLY student storage: non-personal config cache (IndexedDB + version meta)
+    configSync.ts                offline-first sync: version probe → conditional download → cache
+  admin/                        separate admin console bundle (admin.html)
+    adminApi.ts                  backend client (auth-state / login / setup / passcode / status / publish / pull)
+    catalogValidation.ts         shared validation (also enforced server-side by the Worker)
+    catalogPublish.ts            publish gate + distribution payload builder (pure)
+    adminConfigService.ts        catalog operations (tree, workflow, imports, reviews)
+    adminStorage.ts              ONLY admin storage: catalog, session + passcode credential params, token, sync meta
+worker/        Cloudflare Worker: hosts dist/ + /api (public reads, passcode-session-gated admin writes) → D1
 electron/      desktop main/preload + electron-updater
 android/       Capacitor project (committed; CI also scaffolds if missing)
-public/        PWA manifest + service worker
+public/        PWA manifest + service worker (bypasses /api so sync sees real network outcomes)
 ```
 
 Calculation logic lives in `services/`; UI components never hard-code
 university rules. Student data is temporary in-memory state; only published
-non-personal curriculum configuration is cached offline (`configCache.ts`).
-Adding another university = add a `config/institutions` entry — the core
-never needs rebuilding.
+non-personal curriculum configuration is stored on the device
+(`configCache.ts`) and synced from the backend (`configSync.ts`) — which the
+admin console publishes via the token-gated Worker API
+(`docs/DEPLOYMENT.md`). The committed seed is the bootstrap fallback when a
+device has never synced.

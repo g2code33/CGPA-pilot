@@ -1,15 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────
 // curriculumService — configuration-driven academic catalog access.
-// All functions are synchronous and offline: they read the locally cached /
-// bundled published curriculum. No student data flows through this service.
+// All functions are synchronous and offline: they read the runtime catalog,
+// which boot (services/configSync.ts) populates from the locally cached /
+// synced / bundled published configuration. No student data flows through
+// this service.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { ACTIVE_CONTEXT, resolveContext } from '../config/context';
 import {
-  ACTIVE_CONTEXT,
-  BUNDLED_CURRICULA,
-  UNIVERSITIES,
-  resolveContext,
-} from '../config/context';
+  getRuntimeCatalog,
+  seedRuntimeCatalog,
+  setRuntimeCatalog,
+  type CachedConfig,
+} from '../config/runtime';
 import type {
   CurriculumCourse,
   CurriculumLevel,
@@ -22,41 +25,45 @@ import type {
   University,
 } from '../config/types';
 import {
-  bundledConfig,
   clearCachedConfig,
-  readCachedConfig,
-  seedCacheIfEmpty,
+  readCachedConfigAsync,
   writeCachedConfig,
 } from './configCache';
 
-let universities: University[] = UNIVERSITIES;
-let curricula: CurriculumVersion[] = BUNDLED_CURRICULA;
 let initialised = false;
 
-/** Load the latest valid published curriculum available on the device. */
-export function initCurriculum(): void {
+/**
+ * Populate the runtime catalog from the locally cached configuration
+ * (IndexedDB → legacy → bundled seed). Async because the primary payload
+ * store is IndexedDB. Boot (main.tsx) always does this BEFORE first render;
+ * this is the fallback entry point.
+ */
+export async function initCurriculum(): Promise<void> {
   if (initialised) return;
-  const config = seedCacheIfEmpty();
-  universities = config.universities;
-  curricula = config.curricula;
+  const config: CachedConfig = await readCachedConfigAsync();
+  setRuntimeCatalog(config);
   initialised = true;
 }
 
-function ensureInit(): void {
-  if (!initialised) initCurriculum();
+/** Synchronous defensive init: guarantees a valid (seed) catalog exists. */
+export function ensureCurriculumInit(): void {
+  getRuntimeCatalog();
+  initialised = true;
+}
+
+function catalog(): CachedConfig {
+  return getRuntimeCatalog();
 }
 
 // ── Lookups ───────────────────────────────────────────────────────────────
 
 export function getUniversity(id: string): University | undefined {
-  ensureInit();
-  return universities.find((u) => u.id === id);
+  return catalog().universities.find((u) => u.id === id);
 }
 
-/** All universities known to this build/catalog (for the student selector). */
+/** All universities in the current catalog (for the student selector). */
 export function listUniversities(): University[] {
-  ensureInit();
-  return universities.filter((u) => u.status === 'active');
+  return catalog().universities.filter((u) => u.status === 'active');
 }
 
 export function getSchool(
@@ -77,14 +84,12 @@ export function getProgramme(
 }
 
 export function getCurriculumVersion(id: string): CurriculumVersion | undefined {
-  ensureInit();
-  return curricula.find((c) => c.id === id);
+  return catalog().curricula.find((c) => c.id === id);
 }
 
 export function getCurriculaForProgramme(programmeId: string): CurriculumVersion[] {
-  ensureInit();
-  return curricula
-    .filter((c) => c.programmeId === programmeId)
+  return catalog()
+    .curricula.filter((c) => c.programmeId === programmeId)
     .sort((a, b) => (a.effectiveDate < b.effectiveDate ? 1 : -1));
 }
 
@@ -97,7 +102,6 @@ export function getCurriculaForProgramme(programmeId: string): CurriculumVersion
 export function getActiveCurriculum(
   ctx: InstitutionContext = ACTIVE_CONTEXT
 ): CurriculumVersion | undefined {
-  ensureInit();
   if (ctx.curriculumId) {
     const explicit = getCurriculumVersion(ctx.curriculumId);
     if (explicit && explicit.status === 'published') return explicit;
@@ -118,11 +122,10 @@ export function getActiveCurriculum(
   return versions[0] ?? undefined;
 }
 
-/** All versions the ADMIN can see, newest effective date first. */
+/** All versions in the current catalog for a programme, newest first. */
 export function getAllCurriculaForProgramme(programmeId: string): CurriculumVersion[] {
-  ensureInit();
-  return curricula
-    .filter((c) => c.programmeId === programmeId)
+  return catalog()
+    .curricula.filter((c) => c.programmeId === programmeId)
     .sort((a, b) => (a.effectiveDate < b.effectiveDate ? 1 : -1));
 }
 
@@ -185,36 +188,46 @@ export function isPublished(curriculum?: CurriculumVersion): boolean {
   return curriculum?.status === 'published';
 }
 
-export function cacheInfo(): { cachedAt: string | null; source: string } {
-  ensureInit();
-  const config = readCachedConfig();
+/** Info about the locally-stored configuration (shown in the Privacy view). */
+export function cacheInfo(): {
+  cachedAt: string | null;
+  source: string;
+  version: number | null;
+} {
+  const config = catalog();
+  const fromSeed = config.source === 'seed';
   return {
-    cachedAt: config.cachedAt.startsWith('1970') ? null : config.cachedAt,
-    source: config.cachedAt.startsWith('1970') ? 'bundled' : 'cached',
+    cachedAt: fromSeed ? null : config.cachedAt,
+    source: fromSeed ? 'bundled' : config.source,
+    version: config.version,
   };
 }
 
 // ── Configuration updates (non-personal) ──────────────────────────────────
 
 /**
- * Accept a published curriculum document (bundled in a future release or
- * optionally fetched by an administrator refresh) and cache it locally.
- * Malformed documents are rejected so offline use always has a valid config.
+ * Accept a published curriculum document and cache it locally (runtime +
+ * device store). Malformed documents are rejected so offline use always has
+ * a valid config.
  */
 export function publishCurriculum(version: CurriculumVersion): boolean {
-  ensureInit();
   if (!isValidCurriculum(version)) return false;
-  const others = curricula.filter((c) => c.id !== version.id);
-  curricula = [...others, version];
-  const config = readCachedConfig();
-  writeCachedConfig({
-    ...config,
-    curricula,
-  });
+  const config = catalog();
+  const others = config.curricula.filter((c) => c.id !== version.id);
+  const curricula = [...others, version];
+  const next: CachedConfig = { ...config, curricula, cachedAt: new Date().toISOString() };
+  setRuntimeCatalog(next);
+  void writeCachedConfig(
+    { universities: next.universities, curricula: next.curricula, appearance: next.appearance },
+    { version: next.version, updatedAt: next.updatedAt, source: 'local' }
+  );
   return true;
 }
 
-/** Optional remote refresh — never required for student calculations. */
+/**
+ * Optional manual remote refresh of a single curriculum document — never
+ * required for student calculations (the boot sync is the normal path).
+ */
 export async function refreshFromRemote(url: string): Promise<boolean> {
   try {
     const res = await fetch(url, { cache: 'no-store' });
@@ -226,11 +239,10 @@ export async function refreshFromRemote(url: string): Promise<boolean> {
   }
 }
 
+/** Forget the local cache and fall back to the bundled seed immediately. */
 export function resetCurriculumCache(): void {
   clearCachedConfig();
-  const fresh = bundledConfig();
-  universities = fresh.universities;
-  curricula = fresh.curricula;
+  setRuntimeCatalog(seedRuntimeCatalog());
 }
 
 export function isValidCurriculum(c: CurriculumVersion): boolean {

@@ -13,7 +13,7 @@ import type {
   SemesterEntry,
 } from './studentState';
 import { uid } from '../util/format';
-import { initCurriculum } from '../services/curriculumService';
+import { ensureCurriculumInit } from '../services/curriculumService';
 
 // ─────────────────────────────────────────────────────────────────────────
 // TEMPORARY, IN-MEMORY academic state.
@@ -273,8 +273,10 @@ interface Store {
 const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  // Load the locally cached/bundled published curriculum BEFORE first render.
-  useMemo(() => initCurriculum(), []);
+  // The runtime catalog is populated by boot (main.tsx) BEFORE first render
+  // from the locally cached / synced configuration; this is the defensive
+  // fallback that guarantees a valid (seed) catalog in any other entry path.
+  useMemo(() => ensureCurriculumInit(), []);
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

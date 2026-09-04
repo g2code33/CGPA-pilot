@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAcademic } from '../state/store';
 import { useInstitution } from './institutionSelection';
-import { resolveContext, INSTITUTION_LABEL } from '../config/context';
+import { resolveContext, institutionLabel } from '../config/context';
 import { getActiveCurriculum } from '../services/curriculumService';
 import { classifyCgpa } from '../services/classificationService';
 import { maxGradePoints } from '../services/gradingService';
@@ -174,7 +174,7 @@ export function useDerived() {
       grading,
       classification,
       institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
-        || INSTITUTION_LABEL,
+        || institutionLabel(context),
       // Let the dashboard/print text reflect the same role as the UI.
       semesterRole,
       standing,
@@ -201,7 +201,7 @@ export function useDerived() {
       roleMeta,
       historyLast,
       institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
-        || INSTITUTION_LABEL,
+        || institutionLabel(context),
       maxPoints: maxGradePoints(grading),
       // derived record
       snapshot,

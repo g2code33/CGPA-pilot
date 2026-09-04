@@ -54,16 +54,27 @@ assert(
 const studentHtml = readFileSync(join(dist, 'index.html'), 'utf8');
 assert(!/admin-main/.test(studentHtml), 'student entry never loads the admin bundle');
 
-// The minified bundle inlines configCache (the only module allowed to store
-// non-personal config). Assert it never sets/reads cookies (student-tracking
-// vector) — localStorage is legitimate for the curriculum cache only.
+// The minified bundles inline configCache (the only module allowed to store
+// non-personal config). Assert they never set/read cookies (student-tracking
+// vector). IndexedDB is used ONLY by the config cache boundary for the
+// offline configuration payload — any bundle that touches IndexedDB must be
+// the config-cache boundary itself (identified by its stable DB-name string,
+// which survives minification).
+const CONFIG_CACHE_MARKER = 'cgpa-pilot-config';
 let jsBundles = 0;
 for (const f of readdirSync(join(dist, 'assets'))) {
   if (!f.endsWith('.js')) continue;
   jsBundles++;
   const code = readFileSync(join(dist, 'assets', f), 'utf8');
   assert(!/\.cookie\b/.test(code), `bundle ${f} uses no cookies`);
-  assert(!/indexedDB/.test(code), `bundle ${f} uses no IndexedDB`);
+  if (/indexedDB/.test(code)) {
+    assert(
+      code.includes(CONFIG_CACHE_MARKER),
+      `bundle ${f} that uses IndexedDB must be the config cache boundary (missing ${CONFIG_CACHE_MARKER} marker)`
+    );
+  } else {
+    assert(true, `bundle ${f} uses no IndexedDB`);
+  }
 }
 assert(jsBundles > 0, `scanned ${jsBundles} JS bundle(s)`);
 
@@ -117,6 +128,46 @@ const cacheCode = stripNoise(
 assert(
   !/studentState|AcademicState|CourseEntry|SemesterEntry/.test(cacheCode),
   'configCache never imports student academic state types'
+);
+
+// The config sync client may make network calls (it only GETs public,
+// non-personal configuration) but must NEVER touch student state or
+// academic data modules — nothing typed by a student may reach the wire.
+const SYNC_FILE = join('src', 'services', 'configSync.ts');
+const syncCode = stripNoise(readFileSync(join(root, SYNC_FILE), 'utf8'));
+assert(
+  !/studentState|studentState|AcademicState|CourseEntry|SemesterEntry|state\/store|state\/derived/.test(syncCode),
+  'configSync never imports student academic state (only public config syncs)'
+);
+// The sync client must only ever READ the public config endpoints.
+assert(
+  !/method:\s*['"]POST['"]/.test(syncCode),
+  'configSync never POSTs (students only download public configuration)'
+);
+
+// The Worker must gate admin writes behind the ADMIN_TOKEN secret and must
+// never pull student-state modules into the API surface.
+const WORKER_FILES = [];
+if (existsSync(join(root, 'worker'))) {
+  const walkWorker = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === 'node_modules') continue;
+      const p = join(dir, entry);
+      if (statSync(p).isDirectory()) walkWorker(p);
+      else if (/\.(ts|js)$/.test(entry)) WORKER_FILES.push(p);
+    }
+  };
+  walkWorker(join(root, 'worker'));
+}
+assert(WORKER_FILES.length > 0, 'worker source present');
+const workerCode = WORKER_FILES.map((f) => stripNoise(readFileSync(f, 'utf8'))).join('\n');
+assert(
+  /ADMIN_TOKEN/.test(workerCode),
+  'worker admin endpoints are gated by the ADMIN_TOKEN secret'
+);
+assert(
+  !/src\/state|studentState|AcademicState/.test(workerCode),
+  'worker never imports student academic state (config API only)'
 );
 
 // Admin storage must never import student academic state (one-way sync only).

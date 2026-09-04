@@ -173,13 +173,14 @@ export function Grading() {
   }
 
   function applyToDevice() {
-    writeCachedConfig({
-      universities: catalog.universities,
-      curricula: catalog.curricula,
-      cachedAt: new Date().toISOString(),
-      schemaVersion: 1,
-    });
-    flash('Rules applied to the student app on this device (offline cache updated).');
+    void writeCachedConfig(
+      {
+        universities: catalog.universities,
+        curricula: catalog.curricula,
+      },
+      { version: null, source: 'local' }
+    );
+    flash('Preview stored — the student app on THIS device uses these rules from its next open. Use "Save & Publish" (Dashboard) to ship to every device.');
   }
 
   return (

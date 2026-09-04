@@ -56,16 +56,17 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
           return;
         }
         apply(() => result.catalog);
-        // Push the newly published configuration into this device's student
-        // cache so the student app picks it up offline (config-only; never
-        // contains student data).
-        writeCachedConfig({
-          universities: result.catalog.universities,
-          curricula: result.catalog.curricula,
-          cachedAt: new Date().toISOString(),
-          schemaVersion: 1,
-        });
-        flash('✅ Published — students on this device now receive this curriculum.');
+        // Store this catalog for the student app on THIS device (config-only;
+        // never contains student data). Reaching EVERY device requires the
+        // backend: "Save & Publish" on the Dashboard.
+        void writeCachedConfig(
+          {
+            universities: result.catalog.universities,
+            curricula: result.catalog.curricula,
+          },
+          { version: null, source: 'local' }
+        );
+        flash('✅ Published in the catalog. Use "Save & Publish" (Dashboard) to ship it to every device.');
       }
     );
   }

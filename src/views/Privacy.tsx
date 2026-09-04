@@ -66,7 +66,13 @@ export function Privacy() {
         <p className="mt-2 text-xs text-slate-500">{PRIVACY_OFFLINE_NOTE}</p>
         <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-500 ring-1 ring-slate-100">
           Offline curriculum source: <strong>{cache.source}</strong>
+          {cache.version !== null ? ` · configuration v${cache.version}` : ''}
           {cache.cachedAt ? ` (updated ${new Date(cache.cachedAt).toLocaleString()})` : ' (bundled with the app)'}
+          <span className="block mt-1 text-[10px] leading-relaxed">
+            When you are online the app quietly checks the configuration backend
+            for a newer published version and stores it for offline use. Only the
+            published academic configuration syncs — never anything you type.
+          </span>
         </div>
       </Card>
 
