@@ -13,8 +13,9 @@ This deployment uses **two Cloudflare projects** from this one repo:
   admin console) at **`https://cgpapilot.pages.dev`** — the URL students and
   the admin already use.
 - **Cloudflare Worker `cgpa-pilot`** → the **API only** (`/api/*`, D1 +
-  passcode auth) at `https://cgpa-pilot.<account>.workers.dev`. The Pages
-  build points at it via the `VITE_CONFIG_API_BASE` environment variable.
+  passcode auth) at `https://cgpa-pilot.<account>.workers.dev`. When served
+  from `cgpapilot.pages.dev` the app uses that API address automatically
+  (baked into the code); `VITE_CONFIG_API_BASE` is an optional override.
 
 ```
 Pages (cgpapilot.pages.dev)            Worker (cgpa-pilot.<acct>.workers.dev)
@@ -25,8 +26,8 @@ Pages (cgpapilot.pages.dev)            Worker (cgpa-pilot.<acct>.workers.dev)
 ```
 
 (A single-origin alternative — Worker serving the site too — is available by
-re-adding the commented `[assets]` section in `wrangler.toml`; then no
-`VITE_CONFIG_API_BASE` is needed.)
+re-adding the commented `[assets]` section in `wrangler.toml`; then the API
+is same-origin and no address is needed at all.)
 
 **There is exactly ONE admin.** The admin console is opened with a single
 passcode — the same passcode signs in on every device. The backend stores only
@@ -66,12 +67,11 @@ Every push to `main` then auto-redeploys the API.
 **C. Pages project `cgpapilot` (the site)** — dashboard → **Pages** →
 `cgpapilot` → **Settings → Git integration** → this repo, branch `main`,
 build command `npm ci --ignore-scripts && npm run build:web`, output
-directory `dist`. Add a **production environment variable**
-**`VITE_CONFIG_API_BASE`** = the worker's URL
-(`https://cgpa-pilot.<account>.workers.dev` — copy it from the top of the
-worker page). Redeploy.
-This bakes the API address into the site at build time; the app + admin
-console then talk cross-origin to the Worker (its CORS already allows the
+directory `dist`. Redeploy. No environment variable is needed: when served
+from `cgpapilot.pages.dev` the app automatically uses the production API
+address baked into the code. (`VITE_CONFIG_API_BASE` remains as an optional
+override for other deployments or an API move.) The app + admin console
+talk cross-origin to the Worker (its CORS already allows the
 `authorization` header).
 
 **D. First-time passcode + migration** — open
