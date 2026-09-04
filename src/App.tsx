@@ -374,49 +374,46 @@ export default function App() {
       <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
         <div className="mx-auto w-full max-w-md">
           {/* Hero */}
-          <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-5 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
+          <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-4 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
             {hasData ? (
               <div>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
-                      ✓ Results entered
-                    </span>
-                    <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
-                      Your confirmed CGPA
-                    </p>
-                    <p className="mt-1 text-5xl font-black tabular-nums leading-none">
-                      {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
-                    </p>
-                    <p className="mt-2 text-xs font-semibold text-brand-100">
-                      🏅 {d.classBand?.label ?? '—'}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-brand-200">
-                      Level {d.state.baseline.levelIndex * 100}
-                      {d.record.creditHours > 0 ? ` · ${d.record.creditHours} graded credits` : ''}
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
+                    ✓ Results entered
+                  </span>
+                  <button
+                    onClick={() => setScreen('calculate')}
+                    title="Edit results — change level, CGPA or not-released courses"
+                    aria-label="Edit results — change level, CGPA or not-released courses"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
+                  >
+                    ✏️
+                  </button>
+                </div>
+                <div className="mt-2 flex items-end justify-between gap-4">
+                  <p className="text-4xl font-black tabular-nums leading-none">
+                    {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
+                  </p>
                   <div className="text-right">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-brand-200">
                       Target
                     </p>
-                    <p className="mt-1 text-5xl font-black tabular-nums leading-none text-emerald-300">
+                    <p className="text-4xl font-black tabular-nums leading-none text-emerald-300">
                       {fmt2(d.state.targetCgpa ?? 3.6)}
                     </p>
-                    <p className="mt-2 text-[11px] text-brand-100">your chosen goal</p>
                   </div>
                 </div>
-                {/* Edit results lives in the hero card (keeps the page compact) */}
-                <button
-                  onClick={() => setScreen('calculate')}
-                  className="mt-3 flex w-full items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-bold text-white ring-1 ring-white/20 transition hover:bg-white/20"
-                >
-                  ✏️ Edit results
-                  <span className="font-medium text-brand-100">
-                    · change level, CGPA or not-released courses
-                  </span>
-                  <span className="ml-auto text-brand-200">›</span>
-                </button>
+                <p className="mt-2 text-[11px] font-semibold text-brand-100">
+                  🏅 {d.classBand?.label ?? '—'}
+                  <span className="mx-1.5 text-brand-300">·</span>
+                  Level {d.state.baseline.levelIndex * 100}
+                  {d.record.creditHours > 0 ? (
+                    <>
+                      <span className="mx-1.5 text-brand-300">·</span>
+                      {d.record.creditHours} graded credits
+                    </>
+                  ) : null}
+                </p>
               </div>
             ) : (
               <div className="text-center">
@@ -433,7 +430,7 @@ export default function App() {
               </div>
           )}
           {/* Help tip — same guidance as the onboarding line, always reachable */}
-          <div className="mt-3 flex justify-end">
+          <div className="mt-2.5 flex justify-end">
             <Info
               label="How does this work?"
               className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25 [&>p]:bg-white/15 [&>p]:text-white [&>p]:ring-white/25"
@@ -446,7 +443,7 @@ export default function App() {
         </section>
 
           {/* Tool tiles */}
-          <p className="mt-5 mb-2 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
+          <p className="mt-4 mb-2 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
             Tools
           </p>
           <div className="space-y-2.5">
