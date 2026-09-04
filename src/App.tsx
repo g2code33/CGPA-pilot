@@ -376,34 +376,47 @@ export default function App() {
           {/* Hero */}
           <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-5 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
             {hasData ? (
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
-                    ✓ Results entered
+              <div>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
+                      ✓ Results entered
+                    </span>
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
+                      Your confirmed CGPA
+                    </p>
+                    <p className="mt-1 text-5xl font-black tabular-nums leading-none">
+                      {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
+                    </p>
+                    <p className="mt-2 text-xs font-semibold text-brand-100">
+                      🏅 {d.classBand?.label ?? '—'}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-brand-200">
+                      Level {d.state.baseline.levelIndex * 100}
+                      {d.record.creditHours > 0 ? ` · ${d.record.creditHours} graded credits` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
+                      Target
+                    </p>
+                    <p className="mt-1 text-5xl font-black tabular-nums leading-none text-emerald-300">
+                      {fmt2(d.state.targetCgpa ?? 3.6)}
+                    </p>
+                    <p className="mt-2 text-[11px] text-brand-100">your chosen goal</p>
+                  </div>
+                </div>
+                {/* Edit results lives in the hero card (keeps the page compact) */}
+                <button
+                  onClick={() => setScreen('calculate')}
+                  className="mt-3 flex w-full items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-bold text-white ring-1 ring-white/20 transition hover:bg-white/20"
+                >
+                  ✏️ Edit results
+                  <span className="font-medium text-brand-100">
+                    · change level, CGPA or not-released courses
                   </span>
-                  <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
-                    Your confirmed CGPA
-                  </p>
-                  <p className="mt-1 text-5xl font-black tabular-nums leading-none">
-                    {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
-                  </p>
-                  <p className="mt-2 text-xs font-semibold text-brand-100">
-                    🏅 {d.classBand?.label ?? '—'}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-brand-200">
-                    Level {d.state.baseline.levelIndex * 100}
-                    {d.record.creditHours > 0 ? ` · ${d.record.creditHours} graded credits` : ''}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-200">
-                    Target
-                  </p>
-                  <p className="mt-1 text-5xl font-black tabular-nums leading-none text-emerald-300">
-                    {fmt2(d.state.targetCgpa ?? 3.6)}
-                  </p>
-                  <p className="mt-2 text-[11px] text-brand-100">your chosen goal</p>
-                </div>
+                  <span className="ml-auto text-brand-200">›</span>
+                </button>
               </div>
             ) : (
               <div className="text-center">
@@ -431,20 +444,6 @@ export default function App() {
             </Info>
           </div>
         </section>
-
-          {hasData && (
-            <button
-              onClick={() => setScreen('calculate')}
-              className="mt-3 flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-200 active:scale-[0.99]"
-            >
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-lg text-brand-700 ring-1 ring-brand-100">✏️</span>
-              <span className="flex-1">
-                <span className="block text-sm font-extrabold text-slate-800">Edit results</span>
-                <span className="block text-[11px] text-slate-500">Change your level, CGPA or not-released courses</span>
-              </span>
-              <span className="text-slate-300">›</span>
-            </button>
-          )}
 
           {/* Tool tiles */}
           <p className="mt-5 mb-2 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">

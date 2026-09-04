@@ -3,7 +3,7 @@ import { useAdmin } from '../adminStore';
 import { getAuthState, MAX_PASSCODE_LENGTH, MIN_PASSCODE_LENGTH } from '../adminApi';
 import { readAdminAuth } from '../adminStorage';
 
-type Mode = 'checking' | 'login' | 'setup' | 'offline-blocked' | 'not-configured';
+type Mode = 'checking' | 'login' | 'setup' | 'offline-blocked' | 'api-unreachable' | 'not-configured';
 
 export function Login() {
   const { login, setup } = useAdmin();
@@ -25,11 +25,14 @@ export function Login() {
       const st = await getAuthState();
       if (cancelled) return;
       if (st.error === 'unreachable') {
+        const online = typeof navigator === 'undefined' || navigator.onLine;
         if (hasLocalCred) {
-          setOfflineLocal(true);
+          setOfflineLocal(!online);
           setMode('login');
         } else {
-          setMode('offline-blocked');
+          // Distinguish "no internet" from "online but the API didn't answer"
+          // (undeployed backend / wrong API address in the site build).
+          setMode(online ? 'api-unreachable' : 'offline-blocked');
         }
         return;
       }
@@ -119,6 +122,17 @@ export function Login() {
               📡 You are offline, and this device has no saved passcode
               credential yet. Sign in once while online and the same passcode
               will work on this device without internet afterwards.
+            </p>
+          </div>
+        )}
+
+        {mode === 'api-unreachable' && (
+          <div className="space-y-2">
+            <p className="rounded-xl bg-amber-50 px-3 py-3 text-xs font-semibold leading-relaxed text-amber-700 ring-1 ring-amber-200">
+              📡 You appear to be online, but this device couldn't reach the
+              configuration API. The backend may not be deployed yet, or this
+              site's build points at the wrong API address — check
+              docs/DEPLOYMENT.md, then refresh this page.
             </p>
           </div>
         )}
