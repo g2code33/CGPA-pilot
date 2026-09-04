@@ -406,18 +406,18 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <div className="text-center py-2">
-                <p className="flex items-center justify-center text-3xl">
-                  <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={34} />
+              <div className="text-center">
+                <p className="flex items-center justify-center text-2xl">
+                  <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={26} />
                 </p>
-                <h2 className="mt-2 text-lg font-black">Let’s get you off the ground</h2>
+                <h2 className="mt-1 text-lg font-black">Let’s get you off the ground</h2>
                 <button
                   onClick={() => setScreen('calculate')}
-                  className="mt-4 rounded-2xl bg-white px-6 py-3 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
+                  className="mt-2.5 rounded-2xl bg-white px-6 py-2.5 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
                 >
                   📝 Enter my results
                 </button>
-            </div>
+              </div>
           )}
           {/* Help tip — same guidance as the onboarding line, always reachable */}
           <div className="mt-3 flex justify-end">
