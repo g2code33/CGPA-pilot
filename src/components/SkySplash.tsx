@@ -286,6 +286,19 @@ export function SkySplash({
             </p>
             <p className="text-[8px] font-bold uppercase tracking-wide text-white/70">CGPA</p>
           </div>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              if (doneRef.current) return;
+              doneRef.current = true;
+              setBudget(0);
+              setLanded(true);
+            }}
+            className="pointer-events-auto rounded-2xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase tracking-wide ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25 active:scale-95"
+          >
+            ⏭ Skip
+          </button>
         </div>
       </div>
 
