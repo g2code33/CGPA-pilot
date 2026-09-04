@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useAcademic } from './store';
+import { useAcademic } from '../state/store';
 import { useInstitution } from './institutionSelection';
 import { resolveContext, INSTITUTION_LABEL } from '../config/context';
 import { getActiveCurriculum } from '../services/curriculumService';
@@ -13,19 +13,25 @@ import {
 import { pendingProjection, type PendingProjection } from '../services/pendingService';
 import { buildDashboard, type DashboardModel } from '../services/dashboardService';
 import {
+  resolveSemesterModel,
+  ROLE_META,
+  type SemesterRole,
+  type Standing,
+} from '../services/semesterModel';
+import {
   curriculumSemesters,
   progressThrough,
-  previousSlot,
   semesterCredits as configuredSemesterCredits,
   totalProgrammeCredits,
-  type CurriculumProgress,
   type SemesterSlot,
 } from '../services/structureService';
 
 /**
  * Single derived-data hook for the UI. Components never calculate directly
  * from configuration or grade values — they read the results of the core
- * engine exposed here.
+ * engine exposed here. In particular, every planning surface reads the SAME
+ * resolved semester model (confirmed position / role / pending credits) so the
+ * interpretation of the selected semester never drifts between screens.
  */
 export function useDerived() {
   const { state, dispatch } = useAcademic();
@@ -42,53 +48,61 @@ export function useDerived() {
     const configuredCreditsFor = (levelIndex: number, semesterIndex: number) =>
       configuredSemesterCredits(curriculum, levelIndex, semesterIndex);
 
-    // ── Confirmed academic position ────────────────────────────────────
-    // This is the last semester whose results are CONFIRMED, i.e. the credits
-    // the student's CGPA is really over. It drives both the completed credit
-    // base and everything "still ahead".
-    //
-    //  • 'released'        → the baseline semester itself is confirmed.
-    //  • 'justStarted'     → the student just began the baseline semester and
-    //    will write its exams at the end. That semester is NOT confirmed, so
-    //    the confirmed position is the immediately PREVIOUS semester; the
-    //    baseline (current) semester becomes the next one to finish.
-    //  • 'notReleased'     → the baseline semester's exams were written but its
-    //    results are pending — likewise not confirmed, so the confirmed
-    //    position is the previous semester and the baseline semester is the
-    //    one whose results are awaited on release.
-    let confirmedLevel = state.baseline.levelIndex;
-    let confirmedSem = state.baseline.semesterIndex;
-    if (state.mode === 'current' && state.baseline.justEntered) {
-      const prev = previousSlot(curriculum, confirmedLevel, confirmedSem);
-      if (prev) {
-        confirmedLevel = prev.levelIndex;
-        confirmedSem = prev.semesterIndex;
-      }
-    } else if (state.mode === 'history' && state.semesters.length > 0) {
-      const last = state.semesters[state.semesters.length - 1];
-      confirmedLevel = last.levelIndex;
-      confirmedSem = last.semesterIndex;
-    }
+    // ── Single source of truth: how to interpret the selected semester ───
+    const historyLast =
+      state.mode === 'history' && state.semesters.length > 0
+        ? {
+            levelIndex: state.semesters[state.semesters.length - 1].levelIndex,
+            semesterIndex: state.semesters[state.semesters.length - 1].semesterIndex,
+          }
+        : null;
+    const standing: Standing =
+      state.mode === 'history' ? 'released' : (state.baseline.standing ?? 'released');
 
-    // Which "where am I now" state the student chose ('released' | 'notReleased'
-    // | 'justStarted'), defaulting to released when not yet chosen.
-    const standing = state.baseline.standing ?? 'released';
-
-    const progress: CurriculumProgress = progressThrough(
+    const model = resolveSemesterModel({
+      mode: state.mode,
+      standing,
+      levelIndex: state.baseline.levelIndex,
+      semesterIndex: state.baseline.semesterIndex,
       curriculum,
-      confirmedLevel,
-      confirmedSem
-    );
-    const curriculumCompletedCredits =
-      curriculum && progress.hasCreditData ? progress.completedCredits : null;
+      historyLast,
+    });
+    const semesterRole: SemesterRole = model.role;
+    const confirmedPosition = model.confirmedPosition!;
+    const roleMeta = ROLE_META[semesterRole];
 
-    // The completed-credit base above already reflects the confirmed position,
-    // so tell the CGPA engine not to subtract the current semester again (that
-    // subtraction is how the old baseline-based code approximated this). This
-    // keeps snapshot credits EXACTLY equal to the confirmed completed credits.
+    // Structure progress relative to the confirmed position (backwards
+    // compatible `d.progress` plus the semantic fields above).
+    const progress = progressThrough(curriculum, confirmedPosition.levelIndex, confirmedPosition.semesterIndex);
+    const curriculumCompletedCredits =
+      model.hasCreditData && curriculum
+        ? model.accountedCompletedCredits
+        : null;
+
+    // Pending load reported to the CGPA engine. For Not Released this is the
+    // whole completed-but-unreleased semester; for Released it is any advanced
+    // "not released" course credits the user tagged.
+    const advancedPending =
+      state.mode === 'current' && semesterRole === 'next-semester' && standing === 'released'
+        ? state.baseline.pendingCreditHours || 0
+        : 0;
+    const pendingLoad =
+      semesterRole === 'upon-release' ? model.pendingCreditHours : advancedPending;
+
+    // The confirmed credit base already accounts for the current/pending
+    // position, so tell the engine not to subtract the "current semester" again
+    // (older logic approximated this by subtracting). Pending load is injected
+    // so the engine nets confirmed credits and reports pending separately.
     const snapshotState =
-      state.mode === 'current' && state.baseline.justEntered
-        ? { ...state, baseline: { ...state.baseline, justEntered: false } }
+      state.mode === 'current'
+        ? {
+            ...state,
+            baseline: {
+              ...state.baseline,
+              justEntered: false,
+              pendingCreditHours: pendingLoad,
+            },
+          }
         : state;
 
     const snapshot = computeSnapshot(snapshotState, grading, {
@@ -122,9 +136,8 @@ export function useDerived() {
     const classBand = classifyCgpa(snapshot.cgpa, classification);
 
     // Pending-results projection: the confirmed position plus best/worst-case
-    // outcomes once released. In history mode pending credit hours come from
-    // the engine (pending semesters + pending courses); current mode has no
-    // per-course entry, so its pending load is reported by the view.
+    // outcomes once released (this is the "upon release" consequence for a
+    // Not Released student).
     const pending: PendingProjection = pendingProjection(
       {
         confirmedPoints: snapshot.qualityPoints,
@@ -137,13 +150,6 @@ export function useDerived() {
       classification
     );
 
-    // The next semester to act on / the confirmed position for the cockpit and
-    // dashboard. The dashboard's `nextSemesterAfter(confirmedPosition)` then
-    // lands exactly on the semester the student should act on next:
-    //  • released   → the semester right after the baseline (a true "next").
-    //  • justStarted/notReleased → the baseline (current) semester itself,
-    //    because nextSemesterAfter(previous) == current.
-    const confirmedPosition = { levelIndex: confirmedLevel, semesterIndex: confirmedSem };
     const remainingSlots = progress.remainingSlots;
     const remainingCredits =
       curriculum && progress.hasCreditData
@@ -154,8 +160,8 @@ export function useDerived() {
       currentPoints: snapshot.qualityPoints,
       currentCredits: snapshot.creditHours,
       currentCgpa: snapshot.cgpa,
-      currentLevelIndex: confirmedLevel,
-      currentSemesterIndex: confirmedSem,
+      currentLevelIndex: confirmedPosition.levelIndex,
+      currentSemesterIndex: confirmedPosition.semesterIndex,
       targetCgpa: state.targetCgpa ?? 3.6,
       remainingSlots,
       remainingCredits,
@@ -165,6 +171,9 @@ export function useDerived() {
       classification,
       institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
         || INSTITUTION_LABEL,
+      // Let the dashboard/print text reflect the same role as the UI.
+      semesterRole,
+      standing,
     });
 
     return {
@@ -181,10 +190,12 @@ export function useDerived() {
       slots,
       totalProgrammeCredits: totalProgrammeCredits(curriculum),
       progress,
-      // The confirmed (last-released) semester position and the student's
-      // chosen standing, used by planning tools to decide what to target next.
-      confirmedPosition,
+      // ── Semantic semester model (single source of truth) ──────────────
       standing,
+      semesterRole,
+      confirmedPosition,
+      roleMeta,
+      historyLast,
       institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
         || INSTITUTION_LABEL,
       maxPoints: maxGradePoints(grading),

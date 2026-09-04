@@ -28,9 +28,6 @@ const STATUS_TONE: Record<string, string> = {
 export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   const d = useDerived();
   const { record, dispatch, state } = d;
-  // Mid-semester wording applies only in the current-CGPA engine mode.
-  const standing =
-    state.mode === 'history' ? 'released' : d.standing;
 
   const start = (mode: 'quick' | 'history' | 'planning') => {
     dispatch({ type: 'setInputMode', inputMode: mode });
@@ -163,15 +160,19 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
 
         <Card className="print-sheet">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            {standing === 'notReleased' ? '📋 Results on release' : '▶️ Next mission'}
+            {d.semesterRole === 'upon-release'
+              ? '📋 Upon release'
+              : d.semesterRole === 'finish-current'
+                ? '▶️ Current mission'
+                : '▶️ Next mission'}
           </p>
           {model.next ? (
             <>
               <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                {standing === 'justStarted'
-                  ? 'Finish this semester'
-                  : standing === 'notReleased'
-                    ? 'Semester you just wrote'
+                {d.semesterRole === 'upon-release'
+                  ? 'Semester you just wrote'
+                  : d.semesterRole === 'finish-current'
+                    ? 'Finish this semester'
                     : 'Next semester'}
               </p>
               <p className="mt-0.5 text-sm font-black text-slate-800">{model.next.next.label}</p>
@@ -179,7 +180,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
                 {fmt2(model.next.requiredNextGpa)}
               </p>
               <p className="text-[10px] text-slate-500">
-                required GPA · {model.next.next.credits} credits
+                {d.semesterRole === 'upon-release' ? 'steady avg' : 'required GPA'} · {model.next.next.credits} credits
               </p>
               <p className="mt-1 text-[10px] font-semibold text-emerald-700">
                 Target: {model.next.targetClassLabel}

@@ -49,6 +49,10 @@ export interface DashboardModel {
   curriculumVersion: string | null;
   institutionLabel: string;
 
+  /** Semantic semester role (how the planner names the act-on semester). */
+  semesterRole: 'finish-current' | 'upon-release' | 'next-semester';
+  standing: 'released' | 'notReleased' | 'justStarted';
+
   /** Plain-language brief lines. */
   brief: string[];
   hasData: boolean;
@@ -70,6 +74,16 @@ export interface DashboardInput {
   grading: GradingSystem;
   classification: ClassificationSystem;
   institutionLabel: string;
+  /** Semantic semester role (how the planner screen names the act-on semester). */
+  semesterRole?: 'finish-current' | 'upon-release' | 'next-semester';
+  standing?: 'released' | 'notReleased' | 'justStarted';
+}
+
+/** Human noun for the semester a plan targets, driven by the semantic role. */
+export function actOnNoun(role?: DashboardInput['semesterRole']): string {
+  if (role === 'finish-current') return 'this semester';
+  if (role === 'upon-release') return 'the semester you just wrote';
+  return 'next semester';
 }
 
 export function buildDashboard(i: DashboardInput): DashboardModel {
@@ -161,8 +175,14 @@ export function buildDashboard(i: DashboardInput): DashboardModel {
       );
     }
     if (nextPlan && nextPlan.requiredNextGpa !== null) {
+      const word =
+        i.semesterRole === 'upon-release'
+          ? 'On release'
+          : i.semesterRole === 'finish-current'
+            ? 'Current mission'
+            : 'Next mission';
       brief.push(
-        `Next mission: ${nextPlan.next.label} — aim for about ${nextPlan.requiredNextGpa.toFixed(2)} (${nextPlan.targetClassLabel}).`
+        `${word}: ${nextPlan.next.label} — aim for about ${nextPlan.requiredNextGpa.toFixed(2)} (${nextPlan.targetClassLabel}).`
       );
     }
     brief.push(
@@ -196,7 +216,16 @@ export function buildDashboard(i: DashboardInput): DashboardModel {
     flightPath,
     curriculumVersion: i.curriculum ? i.curriculum.versionName : null,
     institutionLabel: i.institutionLabel,
+    semesterRole: i.semesterRole ?? 'next-semester',
+    standing: i.standing ?? 'released',
     brief,
     hasData: i.currentCgpa !== null,
   };
+}
+
+/** Report/print heading for the semester-plan section, driven by role. */
+export function planSectionNoun(role?: DashboardModel['semesterRole']): string {
+  if (role === 'finish-current') return 'This semester plan';
+  if (role === 'upon-release') return 'Upon release';
+  return 'Next semester plan';
 }

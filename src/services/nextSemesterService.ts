@@ -200,7 +200,7 @@ export function planNextSemester(
   const courses: NextCourse[] =
     input.next.courses.length > 0
       ? input.next.courses
-      : [{ code: 'Next semester', name: 'Curriculum not published', creditHours: input.fallbackCredits }];
+      : [{ code: 'Semester', name: 'Curriculum not published', creditHours: input.fallbackCredits }];
   const nextCredits = courses.reduce((s, c) => s + c.creditHours, 0);
 
   const targetClass = classifyCgpa(input.targetCgpa, classification);

@@ -13,6 +13,7 @@ import {
   TONE,
 } from './scopedPrint';
 import type { DashboardModel } from './dashboardService';
+import { planSectionNoun } from './dashboardService';
 
 export function summaryReport(m: DashboardModel): { html: string } {
   const metrics = metricGrid([
@@ -23,6 +24,12 @@ export function summaryReport(m: DashboardModel): { html: string } {
     { label: 'Required future GPA', value: m.requiredFutureGpa === null ? '—' : m.requiredFutureGpa.toFixed(2), tone: TONE.amber },
     { label: 'Projected final CGPA', value: m.projectedFinalCgpa === null ? '—' : m.projectedFinalCgpa.toFixed(2), tone: TONE.brand },
   ]);
+  const semLabel =
+    m.semesterRole === 'upon-release'
+      ? 'Results (upon release)'
+      : m.semesterRole === 'finish-current'
+        ? 'This semester'
+        : 'Next semester';
   const table = htmlTable(
     ['Flight status', 'Value'],
     [
@@ -30,8 +37,8 @@ export function summaryReport(m: DashboardModel): { html: string } {
       ['Target classification', m.targetClassLabel],
       ['Maximum possible final CGPA', m.maxPossibleFinalCgpa === null ? '—' : m.maxPossibleFinalCgpa.toFixed(2)],
       ['Graded credits completed', String(m.creditsCompleted)],
-      ['Next semester', m.next ? m.next.next.label : '—'],
-      ['Next-semester required GPA', m.next?.requiredNextGpa != null ? m.next.requiredNextGpa.toFixed(2) : '—'],
+      [semLabel, m.next ? m.next.next.label : '—'],
+      [`${semLabel} required GPA`, m.next?.requiredNextGpa != null ? m.next.requiredNextGpa.toFixed(2) : '—'],
       ['Curriculum version', m.curriculumVersion ?? 'not published'],
     ]
   );
@@ -66,15 +73,17 @@ export function fullReport(
       pathRows as (string | number)[][]
     )}</div>`;
 
-  // Next semester plan.
-  let nextHtml = `${sectionHeading('▶️', 'Next semester plan')}<p style="font-size:10px;color:#64748b;">No next-semester data yet.</p>`;
+  // Next semester plan (heading is role-aware so a mid-semester student's
+  // report never mislabels the current/pending semester as "next").
+  const planHeading = planSectionNoun(m.semesterRole);
+  let nextHtml = `${sectionHeading('▶️', planHeading)}<p style="font-size:10px;color:#64748b;">No semester-plan data yet.</p>`;
   if (m.next) {
     const courseRows = m.next.next.courses.map((c) => [
       c.code,
       String(c.creditHours),
       m.next!.combos[0]?.assignments.find((a) => a.code === c.code)?.grade ?? '—',
     ]);
-    nextHtml = `${sectionHeading('▶️', 'Next semester plan')}
+    nextHtml = `${sectionHeading('▶️', planHeading)}
       <p style="font-size:11px;margin:0 0 6px;">
         <strong>${m.next.next.label}</strong> · Required GPA:
         <strong style="color:${TONE.brand};">${m.next.requiredNextGpa === null ? '—' : m.next.requiredNextGpa.toFixed(2)}</strong>

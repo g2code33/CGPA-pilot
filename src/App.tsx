@@ -214,14 +214,15 @@ export default function App() {
   // a Previous / Next / Home bottom bar for simple navigation.
   if (screen !== 'home') {
     const meta = SCREEN_TITLES[screen];
-    // The "Next Semester" tab title adapts to the student's standing so a
-    // mid-semester student never sees their current semester called "next".
+    // The "Next Semester" tab title adapts to the semantic semester role so a
+    // mid-semester student never sees their current / already-written semester
+    // called "next". (d.semesterRole is already 'next-semester' in History mode.)
     const screenTitle =
-      screen === 'next' && d.state.mode !== 'history'
-        ? d.standing === 'justStarted'
+      screen === 'next'
+        ? d.semesterRole === 'finish-current'
           ? 'Finish This Semester'
-          : d.standing === 'notReleased'
-            ? 'Results on Release'
+          : d.semesterRole === 'upon-release'
+            ? 'Upon Release'
             : 'Next Semester'
         : meta?.title;
     const idx = TOOL_ORDER.indexOf(screen as ToolId);

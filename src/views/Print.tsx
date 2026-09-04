@@ -53,10 +53,38 @@ export function PrintView() {
     },
     {
       icon: '▶️',
-      title: 'Print Next Semester Plan',
-      desc: 'Semester, courses, credits, mathematically-derived target grades and required GPA — full version on the Next Semester tab.',
+      title:
+        m.semesterRole === 'upon-release'
+          ? 'Print On-Release Result'
+          : m.semesterRole === 'finish-current'
+            ? 'Print This-Semester Plan'
+            : 'Print Next Semester Plan',
+      desc:
+        m.semesterRole === 'upon-release'
+          ? 'What your CGPA becomes once the pending results are released (best / worst), plus the steady average you needed.'
+          : 'Semester, courses, credits, mathematically-derived target grades and required GPA.',
       run: () => {
+        if (m.semesterRole === 'upon-release') {
+          const f = (n: number | null) => (n === null ? '—' : n.toFixed(2));
+          const p = d.pending;
+          const html = `${sectionHeading('📋', 'Upon release')}
+            <div class="print-card">
+              <p style="margin:0 0 4px;"><strong>${m.next?.next.label ?? 'Semester'}</strong> — results pending (${p.pendingCreditHours} credits). Confirmed: ${p.confirmedCreditHours} credits at ${f(p.confirmedCgpa)}.</p>
+              ${rowsTable(
+                [
+                  ['If top grades', f(p.bestCaseCgpa), p.bestCaseClass?.label ?? '—'],
+                  ['If minimum pass', f(p.minPassCgpa), p.minPassClass?.label ?? '—'],
+                  ['Worst case', f(p.worstCaseCgpa), p.worstCaseClass?.label ?? '—'],
+                ],
+                ['Outcome', 'CGPA once released', 'Classification']
+              )}
+              ${m.next?.requiredNextGpa != null ? `<p style="font-size:10px;color:#64748b;margin-top:4px;">Required steady average across these pending credits and what remains: ${f(m.next.requiredNextGpa)}.</p>` : ''}
+            </div>`;
+          printHtml([{ html }], { ...branding, title: 'Print On-Release Result' });
+          return;
+        }
         const next = m.next;
+        const heading = m.semesterRole === 'finish-current' ? 'This semester plan' : 'Next semester plan';
         const courseRows = next
           ? next.next.courses.map((c) => [
               c.code,
@@ -64,12 +92,12 @@ export function PrintView() {
               next.combos[0]?.assignments.find((a) => a.code === c.code)?.grade ?? '—',
             ])
           : [];
-        const html = `${sectionHeading('▶️', 'Next semester plan')}
+        const html = `${sectionHeading('▶️', heading)}
           <div class="print-card">
             <p style="margin:0 0 4px;"><strong>${next?.next.label ?? '—'}</strong> · Required GPA <strong>${next?.requiredNextGpa?.toFixed(2) ?? '—'}</strong> · Target: ${next?.targetClassLabel ?? '—'}</p>
             ${courseRows.length ? rowsTable(courseRows, ['Course', 'Credits', 'Target grade']) : '<p style="font-size:10px;color:#64748b;">Curriculum courses not published yet. Target grades are planning targets, not predicted grades.</p>'}
           </div>`;
-        printHtml([{ html }], { ...branding, title: 'Print Next Semester Plan' });
+        printHtml([{ html }], { ...branding, title: heading });
       },
       ready: m.hasData && !!m.next,
     },
