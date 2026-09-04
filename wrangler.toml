@@ -26,14 +26,10 @@ compatibility_date = "2026-08-31"
 workers_dev = true
 
 # D1: the authoritative store for the published configuration.
-# ⚠️ REPLACE the placeholder database_id below with the UUID printed by
-#    `wrangler d1 create cgpa-pilot-config` (see docs/DEPLOYMENT.md).
-#    The zeroed UUID lets `wrangler dev` run locally before that step;
-#    `wrangler deploy` will refuse it until you replace it.
 [[d1_databases]]
 binding = "CONFIG_DB"
 database_name = "cgpa-pilot-config"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "c6f5f8ca-e6d8-4fb0-9e09-f8b5874107a1"
 
 # Static site: the built student + admin app (npm run build:web → dist/).
 [assets]
