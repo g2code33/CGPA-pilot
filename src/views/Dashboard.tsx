@@ -4,6 +4,7 @@ import { PendingProjectionPanel } from '../components/PendingProjection';
 import { InstitutionSelector } from '../components/InstitutionSelector';
 import { printHtml } from '../services/scopedPrint';
 import { summaryReport, fullReport, pilotBriefReport } from '../services/reportComposer';
+import { toolNameFor } from '../services/semesterModel';
 import { fmt2, fmt1, clamp } from '../util/format';
 
 type Tab =
@@ -193,7 +194,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
             onClick={() => onNavigate('next')}
             className="no-print mt-2 w-full rounded-lg bg-brand-50 px-2 py-1 text-[10px] font-bold text-brand-700 hover:bg-brand-100"
           >
-            Open Next Semester Pilot →
+            Open {toolNameFor(d.semesterRole)} →
           </button>
         </Card>
 
@@ -277,7 +278,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
             { t: 'whatif' as Tab, icon: '🔀', label: 'What-If Simulator' },
             { t: 'flight' as Tab, icon: '🛩️', label: 'Flight Path' },
             { t: 'milestones' as Tab, icon: '🏁', label: 'Milestones & Drops' },
-            { t: 'next' as Tab, icon: '▶️', label: 'Next Semester Pilot' },
+            { t: 'next' as Tab, icon: '▶️', label: toolNameFor(d.semesterRole) },
             { t: 'print' as Tab, icon: '🖨️', label: 'Print Brief' },
           ].map((a) => (
             <button

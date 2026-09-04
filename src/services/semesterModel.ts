@@ -190,3 +190,35 @@ export function finishHeadline(role: SemesterRole, label: string, ordinal: strin
   if (role === 'upon-release') return `Results for ${label} — ${ordinal}`;
   return label;
 }
+
+/**
+ * Human name for the "Next Semester" TOOL (the fixed home/tool tile, bottom
+ * nav and dashboard navigation button). Like every other surface, its label is
+ * driven by the semantic role so it always reflects the student's state rather
+ * than a hard-coded "Next Semester Pilot":
+ *  • 'finish-current' (Just Started) → "Finish This Semester"
+ *  • 'upon-release'   (Not Released) → "Upon Release"
+ *  • 'next-semester'  (Released / History) → "Next Semester"
+ */
+export function toolNameFor(role: SemesterRole): string {
+  switch (role) {
+    case 'finish-current':
+      return 'Finish This Semester';
+    case 'upon-release':
+      return 'Upon Release';
+    default:
+      return 'Next Semester';
+  }
+}
+
+/** One-line hint that accompanies the dynamic tool name. */
+export function toolHintFor(role: SemesterRole): string {
+  switch (role) {
+    case 'finish-current':
+      return 'Grades to aim for as you finish this semester';
+    case 'upon-release':
+      return 'What your CGPA becomes once results are released';
+    default:
+      return 'Grades you need to stay on track';
+  }
+}

@@ -9,6 +9,7 @@ import { ClearButton } from './components/ClearButton';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useAcademic } from './state/store';
 import { useDerived } from './state/derived';
+import { toolNameFor, toolHintFor } from './services/semesterModel';
 import {
   installBeforeUnloadGuard,
   hasEnteredAcademicData,
@@ -228,6 +229,9 @@ export default function App() {
     const idx = TOOL_ORDER.indexOf(screen as ToolId);
     const prev = isTool(screen) && idx > 0 ? TOOLS[idx - 1] : null;
     const next = isTool(screen) && idx < TOOL_ORDER.length - 1 ? TOOLS[idx + 1] : null;
+    // Role-aware tool name so the bottom-nav label also updates with state.
+    const navTitle = (tool: { id: string; title: string } | null) =>
+      tool && tool.id === 'next' ? toolNameFor(d.semesterRole) : tool?.title ?? '';
     return (
       <div className="h-[100dvh] flex flex-col bg-slate-50">
         <header className="no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
@@ -280,7 +284,7 @@ export default function App() {
                   <span className="block truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">
                     Prev
                   </span>
-                  <span className="block truncate text-xs font-black">{prev.title}</span>
+                  <span className="block truncate text-xs font-black">{navTitle(prev)}</span>
                 </span>
               </button>
             ) : (
@@ -303,7 +307,7 @@ export default function App() {
                   <span className="block truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">
                     Next
                   </span>
-                  <span className="block truncate text-xs font-black">{next.title}</span>
+                  <span className="block truncate text-xs font-black">{navTitle(next)}</span>
                 </span>
                 <span className="text-lg leading-none">›</span>
               </button>
@@ -418,7 +422,12 @@ export default function App() {
             {TOOLS.map((t) => {
               const disabled = t.needsData && !hasData;
               const isResults = t.id === 'calculate';
-              const tagline = isResults && hasData ? 'Results entered — tap to Edit' : t.tagline;
+              const isNext = t.id === 'next';
+              // The "Next Semester" tool tile name adapts to the student's
+              // standing (Finish This Semester / Upon Release / Next Semester).
+              const title = isNext ? toolNameFor(d.semesterRole) : t.title;
+              const hint = isNext ? toolHintFor(d.semesterRole) : t.tagline;
+              const tagline = isResults && hasData ? 'Results entered — tap to Edit' : hint;
               return (
                 <button
                   key={t.id}
@@ -437,7 +446,7 @@ export default function App() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-extrabold text-slate-900">
-                      {t.title}
+                      {title}
                     </span>
                     <span className="block truncate text-xs text-slate-500">{tagline}</span>
                   </span>
