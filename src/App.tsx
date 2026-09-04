@@ -371,7 +371,7 @@ export default function App() {
           </button>
         </div>
       )}
-      <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
+      <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-4 pb-3">
         <div className="mx-auto w-full max-w-md">
           {/* Hero */}
           <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-4 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
@@ -391,14 +391,14 @@ export default function App() {
                   </button>
                 </div>
                 <div className="mt-2 flex items-end justify-between gap-4">
-                  <p className="text-4xl font-black tabular-nums leading-none">
+                  <p className="text-3xl font-black tabular-nums leading-none">
                     {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
                   </p>
                   <div className="text-right">
                     <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-brand-200">
                       Target
                     </p>
-                    <p className="text-4xl font-black tabular-nums leading-none text-emerald-300">
+                    <p className="text-3xl font-black tabular-nums leading-none text-emerald-300">
                       {fmt2(d.state.targetCgpa ?? 3.6)}
                     </p>
                   </div>
@@ -443,10 +443,10 @@ export default function App() {
         </section>
 
           {/* Tool tiles */}
-          <p className="mt-4 mb-2 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
+          <p className="mt-3 mb-1.5 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
             Tools
           </p>
-          <div className="space-y-2.5">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {TOOLS.map((t) => {
               const disabled = t.needsData && !hasData;
               const isResults = t.id === 'calculate';
@@ -461,22 +461,22 @@ export default function App() {
                   key={t.id}
                   onClick={() => !disabled && setScreen(t.id)}
                   disabled={disabled}
-                  className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left ring-1 transition ${
+                  className={`flex w-full items-center gap-2.5 rounded-2xl p-2 text-left ring-1 transition ${
                     disabled
                       ? 'bg-slate-100 ring-slate-200 opacity-70'
                       : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
                   }`}
                 >
                   <span
-                    className={`grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br text-xl text-white shadow ${t.grad}`}
+                    className={`grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br text-base text-white shadow ${t.grad}`}
                   >
                     <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-extrabold text-slate-900">
+                    <span className="block truncate text-[13px] font-extrabold leading-tight text-slate-900">
                       {title}
                     </span>
-                    <span className="block truncate text-xs text-slate-500">{tagline}</span>
+                    <span className="block truncate text-[10px] leading-tight text-slate-500">{tagline}</span>
                   </span>
                   {disabled ? (
                     <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-500">
@@ -497,18 +497,18 @@ export default function App() {
           {/* Privacy */}
           <button
             onClick={() => setScreen('privacy')}
-            className="mt-5 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-left ring-1 ring-emerald-200"
+            className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
           >
-            <span className="flex h-6 w-6 items-center justify-center text-lg">
+            <span className="flex h-5 w-5 items-center justify-center text-base">
               <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
             </span>
-            <span className="flex-1 text-xs font-bold text-emerald-800">
+            <span className="flex-1 text-[11px] font-bold text-emerald-800">
               No account. Nothing you type is saved or shared — see how.
             </span>
             <span className="text-emerald-400">›</span>
           </button>
 
-          <p className="mt-5 px-2 text-center text-[10px] leading-relaxed text-slate-400">
+          <p className="mt-3 px-2 text-center text-[10px] leading-snug text-slate-400">
             {d.university.shortName} grading &amp; classification per published
             university rules · CGPA PILOT is an unofficial planning aid, not an
             academic record.
