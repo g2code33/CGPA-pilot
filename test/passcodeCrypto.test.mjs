@@ -68,12 +68,12 @@ test('timingSafeEqualHex compares constant-length hex digests', () => {
   assert.equal(timingSafeEqualHex('', ''), false); // empty rejected
 });
 
-test('passcodePolicy enforces 6..128 characters', () => {
-  assert.equal(passcodePolicy('abcdef'), null);
-  assert.ok(passcodePolicy('abcde'), 'too short');
+test('passcodePolicy enforces 8..128 characters', () => {
+  assert.equal(passcodePolicy('abcdefgh'), null);
+  assert.ok(passcodePolicy('abcdefg'), 'too short');
   assert.equal(passcodePolicy('x'.repeat(MAX_PASSCODE_LENGTH)), null);
   assert.ok(passcodePolicy('x'.repeat(MAX_PASSCODE_LENGTH + 1)), 'too long');
   assert.ok(passcodePolicy(''), 'empty');
   assert.ok(passcodePolicy(null), 'non-string');
-  assert.equal(MIN_PASSCODE_LENGTH, 6);
+  assert.equal(MIN_PASSCODE_LENGTH, 8);
 });

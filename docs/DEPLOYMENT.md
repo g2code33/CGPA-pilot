@@ -100,7 +100,7 @@ If you have real data in the admin console's browser storage today:
 1. Open the admin console (online, from the deployed site).
 2. The login screen detects "backend configured, no passcode yet" and shows
    **First-time setup**: paste your `ADMIN_TOKEN` (the operator secret) and
-   choose the ONE admin passcode (min 6 characters). Click
+   choose the ONE admin passcode (min 8 characters). Click
    *Create passcode & sign in*. Setup is one-time — a second attempt is
    rejected, and the passcode is the only thing you'll need on any device
    from now on.
@@ -221,11 +221,15 @@ Body limit 15 MB.
   trash, the admin passcode, or anything student-specific (nothing
   student-specific exists in this service at all).
 - **One admin, one passcode, never stored in plaintext.** D1 holds a single
-  row with a 16-byte random salt and the PBKDF2-SHA256 digest (210,000
-  iterations). Devices that sign in store only the *credential params*
-  (salt + digest) — to verify the same passcode **offline** — never the
-  passcode itself. Changing the passcode rotates the digest, so a stolen
-  old-device credential is useless after a change.
+  row with a 16-byte random salt and the PBKDF2-SHA256 digest (12,000
+  iterations — sized to fit the Workers Free plan's ~10 ms CPU time per
+  request; online brute force is network-limited per guess, and the
+  ≥8-character policy + salt defend the offline path). Devices that sign in
+  store only the *credential params* (salt + digest) — to verify the same
+  passcode **offline** — never the passcode itself. Changing the passcode
+  rotates the digest, so a stolen old-device credential is useless after a
+  change. If the Worker moves to the Paid plan, `PBKDF2_ITERATIONS` can be
+  raised again (each stored credential records its own iteration count).
 - **Writes require a valid credential**: a server-signed session token
   (HMAC-SHA256 keyed by the `ADMIN_TOKEN` secret — unforgeable without the
   secret, expiry embedded) or the raw operator token. `setup` requires the

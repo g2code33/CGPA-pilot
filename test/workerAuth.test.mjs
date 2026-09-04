@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import worker from '../worker/src/index.ts';
 import { createD1Stub } from './helpers/d1Stub.mjs';
 import { makeValidCatalog } from './helpers/fixtures.mjs';
+import { PBKDF2_ITERATIONS } from '../src/admin/passcodeCrypto.ts';
 
 const TOKEN = 'test-admin-token';
 const BASE = 'https://cfg.example.test';
@@ -88,7 +89,7 @@ test('setup creates the credential, issues a session, and is one-time (409 on re
   assert.equal(first.doc.ok, true);
   assert.ok(typeof first.doc.session === 'string' && first.doc.session.startsWith('cps1.'));
   assert.ok(first.doc.credential?.salt && first.doc.credential?.hash);
-  assert.equal(first.doc.credential.iterations, 210000);
+  assert.equal(first.doc.credential.iterations, PBKDF2_ITERATIONS);
   // The response must never contain the passcode itself.
   assert.ok(!JSON.stringify(first.doc).includes(PASSCODE));
 
