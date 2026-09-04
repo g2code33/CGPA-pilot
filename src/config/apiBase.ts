@@ -20,6 +20,27 @@
 const PRODUCTION_API_BASE = 'https://cgpa-pilot.calcitoninpay.workers.dev';
 const PAGES_HOST = 'cgpapilot.pages.dev';
 
+/**
+ * Normalize a base URL. A secure (https) page can never reach an http://
+ * API — browsers block it as mixed content — so upgrade instead of failing
+ * silently (a pasted `http://…workers.dev` must not break the console).
+ */
+function normalizeBase(base: string): string {
+  let b = base.trim().replace(/\/+$/, '');
+  try {
+    if (
+      typeof window !== 'undefined' &&
+      window.location?.protocol === 'https:' &&
+      b.startsWith('http://')
+    ) {
+      b = `https://${b.slice('http://'.length)}`;
+    }
+  } catch {
+    /* non-browser context */
+  }
+  return b;
+}
+
 /** The API base: '' means same-origin (/api/...). */
 export function configApiBase(): string {
   try {
@@ -28,7 +49,7 @@ export function configApiBase(): string {
     };
     const v = meta.env?.VITE_CONFIG_API_BASE;
     if (typeof v === 'string' && v.trim().length > 0) {
-      return v.trim().replace(/\/+$/, '');
+      return normalizeBase(v);
     }
   } catch {
     /* non-Vite context (tests / bundlers) */
