@@ -230,6 +230,30 @@ export function NextSemester() {
               `Even a straight ${plan.maxNextGpa.toFixed(2)} semester can't protect a ${fmt2(target)} finish — the target is out of range on the credits that remain. Consider a nearby classification.`}
           </div>
 
+          {/* ── Your-numbers credit audit ─────────────────────────────── */}
+          {/* Shown only when no results are pending, so every completed credit is
+              already inside the confirmed CGPA and the cells below partition the
+              whole programme exactly — nothing dropped, nothing double-counted. */}
+          {record.pendingCreditHours === 0 && d.progress.hasCreditData && (
+            <Card className="no-print">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
+                ✓ Your credits, all accounted for
+              </p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <Audit label="Confirmed credits" value={record.creditHours} note="in your CGPA now" />
+                <Audit
+                  label={role === 'finish-current' ? 'This semester' : 'Next semester'}
+                  value={plan.next.credits}
+                  note={role === 'finish-current' ? 'you are finishing it now' : 'to be written'}
+                />
+                <Audit label="After that" value={Math.max(0, remainingCredits - plan.next.credits)} note="semesters still to come" />
+              </div>
+              <p className="mt-2 text-center text-[10px] font-semibold text-emerald-700">
+                {record.creditHours} + {plan.next.credits} + {Math.max(0, remainingCredits - plan.next.credits)} = {d.totalProgrammeCredits} programme credits · nothing dropped or double-counted
+              </p>
+            </Card>
+          )}
+
           {/* ── Plan card ─────────────────────────────────────────────── */}
           <div ref={planRef}>
           <Card className="print-sheet">
@@ -477,6 +501,16 @@ function UponReleaseCard({
         </p>
       </Card>
     </>
+  );
+}
+
+function Audit({ label, value, note }: { label: string; value: number; note: string }) {
+  return (
+    <div className="rounded-xl bg-white/80 p-2 text-center ring-1 ring-slate-200">
+      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-2xl font-black tabular-nums text-slate-800">{value}</p>
+      <p className="truncate text-[9px] font-semibold text-slate-400">{note}</p>
+    </div>
   );
 }
 

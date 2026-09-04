@@ -15,15 +15,23 @@
 //      but its results are PENDING release. Its credits count toward the
 //      programme total (not omitted) yet are excluded from the confirmed CGPA
 //      (not double-counted) and are shown as a pending projection.
-//  • 'next-semester'   (Released, or GPA-History) — the baseline is fully
-//      confirmed and the semester to plan is the genuine NEXT one.
+//  • 'next-semester'   (Released, or GPA-History released) — the baseline is
+//      fully confirmed and the semester to plan is the genuine NEXT one.
+//
+// GPA-History is standing-AWARE just like Quick/current mode: a history student
+// marks the current level Released / Not released / Just started and that
+// standing drives the ROLE the same way it does in current mode. History stores
+// one CGPA per completed level, so the confirmed position stays the LAST
+// entered level (already the most recent released result); the standing only
+// selects the role that words the next action — it never moves the confirmed
+// base or changes any number.
 //
 // The confirmed position is the last semester with CONFIRMED (released)
 // results:
 //  • released        → the baseline semester itself.
 //  • justStarted     → the previous semester (baseline is still ahead).
 //  • notReleased     → the previous semester (baseline results pending).
-//  • history         → the last entered semester.
+//  • history         → the last entered semester (standing only sets the role).
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CurriculumVersion } from '../config/types';
@@ -37,9 +45,14 @@ import {
 export type Standing = 'released' | 'notReleased' | 'justStarted';
 export type SemesterRole = 'finish-current' | 'upon-release' | 'next-semester';
 
-/** Role of the selected (baseline) semester given standing + engine mode. */
-export function semesterRoleFor(standing: Standing, mode: CalcMode): SemesterRole {
-  if (mode === 'history') return 'next-semester';
+/**
+ * Role of the selected (baseline) semester given the student's standing.
+ * Identical for Quick/current mode and GPA-History: the standing alone decides
+ * the role, so a history student who marks the current level "Not released" or
+ * "Just started" gets the same upon-release / finish-current wording as in
+ * Quick mode instead of an unconditional "Next Semester".
+ */
+export function semesterRoleFor(standing: Standing, _mode: CalcMode): SemesterRole {
   switch (standing) {
     case 'justStarted':
       return 'finish-current';

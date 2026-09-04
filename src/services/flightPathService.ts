@@ -114,6 +114,8 @@ export interface FlightInput {
   fallbackCreditsPerSemester: number;
   /** How many fallback future semesters to plot when no curriculum exists. */
   fallbackSemesterCount: number;
+  /** Semantic role so the "Now" milestone and first stage read correctly. */
+  semesterRole?: 'finish-current' | 'upon-release' | 'next-semester';
 }
 
 function shortLevel(levelIndex: number): string {
@@ -147,12 +149,21 @@ export function buildFlightPath(
   let cumCredits = input.currentCredits;
 
   const projectedNow = input.currentCgpa;
+  // The "Now" point is the CONFIRMED position (last released results). For a
+  // mid-semester student that is the previous semester — the first plotted leg
+  // is then the semester they are finishing / whose results are pending.
+  const nowDetail =
+    input.semesterRole === 'upon-release'
+      ? `Confirmed · Level ${input.currentLevelIndex * 100} (semester written, results pending)`
+      : input.semesterRole === 'finish-current'
+        ? `Confirmed through Level ${input.currentLevelIndex * 100} — finishing this semester next`
+        : `Current position · Level ${input.currentLevelIndex * 100}`;
   // Required cumulative line starts at current CGPA at "Now" (nothing yet to
   // average in) — its slope is governed by requiredFutureGpa.
   milestones.push({
     kind: 'current',
     label: 'Now',
-    detail: `Current position · Level ${input.currentLevelIndex * 100}`,
+    detail: nowDetail,
     levelIndex: input.currentLevelIndex,
     semesterIndex: 0,
     cumulativeCredits: cumCredits,
@@ -179,17 +190,31 @@ export function buildFlightPath(
         : null;
 
     const isLast = idx === legs.length - 1;
+    const isFirst = idx === 0;
     const nextLeg = legs[idx + 1];
     // End-of-level when this leg is semester 2 OR the level changes next.
     const isLevelEnd =
       leg.semesterIndex === 2 || (nextLeg ? nextLeg.levelIndex !== leg.levelIndex : true);
 
+    // The FIRST projected leg is exactly the semester being acted on: for a
+    // Just-Started student it is the current semester to FINISH; for Not
+    // Released it is the just-written semester awaiting its results; otherwise
+    // it is the genuine next semester. Name it so it can't be misread.
+    let detail: string;
+    if (isLast) {
+      detail = `Graduation · end of Level ${leg.levelIndex * 100}`;
+    } else if (isFirst && input.semesterRole === 'finish-current') {
+      detail = `Finish Level ${leg.levelIndex * 100} — Semester ${leg.semesterIndex}`;
+    } else if (isFirst && input.semesterRole === 'upon-release') {
+      detail = `Results for Level ${leg.levelIndex * 100} — Semester ${leg.semesterIndex}`;
+    } else {
+      detail = `${leg.label}`;
+    }
+
     milestones.push({
       kind: isLast ? 'graduation' : isLevelEnd ? 'level-end' : 'semester',
       label: isLast ? 'Grad' : isLevelEnd ? shortLevel(leg.levelIndex) : `S${leg.semesterIndex}`,
-      detail: isLast
-        ? `Graduation · end of Level ${leg.levelIndex * 100}`
-        : `${leg.label}`,
+      detail,
       levelIndex: leg.levelIndex,
       semesterIndex: leg.semesterIndex,
       cumulativeCredits: cumCredits,

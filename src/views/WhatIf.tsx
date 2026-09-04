@@ -23,6 +23,26 @@ const VERDICT_TONE: Record<string, string> = {
   unknown: 'text-slate-400',
 };
 
+/** Role-aware phrasing for the semester being "what-if"-ed, so the simulator
+ *  never calls an already-written or current semester "next". */
+const PERIOD: Record<string, { noun: string; ask: string; period: string }> = {
+  'finish-current': {
+    noun: 'finishing this semester',
+    ask: 'what if I finish this semester at',
+    period: 'this semester',
+  },
+  'upon-release': {
+    noun: 'when these results are released',
+    ask: 'what if these pending results average',
+    period: 'the results you just wrote',
+  },
+  'next-semester': {
+    noun: 'next period',
+    ask: 'what if my next GPA is',
+    period: 'next period',
+  },
+};
+
 /**
  * What-If simulator — a fully local scratchpad. Future-GPA scenarios and
  * assumed grades live in component state only; the confirmed record is never
@@ -33,6 +53,8 @@ export function WhatIf() {
   const d = useDerived();
   const { record, grading, classification, state, progress } = d;
   const target = state.targetCgpa ?? 3.6;
+  const role = d.semesterRole;
+  const period = PERIOD[role] ?? PERIOD['next-semester'];
 
   // ── Future credit context (curriculum-driven when available) ──────────
   const nextCreditsDefault = useMemo(() => {
@@ -106,7 +128,7 @@ export function WhatIf() {
       mk(presets[0].gpa, presets[0].label),
       mk(presets[1].gpa, presets[1].label),
       mk(presets[2].gpa, presets[2].label),
-      mk(activeCustom, `What if next GPA is ${activeCustom.toFixed(2)}?`),
+      mk(activeCustom, `${period.ask} ${activeCustom.toFixed(2)}?`),
     ];
   }, [
     record.points,
@@ -143,8 +165,8 @@ export function WhatIf() {
     const html = `
       ${sectionHeading('🔀', `What-if scenario — ${s.label}`)}
       <div class="print-card">${htmlTable(['What-if result', 'Value'], [
-        ['Assumed next-semester GPA', s.futureGpa.toFixed(2)],
-        ['Next-period credits', String(s.futureCredits)],
+        [`Assumed average for ${period.noun}`, s.futureGpa.toFixed(2)],
+        ['Credits involved', String(s.futureCredits)],
         ['Projected semester GPA', s.projectedSemesterGpa.toFixed(2)],
         ['Projected CGPA', s.projectedCgpa === null ? '—' : s.projectedCgpa.toFixed(2)],
         ['Change vs current CGPA', sign(s.differenceFromCurrent)],
@@ -172,10 +194,10 @@ export function WhatIf() {
         <SectionTitle
           icon="🔀"
           title="What-If Simulator"
-          subtitle="Try a future GPA — “what if my next GPA is 3.0 / 3.5 / 4.0?”"
+          subtitle={`Try a GPA — “${period.ask} 3.0 / 3.5 / 4.0?”`}
           info={
             <>
-              Ask “what if my next GPA is 3.0 / 3.5 / 4.0?” and see how your CGPA
+              Ask “{period.ask} 3.0 / 3.5 / 4.0?” and see how your CGPA
               would move.
               <br />
               <br />
@@ -198,7 +220,7 @@ export function WhatIf() {
         <div className="no-print mt-2 space-y-3">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <label className="block">
-              <span className="label">Next-period credits</span>
+              <span className="label">{role === 'upon-release' ? 'Pending credits' : period.period + ' credits'}</span>
               <input
                 type="number"
                 min={1}
@@ -228,7 +250,7 @@ export function WhatIf() {
               />
             </label>
             <label className="block col-span-2 sm:col-span-1">
-              <span className="label">What if my next GPA is: {activeCustom.toFixed(2)}</span>
+              <span className="label">{period.ask}: {activeCustom.toFixed(2)}</span>
               <input
                 type="range"
                 min={0}
@@ -247,7 +269,7 @@ export function WhatIf() {
                 key={v}
                 onClick={() => setCustomGpa(Math.min(v, d.maxPoints))}
                 className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200"
-                title={`What if it is ${v.toFixed(1)}?`}
+                title={`${period.ask} ${v.toFixed(1)}?`}
               >
                 What if it is {v.toFixed(1)}?
               </button>
@@ -281,7 +303,7 @@ export function WhatIf() {
             <thead>
               <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
                 <th className="py-2 pr-2">Scenario</th>
-                <th className="py-2 pr-2 text-right">Next GPA</th>
+                <th className="py-2 pr-2 text-right">{role === 'upon-release' ? 'Result avg' : 'Period GPA'}</th>
                 <th className="py-2 pr-2 text-right">Projected CGPA</th>
                 <th className="py-2 pr-2 text-right">Δ vs now</th>
                 <th className="py-2 pr-2 text-right">Δ vs target</th>
@@ -296,7 +318,7 @@ export function WhatIf() {
                   <td className="py-2 pr-2 font-bold text-slate-700">
                     {s.label}
                     <span className="block text-[10px] font-medium text-slate-400">
-                      {s.futureCredits} cr next period
+                      {s.futureCredits} cr {role === 'upon-release' ? 'pending' : role === 'finish-current' ? 'this semester' : 'next period'}
                     </span>
                   </td>
                   <td className="py-2 pr-2 text-right font-black tabular-nums">{fmt2(s.projectedSemesterGpa)}</td>
@@ -351,7 +373,7 @@ export function WhatIf() {
             className="shrink-0"
           >
             <strong>Projected CGPA</strong> is your confirmed CGPA blended
-            (credit-weighted) with the hypothetical next period.
+            (credit-weighted) with the hypothetical average for {period.noun}.
             <br />
             <strong>“Final if held”</strong> extrapolates that same average over all{' '}
             {rem} remaining credits.

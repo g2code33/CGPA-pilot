@@ -75,6 +75,7 @@ export function FlightPathView() {
           targetCgpa: target,
           fallbackCreditsPerSemester: fallbackCredits,
           fallbackSemesterCount: fallbackSemesters,
+          semesterRole: d.semesterRole,
         },
         grading,
         classification
@@ -89,6 +90,7 @@ export function FlightPathView() {
       target,
       fallbackCredits,
       fallbackSemesters,
+      d.semesterRole,
       grading,
       classification,
     ]

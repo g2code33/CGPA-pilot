@@ -148,6 +148,7 @@ export function buildDashboard(i: DashboardInput): DashboardModel {
       targetCgpa: i.targetCgpa,
       fallbackCreditsPerSemester: 18,
       fallbackSemesterCount: 6,
+      semesterRole: i.semesterRole,
     },
     i.grading,
     i.classification

@@ -264,7 +264,16 @@ export function Milestones() {
               </thead>
               <tbody>
                 <tr className="border-b border-slate-100 bg-slate-50/60">
-                  <td className="py-2 pr-2 font-bold text-slate-700">📍 Now · Level {currentLevel * 100}</td>
+                  <td className="py-2 pr-2 font-bold text-slate-700">
+                    📍 Now · Level {currentLevel * 100}
+                    <span className="block text-[10px] font-semibold text-slate-400">
+                      {d.semesterRole === 'finish-current'
+                        ? 'confirmed position — the next milestone is finishing this semester'
+                        : d.semesterRole === 'upon-release'
+                          ? 'confirmed position — results pending on release'
+                          : 'current position'}
+                    </span>
+                  </td>
                   <td className="py-2 pr-2 text-right text-slate-300">—</td>
                   <td className="py-2 pr-2 text-right font-black tabular-nums text-slate-800">{fmt2(record.cgpa)}</td>
                   <td className="py-2 pr-2 text-right text-slate-300">—</td>

@@ -56,8 +56,12 @@ export function useDerived() {
             semesterIndex: state.semesters[state.semesters.length - 1].semesterIndex,
           }
         : null;
-    const standing: Standing =
-      state.mode === 'history' ? 'released' : (state.baseline.standing ?? 'released');
+    // Standing is user-chosen in BOTH Quick and GPA-History mode (the standing
+    // picker reflects "which level/semester are you in now, and how does it
+    // stand?"). It drives the semantic role identically in both modes. In
+    // history mode it selects the role only — the confirmed position is the
+    // last entered level and the history CGPA is untouched.
+    const standing: Standing = state.baseline.standing ?? 'released';
 
     const model = resolveSemesterModel({
       mode: state.mode,

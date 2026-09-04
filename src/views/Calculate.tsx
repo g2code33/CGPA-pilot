@@ -499,6 +499,29 @@ function CurrentStanding() {
           )}
         </label>
 
+        {/* Reactive: which credits this typed CGPA is understood to cover. This
+            prevents the typed number from being silently reinterpreted when the
+            standing changes (e.g. Released → Not released drops the current
+            semester out of the confirmed base). */}
+        <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500 ring-1 ring-slate-100">
+          {status === 'released' ? (
+            <>
+              The CGPA you type is taken over your <strong>released results to
+              date</strong> — through Level {d.confirmedPosition.levelIndex * 100} · Semester{' '}
+              {d.confirmedPosition.semesterIndex} ({d.progress.completedCredits} confirmed credits).
+            </>
+          ) : (
+            <>
+              Because this semester isn’t confirmed yet, the CGPA you type is understood
+              to be your average over your <strong>confirmed results so far</strong> —
+              through Level {d.confirmedPosition.levelIndex * 100} · Semester{' '}
+              {d.confirmedPosition.semesterIndex} ({d.progress.completedCredits} confirmed
+              credits). If you enter a CGPA for the whole semester here, switch the
+              standing to <strong>Released</strong> first so its credits count.
+            </>
+          )}
+        </p>
+
         {/* Single Advanced control — shown when the standing is Released */}
         {status === 'released' && (
           <>
