@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Badge, Info, TipIcon } from '../components/ui';
 import { ideaTip } from '../infoTips';
+import { permissionOn } from '../permissions';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
 import { progressThrough } from '../services/structureService';
 import { printFileName, printSection } from '../services/scopedPrint';
@@ -223,7 +224,7 @@ export function Milestones() {
         </Card>
       )}
 
-      {!noData && (
+      {!noData && permissionOn('allowPrinting') && (
         <div className="no-print flex justify-end">
           <button onClick={printSheet} className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700">
             🖨️ Print semester projection

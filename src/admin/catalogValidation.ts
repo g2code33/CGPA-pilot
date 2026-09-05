@@ -394,8 +394,16 @@ export function validateAdminCatalogForPublish(input: unknown): ValidationResult
     if (!isPlainObject(st)) {
       issues.push('settings must be an object when present.');
     } else {
-      if (st.allowCreditEditing !== undefined && typeof st.allowCreditEditing !== 'boolean') {
-        issues.push('settings.allowCreditEditing must be a boolean when present.');
+      for (const key of [
+        'allowCreditEditing',
+        'allowWhatIf',
+        'allowCustomTarget',
+        'allowPrinting',
+        'playIntroSplash',
+      ] as const) {
+        if (st[key] !== undefined && typeof st[key] !== 'boolean') {
+          issues.push(`settings.${key} must be a boolean when present.`);
+        }
       }
       const it = st.ideaTips;
       if (it !== undefined && it !== null) {

@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Idea Icons — admin control for the small 💡 hint icons that sit next to
 // the student app's calculated result boxes.
-//   • master switch: off = every 💡 disappears on every student device
+//   • ON/OFF lives in the Permissions section (the shared student
+//     permissions registry) — this page shows the state
 //   • reword: edit the exact sentence each icon shows (blank = hide just
 //     that one)
 // Changes ride the published config (settings.ideaTips) — they go live on
@@ -17,15 +18,6 @@ export function IdeaIcons() {
   const enabled = ideaTips?.enabled !== false;
   const texts = ideaTips?.texts ?? {};
   const overrideCount = Object.keys(texts).filter((k) => (texts[k] ?? '').trim() !== '').length;
-
-  const setEnabled = (on: boolean) =>
-    apply((c) => ({
-      ...c,
-      settings: {
-        ...c.settings,
-        ideaTips: { enabled: on || undefined, texts: c.settings?.ideaTips?.texts },
-      },
-    }));
 
   const setText = (key: string, value: string) =>
     apply((c) => {
@@ -74,24 +66,29 @@ export function IdeaIcons() {
         )}
       </div>
 
-      {/* Master switch */}
-      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
-        <h3 className="text-sm font-bold text-slate-800">Show idea icons in the student app</h3>
-        <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200">
-          <span className="text-xs font-bold text-slate-700">
-            {enabled ? 'On — every 💡 icon is visible' : 'Off — all 💡 icons are hidden'}
-          </span>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            className="h-5 w-5 shrink-0 accent-brand-600"
-          />
-        </label>
-        <p className="mt-1.5 text-[11px] text-slate-500">
-          Applies to every calculated result box (Target, Finish this semester, What-If, Flight
-          Path, Milestones). Goes live on every device after Save &amp; Publish.
-        </p>
+      {/* On/off state — the toggle itself lives in the Permissions section */}
+      <div
+        className={`flex items-center justify-between gap-3 rounded-2xl p-4 shadow-sm ring-1 ${
+          enabled ? 'bg-white ring-slate-200' : 'bg-amber-50 ring-amber-200'
+        }`}
+      >
+        <div>
+          <h3 className="text-sm font-bold text-slate-800">
+            Idea icons are {enabled ? 'ON' : 'OFF'} in the student app
+          </h3>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            {enabled
+              ? 'To hide every 💡, turn the switch off in the Permissions section.'
+              : 'Students see no 💡 icons. Turn the switch back on in the Permissions section.'}
+          </p>
+        </div>
+        <span
+          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${
+            enabled ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-amber-100 text-amber-700 ring-amber-300'
+          }`}
+        >
+          {enabled ? 'ON' : 'OFF'}
+        </span>
       </div>
 
       {/* Sentences */}

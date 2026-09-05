@@ -10,6 +10,7 @@ import { CurriculumEditor } from './views/CurriculumEditor';
 import { CurriculumPreview } from './views/CurriculumPreview';
 import { Grading } from './views/Grading';
 import { IdeaIcons } from './views/IdeaIcons';
+import { Permissions } from './views/Permissions';
 import { TestLab } from './views/TestLab';
 import { RecycleBin } from './views/RecycleBin';
 import { IconManager } from './views/IconManager';
@@ -21,6 +22,7 @@ type ViewName =
   | 'curricula'
   | 'grading'
   | 'ideatips'
+  | 'permissions'
   | 'appearance'
   | 'recycle'
   | 'previewapp'
@@ -35,6 +37,7 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
   { id: 'curricula', label: 'Curricula', icon: '📚' },
   { id: 'grading', label: 'Grading & Classes', icon: '🎯' },
   { id: 'ideatips', label: 'Idea Icons', icon: '💡' },
+  { id: 'permissions', label: 'Permissions', icon: '🔐' },
   { id: 'appearance', label: 'Icons & Branding', icon: '🎨' },
   { id: 'recycle', label: 'Recycle Bin', icon: '🗑️' },
   { id: 'previewapp', label: 'Student Preview', icon: '📱' },
@@ -54,7 +57,9 @@ export function AdminApp() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-5xl flex-col sm:flex-row">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4 sm:flex">
+      {/* Sticky full-height sidebar: brand header + save actions stay in
+          place while the main content scrolls (never scroll away). */}
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white p-4 sm:flex">
         <Brand />
         <nav className="mt-6 flex flex-col gap-1">
           {NAV.map((n) => (
@@ -98,6 +103,7 @@ export function AdminApp() {
           )}
           {view.name === 'grading' && <Grading />}
           {view.name === 'ideatips' && <IdeaIcons />}
+          {view.name === 'permissions' && <Permissions />}
           {view.name === 'appearance' && <IconManager />}
           {view.name === 'recycle' && <RecycleBin />}
           {view.name === 'previewapp' && <StudentPreview />}

@@ -175,6 +175,20 @@ export interface StudentSettings {
     enabled?: boolean;
     texts?: Record<string, string>;
   };
+  /** When false, the What-If simulator is hidden from students. Absent = on. */
+  allowWhatIf?: boolean;
+  /**
+   * When false, students can only pick a configured degree-class target
+   * (the custom CGPA input is hidden). Absent = on.
+   */
+  allowCustomTarget?: boolean;
+  /** When false, all print buttons are hidden in the student app. Absent = on. */
+  allowPrinting?: boolean;
+  /**
+   * When false, the Sky Dash opening game is skipped and the app opens
+   * straight in. Absent = on.
+   */
+  playIntroSplash?: boolean;
 }
 
 /** A replaceable app icon: an emoji OR an uploaded image (data URL). */

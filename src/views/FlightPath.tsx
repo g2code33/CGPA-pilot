@@ -5,10 +5,13 @@ import { ideaTip } from '../infoTips';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
 import { progressThrough } from '../services/structureService';
-import { printFileName, printSection } from '../services/scopedPrint';
+import { printFileName, printSection, printHtml, type PrintBranding } from '../services/scopedPrint';
 import { printAppLogo } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
+import { permissionOn } from '../permissions';
+import { smoothPath, smoothAreaPath, type Pt } from '../util/curve';
 import { fmt2, clamp } from '../util/format';
+import type { MouseEvent as RMouseEvent } from 'react';
 
 const TONE_COLOR: Record<string, string> = {
   gold: '#f59e0b',
@@ -27,6 +30,23 @@ const COLORS = {
   axis: '#cbd5e1',
 };
 
+// Graph geometry (viewBox scales responsively).
+const W = 720;
+const H = 340;
+const PAD_L = 46;
+const PAD_R = 18;
+const PAD_T = 20;
+const PAD_B = 40;
+
+/** Clone an element for the "print entire page" sheet, dropping screen-only bits. */
+function cleanSheet(el: HTMLElement | null): string | null {
+  if (!el) return null;
+  const c = el.cloneNode(true) as HTMLElement;
+  c.classList.remove('no-print');
+  c.querySelectorAll('.no-print').forEach((n) => n.remove());
+  return c.outerHTML;
+}
+
 export function FlightPathView() {
   const d = useDerived();
   const { record, classification, grading, maxPoints, state, progress } = d;
@@ -35,19 +55,39 @@ export function FlightPathView() {
   const [fallbackCredits, setFallbackCredits] = useState(18);
   const [fallbackSemesters, setFallbackSemesters] = useState(6);
   const graphRef = useRef<HTMLDivElement>(null);
+  const statsRef = useRef<HTMLDivElement>(null);
+  const gradRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
+
+  const printBranding = (title: string, docName: string): PrintBranding => ({
+    title,
+    institutionLabel: d.institutionLabel,
+    programmeName: d.programme?.name ?? '',
+    curriculumVersion: d.curriculum?.versionName,
+    appLogo: printAppLogo(getRuntimeCatalog().appearance),
+    institutionLogo: d.university?.logo,
+    fileName: printFileName(
+      `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
+      docName
+    ),
+  });
+
+  /** Print just the graph sheet. */
   const printGraph = () =>
-    printSection(graphRef.current, {
-      title: 'Print Flight Path',
-      institutionLabel: d.institutionLabel,
-      programmeName: d.programme?.name ?? '',
-      curriculumVersion: d.curriculum?.versionName,
-      appLogo: printAppLogo(getRuntimeCatalog().appearance),
-      institutionLogo: d.university?.logo,
-      fileName: printFileName(
-        `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
-        'Flight Path'
-      ),
-    });
+    printSection(graphRef.current, printBranding('Print Flight Path', 'Flight Path'));
+
+  /** Print the entire page: summary strip + graph + graduation + milestones. */
+  const printPage = () => {
+    const sheets = [statsRef.current, graphRef.current, gradRef.current, tableRef.current]
+      .map(cleanSheet)
+      .filter((h): h is string => !!h);
+    if (sheets.length === 0) return;
+    printHtml(
+      sheets.map((html) => ({ html })),
+      printBranding('Flight Path — Entire Page', 'Flight Path Full')
+    );
+  };
 
   const target = state.targetCgpa ?? 3.6;
   // Current level: explicit in current mode; in history mode infer from the
@@ -109,30 +149,62 @@ export function FlightPathView() {
   const grad = model.graduation;
   const gradClass = grad ? classifyCgpa(grad.projectedCgpa, classification) : null;
 
-  // ── Graph geometry (viewBox scales responsively) ──────────────────────
-  const W = 720;
-  const H = 340;
-  const PAD_L = 46;
-  const PAD_R = 18;
-  const PAD_T = 20;
-  const PAD_B = 40;
+  // ── Graph geometry ────────────────────────────────────────────────────
   const n = milestones.length;
   const xFor = (i: number) =>
     PAD_L + (n <= 1 ? 0 : (i / (n - 1)) * (W - PAD_L - PAD_R));
   const yFor = (cgpa: number) =>
     PAD_T + (1 - clamp(cgpa, 0, maxPoints) / maxPoints) * (H - PAD_T - PAD_B);
 
-  const projectedPath = milestones
-    .map((m, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(m.projectedCgpa).toFixed(1)}`)
-    .join(' ');
-  const requiredPath = milestones
-    .map((m, i) =>
-      m.requiredCgpa === null
-        ? ''
-        : `${i === 0 || milestones[i - 1].requiredCgpa === null ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(m.requiredCgpa).toFixed(1)}`
-    )
-    .filter(Boolean)
-    .join(' ');
+  // Smoothed geometry (Catmull-Rom → Bézier) for the flight-path curves.
+  const projPts: Pt[] = milestones.map((m, i) => ({ x: xFor(i), y: yFor(m.projectedCgpa) }));
+  const projectedSmooth = smoothPath(projPts);
+  const areaPath = smoothAreaPath(projPts, H - PAD_B);
+  const reqRuns: Pt[][] = (() => {
+    const runs: Pt[][] = [];
+    let run: Pt[] = [];
+    milestones.forEach((m, i) => {
+      if (m.requiredCgpa === null) {
+        if (run.length) {
+          runs.push(run);
+          run = [];
+        }
+      } else {
+        run.push({ x: xFor(i), y: yFor(m.requiredCgpa) });
+      }
+    });
+    if (run.length) runs.push(run);
+    return runs;
+  })();
+  // Alternately shade the plot columns of each level so levels stand out.
+  const levelShades: { x1: number; x2: number }[] = (() => {
+    const ends = milestones
+      .map((m, i) => ({ m, i }))
+      .filter((e) => e.m.isLevelEnd || e.m.isGraduation);
+    const out: { x1: number; x2: number }[] = [];
+    for (let k = 0; k < ends.length - 1; k++) {
+      if (k % 2 === 1) out.push({ x1: xFor(ends[k].i), x2: xFor(ends[k + 1].i) });
+    }
+    return out;
+  })();
+  const gridTicks = Array.from({ length: Math.round(maxPoints) + 1 }, (_, g) => g);
+
+  // Nearest-milestone hover for inspecting values.
+  function onHoverMove(e: RMouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const x = ((e.clientX - rect.left) / rect.width) * W;
+    let best = 0;
+    let bd = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dd = Math.abs(xFor(i) - x);
+      if (dd < bd) {
+        bd = dd;
+        best = i;
+      }
+    }
+    setHover(best);
+  }
 
   const classLines = classification.bands
     .filter((b) => b.minCgpa > 0)
@@ -235,7 +307,7 @@ export function FlightPathView() {
       </Card>
 
       {/* ── Summary strip ─────────────────────────────────────────────── */}
-      <div className="no-print grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div ref={statsRef} className="no-print grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat
           label="Current CGPA"
           value={fmt2(record.cgpa)}
@@ -264,15 +336,23 @@ export function FlightPathView() {
         />
       </div>
 
-      {/* ── Print button (kept outside the printable ref) ─────────────── */}
-      <div className="no-print flex justify-end">
-        <button
-          onClick={printGraph}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
-        >
-          🖨️ Print Flight Path
-        </button>
-      </div>
+      {/* ── Print actions (kept outside the printable refs) ───────────── */}
+      {permissionOn('allowPrinting') && (
+        <div className="no-print flex flex-wrap justify-end gap-2">
+          <button
+            onClick={printPage}
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
+          >
+            📄 Print entire page
+          </button>
+          <button
+            onClick={printGraph}
+            className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+          >
+            🖨️ Print graph
+          </button>
+        </div>
+      )}
 
       <div ref={graphRef}>
       {/* ── Graph (printable) ─────────────────────────────────────────── */}
@@ -290,121 +370,247 @@ export function FlightPathView() {
           credit loads and a steady future GPA; they are scenarios, not guaranteed outcomes.
         </p>
 
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          className="w-full"
-          role="img"
-          aria-label="CGPA flight path graph"
-        >
-          {/* Class band lines */}
-          {classLines.map((c) => (
-            <g key={c.label}>
+        <div className="relative">
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full"
+            role="img"
+            aria-label="CGPA flight path graph"
+            onMouseMove={onHoverMove}
+            onMouseLeave={() => setHover(null)}
+          >
+            <defs>
+              <linearGradient id="fp-area" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={COLORS.projected} stopOpacity={0.2} />
+                <stop offset="100%" stopColor={COLORS.projected} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="fp-line" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#312e81" />
+                <stop offset="100%" stopColor="#6366f1" />
+              </linearGradient>
+              <clipPath id="fp-plot">
+                <rect
+                  x={PAD_L}
+                  y={PAD_T - 8}
+                  width={W - PAD_L - PAD_R}
+                  height={H - PAD_T - PAD_B + 8}
+                />
+              </clipPath>
+            </defs>
+
+            {/* Level column shading (alternating) */}
+            {levelShades.map((s, i) => (
+              <rect
+                key={i}
+                x={s.x1}
+                y={PAD_T}
+                width={Math.max(0, s.x2 - s.x1)}
+                height={H - PAD_T - PAD_B}
+                fill="#eef2ff"
+                opacity={0.4}
+              />
+            ))}
+
+            {/* Horizontal gridlines */}
+            {gridTicks.map((g) => (
               <line
+                key={g}
                 x1={PAD_L}
                 x2={W - PAD_R}
-                y1={yFor(c.min)}
-                y2={yFor(c.min)}
-                stroke={c.tone}
+                y1={yFor(g)}
+                y2={yFor(g)}
+                stroke="#e2e8f0"
                 strokeWidth={1}
-                strokeDasharray="4 5"
-                opacity={0.3}
+                strokeDasharray="2 5"
               />
-              <text x={6} y={yFor(c.min) + 3.5} fontSize={10} fill={c.tone} fontWeight={700}>
-                {c.label} {c.min.toFixed(1)}
-              </text>
-            </g>
-          ))}
+            ))}
 
-          {/* Target line */}
-          <line
-            x1={PAD_L}
-            x2={W - PAD_R}
-            y1={yFor(target)}
-            y2={yFor(target)}
-            stroke={COLORS.target}
-            strokeWidth={2}
-          />
-          <text x={W - PAD_R} y={yFor(target) - 6} fontSize={11} fill={COLORS.target} fontWeight={800} textAnchor="end">
-            Target {target.toFixed(2)}
-          </text>
-
-          {/* Axes */}
-          <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke={COLORS.axis} />
-          <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke={COLORS.axis} />
-          {Array.from({ length: Math.round(maxPoints) + 1 }, (_, g) => g).map((g) => (
-            <text key={g} x={PAD_L - 8} y={yFor(g) + 4} fontSize={10} textAnchor="end" fill="#94a3b8">
-              {g.toFixed(1)}
-            </text>
-          ))}
-
-          {/* Required path (dashed amber) */}
-          {requiredPath && (
-            <path
-              d={requiredPath}
-              fill="none"
-              stroke={COLORS.required}
-              strokeWidth={2}
-              strokeDasharray="7 5"
-              strokeLinecap="round"
-            />
-          )}
-
-          {/* Projected path (solid indigo) */}
-          <path
-            d={projectedPath}
-            fill="none"
-            stroke={COLORS.projected}
-            strokeWidth={2.75}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-
-          {/* Milestone markers */}
-          {milestones.map((m, i) => (
-            <g key={i}>
-              {m.isLevelEnd && (
+            {/* Class band lines */}
+            {classLines.map((c) => (
+              <g key={c.label}>
                 <line
-                  x1={xFor(i)}
-                  x2={xFor(i)}
-                  y1={PAD_T}
-                  y2={H - PAD_B}
-                  stroke="#e2e8f0"
+                  x1={PAD_L}
+                  x2={W - PAD_R}
+                  y1={yFor(c.min)}
+                  y2={yFor(c.min)}
+                  stroke={c.tone}
                   strokeWidth={1}
+                  strokeDasharray="4 5"
+                  opacity={0.35}
                 />
+                <text x={6} y={yFor(c.min) + 3.5} fontSize={10} fill={c.tone} fontWeight={700}>
+                  {c.label} {c.min.toFixed(1)}
+                </text>
+              </g>
+            ))}
+
+            {/* Target line */}
+            <line
+              x1={PAD_L}
+              x2={W - PAD_R}
+              y1={yFor(target)}
+              y2={yFor(target)}
+              stroke={COLORS.target}
+              strokeWidth={2}
+            />
+            <text x={W - PAD_R} y={yFor(target) - 6} fontSize={11} fill={COLORS.target} fontWeight={800} textAnchor="end">
+              Target {target.toFixed(2)}
+            </text>
+
+            {/* Axes */}
+            <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke={COLORS.axis} />
+            <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke={COLORS.axis} />
+            {gridTicks.map((g) => (
+              <text key={g} x={PAD_L - 8} y={yFor(g) + 4} fontSize={10} textAnchor="end" fill="#94a3b8">
+                {g.toFixed(1)}
+              </text>
+            ))}
+
+            {/* Curves (clipped to the plot) */}
+            <g clipPath="url(#fp-plot)">
+              {/* Gradient area under the projected curve */}
+              <path d={areaPath} fill="url(#fp-area)" />
+              {/* Required path (smooth dashed amber) */}
+              {reqRuns.map((run, i) =>
+                run.length > 1 ? (
+                  <path
+                    key={i}
+                    d={smoothPath(run)}
+                    fill="none"
+                    stroke={COLORS.required}
+                    strokeWidth={2}
+                    strokeDasharray="7 5"
+                    strokeLinecap="round"
+                  />
+                ) : null
               )}
-              {/* projected marker */}
-              <circle
-                cx={xFor(i)}
-                cy={yFor(m.projectedCgpa)}
-                r={m.kind === 'current' ? 6 : m.isGraduation ? 6 : 4}
-                fill={m.kind === 'current' ? COLORS.current : COLORS.projected}
-                stroke="#fff"
-                strokeWidth={1.5}
+              {/* Projected path (smooth gradient indigo) */}
+              <path
+                d={projectedSmooth}
+                fill="none"
+                stroke="url(#fp-line)"
+                strokeWidth={3}
+                strokeLinejoin="round"
+                strokeLinecap="round"
               />
-              {/* required marker */}
-              {m.requiredCgpa !== null && m.kind !== 'current' && (
+            </g>
+
+            {/* Hover guide */}
+            {hover !== null && (
+              <line
+                x1={xFor(hover)}
+                x2={xFor(hover)}
+                y1={PAD_T}
+                y2={H - PAD_B}
+                stroke="#64748b"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                opacity={0.7}
+              />
+            )}
+
+            {/* Milestone markers */}
+            {milestones.map((m, i) => (
+              <g key={i}>
+                {m.isLevelEnd && (
+                  <line
+                    x1={xFor(i)}
+                    x2={xFor(i)}
+                    y1={PAD_T}
+                    y2={H - PAD_B}
+                    stroke="#e2e8f0"
+                    strokeWidth={1}
+                  />
+                )}
+                {/* graduation halo */}
+                {m.isGraduation && (
+                  <circle
+                    cx={xFor(i)}
+                    cy={yFor(m.projectedCgpa)}
+                    r={10}
+                    fill="none"
+                    stroke={COLORS.projected}
+                    strokeWidth={2}
+                    opacity={0.35}
+                  />
+                )}
+                {/* projected marker (grows on hover) */}
                 <circle
                   cx={xFor(i)}
-                  cy={yFor(m.requiredCgpa)}
-                  r={3.5}
-                  fill="#fff"
-                  stroke={COLORS.required}
-                  strokeWidth={2}
+                  cy={yFor(m.projectedCgpa)}
+                  r={
+                    hover === i
+                      ? m.kind === 'current'
+                        ? 8
+                        : 6
+                      : m.kind === 'current'
+                        ? 6
+                        : m.isGraduation
+                          ? 6
+                          : 4
+                  }
+                  fill={m.kind === 'current' ? COLORS.current : COLORS.projected}
+                  stroke="#fff"
+                  strokeWidth={1.5}
                 />
-              )}
-              <text
-                x={xFor(i)}
-                y={H - PAD_B + 18}
-                fontSize={m.isGraduation ? 11 : 10}
-                fontWeight={m.isLevelEnd || m.kind === 'current' ? 800 : 600}
-                textAnchor="middle"
-                fill={m.kind === 'current' ? COLORS.current : '#475569'}
-              >
-                {m.label}
-              </text>
-            </g>
-          ))}
-        </svg>
+                {/* required marker */}
+                {m.requiredCgpa !== null && m.kind !== 'current' && (
+                  <circle
+                    cx={xFor(i)}
+                    cy={yFor(m.requiredCgpa)}
+                    r={3.5}
+                    fill="#fff"
+                    stroke={COLORS.required}
+                    strokeWidth={2}
+                  />
+                )}
+                <text
+                  x={xFor(i)}
+                  y={H - PAD_B + 18}
+                  fontSize={m.isGraduation ? 11 : 10}
+                  fontWeight={m.isLevelEnd || m.kind === 'current' ? 800 : 600}
+                  textAnchor="middle"
+                  fill={m.kind === 'current' ? COLORS.current : '#475569'}
+                >
+                  {m.label}
+                </text>
+              </g>
+            ))}
+
+            {/* Value pills at the journey's start and end */}
+            {projPts.length > 0 && (
+              <Pill
+                x={projPts[0].x}
+                y={projPts[0].y}
+                text={fmt2(milestones[0].projectedCgpa)}
+                clampLeft={PAD_L + 4}
+              />
+            )}
+            {projPts.length > 1 && (
+              <Pill
+                x={projPts[projPts.length - 1].x}
+                y={projPts[projPts.length - 1].y}
+                text={fmt2(milestones[milestones.length - 1].projectedCgpa)}
+                clampRight={W - PAD_R - 4}
+              />
+            )}
+          </svg>
+
+          {/* Hover tooltip (screen only) */}
+          {hover !== null && (
+            <div
+              className="no-print pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-xl bg-slate-900/95 px-3 py-2 text-[10px] font-bold leading-relaxed text-white shadow-lg"
+              style={{ left: `${Math.min(84, Math.max(16, (xFor(hover) / W) * 100))}%` }}
+            >
+              <p className="font-black">{milestones[hover].detail}</p>
+              <p className="text-indigo-300">Projected {fmt2(milestones[hover].projectedCgpa)}</p>
+              <p className="text-amber-300">
+                Required {milestones[hover].requiredCgpa === null ? '—' : fmt2(milestones[hover].requiredCgpa)}
+              </p>
+              <p className="text-emerald-300">Target {fmt2(target)}</p>
+            </div>
+          )}
+        </div>
 
         {/* Legend */}
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold text-slate-600">
@@ -423,6 +629,7 @@ export function FlightPathView() {
 
       {/* ── Graduation projection ─────────────────────────────────────── */}
       {!noData && grad && (
+        <div ref={gradRef}>
         <Card className="print-sheet">
           <SectionTitle icon="🎓" title="Graduation projection" />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-center">
@@ -452,10 +659,12 @@ export function FlightPathView() {
             )}
           </div>
         </Card>
+        </div>
       )}
 
       {/* ── Milestone table ───────────────────────────────────────────── */}
       {!noData && (
+        <div ref={tableRef}>
         <Card className="print-sheet">
           <SectionTitle icon="📍" title="Milestones" subtitle="End of each level through graduation." />
           <div className="overflow-x-auto">
@@ -495,9 +704,38 @@ export function FlightPathView() {
             </table>
           </div>
         </Card>
+        </div>
       )}
       </div>
     </div>
+  );
+}
+
+/** Small dark value pill above a graph point (clamped inside the plot). */
+function Pill({
+  x,
+  y,
+  text,
+  clampLeft,
+  clampRight,
+}: {
+  x: number;
+  y: number;
+  text: string;
+  clampLeft?: number;
+  clampRight?: number;
+}) {
+  const w = text.length * 6.4 + 16;
+  const cx = Math.min(clampRight ?? W - 4, Math.max(clampLeft ?? 4, x));
+  const above = y > PAD_T + 36;
+  const ry = above ? y - 34 : y + 14;
+  return (
+    <g>
+      <rect x={cx - w / 2} y={ry} width={w} height={20} rx={10} fill="#0f172a" opacity={0.9} />
+      <text x={cx} y={ry + 14} fontSize={11} fontWeight={800} fill="#fff" textAnchor="middle">
+        {text}
+      </text>
+    </g>
   );
 }
 

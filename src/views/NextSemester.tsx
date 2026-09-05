@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Info } from '../components/ui';
 import { ideaTip } from '../infoTips';
+import { permissionOn } from '../permissions';
 import {
   nextSemesterAfter,
   planNextSemester,
@@ -447,12 +448,14 @@ export function NextSemester() {
               >
                 {showWhatIf ? '✕ Close what-if' : 'What if I get a specific grade?'}
               </button>
-              <button
-                onClick={printPlan}
-                className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
-              >
-                🖨️ Print {meta.planPrefix.replace(/[^\w ]/g, '').trim()}
-              </button>
+              {permissionOn('allowPrinting') && (
+                <button
+                  onClick={printPlan}
+                  className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
+                >
+                  🖨️ Print {meta.planPrefix.replace(/[^\w ]/g, '').trim()}
+                </button>
+              )}
               {showWhatIf && lockedCodes.length > 0 && (
                 <button
                   onClick={reset}

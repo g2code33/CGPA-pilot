@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDerived } from '../state/derived';
 import { getRuntimeCatalog } from '../config/runtime';
 import { ideaTip } from '../infoTips';
+import { permissionOn } from '../permissions';
 import { Card, Info, SectionTitle, TipIcon } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { analyzeTarget, type TargetAnalysis } from '../services/targetService';
@@ -137,6 +138,7 @@ export function Target() {
   // Admin-controlled permission (published config): absent/off = credits are
   // locked to the curriculum and no user override is applied.
   const creditEditingAllowed = getRuntimeCatalog().settings?.allowCreditEditing === true;
+  const customAllowed = permissionOn('allowCustomTarget');
   const creditsCompleted = Math.max(
     0,
     creditEditingAllowed ? completed ?? defaultCompleted : defaultCompleted
@@ -225,7 +227,11 @@ export function Target() {
         <SectionTitle
           icon="🎯"
           title="Your target"
-          subtitle="Tap a degree class, or set a custom CGPA."
+          subtitle={
+            customAllowed
+              ? 'Tap a degree class, or set a custom CGPA.'
+              : 'Tap a degree class.'
+          }
           info={
             <>
               A target is shown as <strong>🔴 out of reach</strong> only when even a
@@ -259,46 +265,52 @@ export function Target() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-end gap-2">
-          <label className="block">
-            <span className="label">Custom CGPA target</span>
-            <input
-              type="number"
-              min={0}
-              max={d.maxPoints}
-              step={0.01}
-              className="input w-36 text-center text-lg font-black"
-              placeholder={`0.00–${d.maxPoints.toFixed(2)}`}
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-            />
-          </label>
-          <button
-            onClick={applyCustom}
-            className="rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-700"
-          >
-            Set target
-          </button>
+          {customAllowed && (
+            <>
+              <label className="block">
+                <span className="label">Custom CGPA target</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={d.maxPoints}
+                  step={0.01}
+                  className="input w-36 text-center text-lg font-black"
+                  placeholder={`0.00–${d.maxPoints.toFixed(2)}`}
+                  value={custom}
+                  onChange={(e) => setCustom(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
+                />
+              </label>
+              <button
+                onClick={applyCustom}
+                className="rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-700"
+              >
+                Set target
+              </button>
+            </>
+          )}
           <span className="pb-2 text-xs font-bold text-brand-700">
             Current target: {fmt2(target)}
             {clsLabel ? ` · ${clsLabel}` : ''}
           </span>
         </div>
 
-        <div className="mt-3 flex items-center gap-3">
-          <input
-            type="range"
-            min={0}
-            max={d.maxPoints}
-            step={0.05}
-            value={Math.min(target, d.maxPoints)}
-            onChange={(e) => {
-              setCustom('');
-              dispatch({ type: 'setTarget', target: Number(e.target.value) });
-            }}
-            className="flex-1 accent-brand-600"
-          />
-        </div>
+        {customAllowed && (
+          <div className="mt-3 flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={d.maxPoints}
+              step={0.05}
+              value={Math.min(target, d.maxPoints)}
+              onChange={(e) => {
+                setCustom('');
+                dispatch({ type: 'setTarget', target: Number(e.target.value) });
+              }}
+              className="flex-1 accent-brand-600"
+            />
+          </div>
+        )}
       </Card>
 
       {/* ── Credits completed & remaining ───────────────────────────── */}

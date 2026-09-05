@@ -14,6 +14,7 @@ import { ClearButton } from './components/ClearButton';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useAcademic } from './state/store';
 import { useDerived } from './state/derived';
+import { permissionOn } from './permissions';
 import { toolNameFor, toolHintFor } from './services/semesterModel';
 import {
   installBeforeUnloadGuard,
@@ -127,14 +128,19 @@ const isTool = (s: Screen): s is ToolId =>
 export default function App() {
   const { state, dispatch } = useAcademic();
   const d = useDerived();
+  // Administrator-set permissions + branding/icons ride the non-personal
+  // runtime catalog (populated at boot from the synced/cached configuration).
+  const runtime = getRuntimeCatalog();
+  const appearance: AppAppearance | undefined = runtime.appearance;
+  const splashAllowed = permissionOn('playIntroSplash');
+  const whatIfAllowed = permissionOn('allowWhatIf');
   const [institutionSelected, setInstitutionSelected] = useState(false);
   const [modeSelected, setModeSelected] = useState<string | null>(null);
-  const [splashDone, setSplashDone] = useState(false);
+  const [splashDone, setSplashDone] = useState(!splashAllowed);
   const [splashRun, setSplashRun] = useState(0);
   const [screen, setScreen] = useState<Screen>('home');
-  // Administrator-set branding/icons ride the non-personal runtime catalog
-  // (populated at boot from the synced/cached configuration).
-  const appearance: AppAppearance | undefined = getRuntimeCatalog().appearance;
+  const visibleTools = TOOLS.filter((t) => t.id !== 'whatif' || whatIfAllowed);
+  const visibleOrder = visibleTools.map((t) => t.id) as ToolId[];
 
   // A newer published configuration was stored mid-session → offer an
   // explicit "reload to apply" (never an automatic reload mid-session).
@@ -223,9 +229,12 @@ export default function App() {
     );
   }
 
+  // An admin-hidden tool can never be the active screen — fall back to home.
+  const effectiveScreen: Screen = screen === 'whatif' && !whatIfAllowed ? 'home' : screen;
+
   // Tool screens (drill-in). Fixed app frame: header + scrollable content +
   // a Previous / Next / Home bottom bar for simple navigation.
-  if (screen !== 'home') {
+  if (effectiveScreen !== 'home') {
     const meta = SCREEN_TITLES[screen];
     // The "Next Semester" tab title adapts to the semantic semester role so a
     // mid-semester student never sees their current / already-written semester
@@ -238,9 +247,9 @@ export default function App() {
             ? 'Upon Release'
             : 'Next Semester'
         : meta?.title;
-    const idx = TOOL_ORDER.indexOf(screen as ToolId);
-    const prev = isTool(screen) && idx > 0 ? TOOLS[idx - 1] : null;
-    const next = isTool(screen) && idx < TOOL_ORDER.length - 1 ? TOOLS[idx + 1] : null;
+    const idx = visibleOrder.indexOf(screen as ToolId);
+    const prev = idx > 0 ? visibleTools[idx - 1] : null;
+    const next = idx >= 0 && idx < visibleTools.length - 1 ? visibleTools[idx + 1] : null;
     // Role-aware tool name so the bottom-nav label also updates with state.
     const navTitle = (tool: { id: string; title: string } | null) =>
       tool && tool.id === 'next' ? toolNameFor(d.semesterRole) : tool?.title ?? '';
@@ -447,7 +456,7 @@ export default function App() {
             Tools
           </p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {TOOLS.map((t) => {
+            {visibleTools.map((t) => {
               const disabled = t.needsData && !hasData;
               const isResults = t.id === 'calculate';
               const isNext = t.id === 'next';

@@ -39,7 +39,9 @@ type ToolId = (typeof TOOL_ORDER)[number];
 export function StudentPreview() {
   const { catalog } = useAdmin();
   const appearance = catalog.appearance;
-  const [stage, setStage] = useState<Stage>('game');
+  const playSplash = catalog.settings?.playIntroSplash !== false;
+  const whatIfAllowed = catalog.settings?.allowWhatIf !== false;
+  const [stage, setStage] = useState<Stage>(playSplash ? 'game' : 'select');
   const [mode, setMode] = useState<string | null>(null);
   const [tool, setTool] = useState<ToolId | null>(null);
   const [gameKey, setGameKey] = useState(0);
@@ -65,6 +67,7 @@ export function StudentPreview() {
   const hasData = false; // preview always starts like a brand-new student (no results yet)
 
   function playGame() {
+    if (!playSplash) return;
     setGameKey((k) => k + 1);
     setStage('game');
   }
@@ -77,15 +80,17 @@ export function StudentPreview() {
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
         <span>🎬 Live preview · {publishedCount} published curriculum{publishedCount === 1 ? '' : 's'}</span>
-        <button
-          onClick={playGame}
-          className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-black text-brand-700 ring-1 ring-amber-300 transition hover:bg-brand-50"
-        >
-          🎮 Replay Sky Dash
-        </button>
+        {playSplash && (
+          <button
+            onClick={playGame}
+            className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-black text-brand-700 ring-1 ring-amber-300 transition hover:bg-brand-50"
+          >
+            🎮 Replay Sky Dash
+          </button>
+        )}
         <button
           onClick={() => {
-            setStage('game');
+            setStage(playSplash ? 'game' : 'select');
             setMode(null);
             setTool(null);
           }}
@@ -97,7 +102,7 @@ export function StudentPreview() {
 
       {/* Device frame */}
       <div className="mx-auto w-full max-w-[400px] overflow-hidden rounded-[2.2rem] border-4 border-slate-800 bg-slate-100 shadow-2xl">
-        {stage === 'game' && (
+        {stage === 'game' && playSplash && (
           <SkySplash key={gameKey} appearance={appearance} height={FRAME_H} onDone={() => setStage('select')} />
         )}
 
@@ -144,6 +149,7 @@ export function StudentPreview() {
             tool={tool}
             setTool={(t) => setTool(t)}
             onBackHome={() => setTool(null)}
+            whatIfAllowed={whatIfAllowed}
           />
         )}
       </div>
@@ -161,7 +167,7 @@ export function StudentPreview() {
 
 function SelectionScreen(props: {
   appearance?: AppAppearance;
-  onPlay: () => void;
+    onPlay?: () => void;
   universities: University[];
   university?: University;
   departments: School[];
@@ -180,13 +186,15 @@ function SelectionScreen(props: {
   return (
     <div className="relative flex h-full flex-col overflow-y-auto bg-gradient-to-b from-brand-900 via-brand-800 to-brand-600 px-4 py-6 text-center">
       {/* Play again — top-right, exactly where it sits in the real app */}
-      <button
-        onClick={onPlay}
-        title="Play Sky Dash mini-game again"
-        className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-black text-white ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25"
-      >
-        🎮 Play
-      </button>
+      {onPlay && (
+        <button
+          onClick={onPlay}
+          title="Play Sky Dash mini-game again"
+          className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-black text-white ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25"
+        >
+          🎮 Play
+        </button>
+      )}
 
       <div className="mx-auto mt-8 w-full max-w-sm">
         {logo ? (
@@ -310,15 +318,23 @@ function HomeScreen(props: {
   tool: ToolId | null;
   setTool: (t: ToolId) => void;
   onBackHome: () => void;
+  whatIfAllowed: boolean;
 }) {
-  const { appearance, institutionLabel, published, hasData, tool, setTool, onBackHome } = props;
+  const { appearance, institutionLabel, published, hasData, tool, setTool, onBackHome, whatIfAllowed } = props;
   const logo = appLogoImage(appearance);
   const [privacy, setPrivacy] = useState(false);
+  const visibleToolOrder = TOOL_ORDER.filter((t) => t !== 'whatif' || whatIfAllowed);
 
   // A tool is open → show the app's tool frame (header + content + Prev/Next).
   if (tool)
     return (
-      <ToolFrame appearance={appearance} tool={tool} onBackHome={onBackHome} onNavigate={(t) => setTool(t)} />
+      <ToolFrame
+        appearance={appearance}
+        tool={tool}
+        onBackHome={onBackHome}
+        onNavigate={(t) => setTool(t)}
+        whatIfAllowed={whatIfAllowed}
+      />
     );
 
   // Privacy screen (mirrors the real student Privacy view top).
@@ -393,7 +409,7 @@ function HomeScreen(props: {
 
           <p className="mt-5 mb-2 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">Tools</p>
           <div className="space-y-2.5">
-            {TOOL_ORDER.map((id) => {
+            {visibleToolOrder.map((id) => {
               const m = TOOL_META[id];
               const disabled = m.needsData && !hasData;
               return (
@@ -453,16 +469,19 @@ function ToolFrame({
   tool,
   onBackHome,
   onNavigate,
+  whatIfAllowed,
 }: {
   appearance?: AppAppearance;
   tool: ToolId;
   onBackHome: () => void;
   onNavigate: (t: ToolId) => void;
+  whatIfAllowed: boolean;
 }) {
   const m = TOOL_META[tool];
-  const idx = TOOL_ORDER.indexOf(tool);
-  const prev: ToolId | null = idx > 0 ? (TOOL_ORDER[idx - 1] as ToolId) : null;
-  const next: ToolId | null = idx < TOOL_ORDER.length - 1 ? (TOOL_ORDER[idx + 1] as ToolId) : null;
+  const order = TOOL_ORDER.filter((t) => t !== 'whatif' || whatIfAllowed);
+  const idx = order.indexOf(tool);
+  const prev: ToolId | null = idx > 0 ? (order[idx - 1] as ToolId) : null;
+  const next: ToolId | null = idx < order.length - 1 ? (order[idx + 1] as ToolId) : null;
 
   return (
     <div className="flex h-full flex-col bg-slate-50">

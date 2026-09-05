@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Info, TipIcon } from '../components/ui';
 import { ideaTip } from '../infoTips';
+import { permissionOn } from '../permissions';
 import {
   collectPending,
   runWhatIf,
@@ -304,12 +305,14 @@ export function WhatIf() {
         <div className="no-print mb-2 flex items-center justify-between">
           <h3 className="text-sm font-extrabold text-slate-800">Compare scenarios</h3>
           <div className="flex gap-2">
-            <button
-              onClick={() => scenarios[3] && printScenario(scenarios[3])}
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
-            >
-              🖨️ Print this scenario
-            </button>
+            {permissionOn('allowPrinting') && (
+              <button
+                onClick={() => scenarios[3] && printScenario(scenarios[3])}
+                className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
+              >
+                🖨️ Print this scenario
+              </button>
+            )}
             <button
               onClick={reset}
               className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
@@ -371,13 +374,15 @@ export function WhatIf() {
                       )}
                   </td>
                   <td className="py-2 pr-2 text-right">
-                    <button
-                      onClick={() => printScenario(s)}
-                      className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-brand-600 hover:text-white"
-                      title={`Print the "${s.label}" scenario only`}
-                    >
-                      🖨️
-                    </button>
+                    {permissionOn('allowPrinting') && (
+                      <button
+                        onClick={() => printScenario(s)}
+                        className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-brand-600 hover:text-white"
+                        title={`Print the "${s.label}" scenario only`}
+                      >
+                        🖨️
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
