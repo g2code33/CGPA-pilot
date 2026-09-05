@@ -230,7 +230,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
           CGPA <span className="text-brand-600">Pilot</span>
         </h1>
         <p className={`text-[10px] font-bold uppercase tracking-widest text-slate-400 ${compact ? '' : 'mt-0.5'}`}>
-          Admin Console
+          Admin Console · v{import.meta.env.VITE_APP_VERSION || 'dev'}
         </p>
       </div>
     </div>
