@@ -265,13 +265,37 @@ function SlotEditor({
   );
 }
 
+// Fixed 96px preview slot: the image scales from the slot's centre
+// (spilling past it at large sizes) while the row itself never reflows —
+// the same "image overflows, container never grows" rule the app uses.
 function renderPreview(value: AppIcon | undefined, fallbackEmoji: string) {
   const el = iconElement(value, fallbackEmoji);
   if (el.type === 'img') {
     const px = el.sizePx ?? 48;
-    return <img src={el.src} alt="" className="object-contain" style={{ width: px, height: px }} />;
+    return (
+      <span className="relative flex h-24 w-24 shrink-0 items-center justify-center">
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200"
+        />
+        <img
+          src={el.src}
+          alt=""
+          className="relative max-w-none shrink-0 object-contain"
+          style={{ width: px, height: px }}
+        />
+      </span>
+    );
   }
-  return <span className="text-2xl leading-none">{el.text}</span>;
+  return (
+    <span className="relative flex h-24 w-24 shrink-0 items-center justify-center">
+      <span
+        aria-hidden
+        className="absolute inset-0 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200"
+      />
+      <span className="relative text-2xl leading-none">{el.text}</span>
+    </span>
+  );
 }
 
 function SectionTitle({ title, sub }: { title: string; sub?: string }) {
