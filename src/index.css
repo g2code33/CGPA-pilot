@@ -267,6 +267,27 @@ body {
   100% { opacity: 0; transform: translate(-50%, -170%) scale(1.25); }
 }
 
+/* Soft "sonar" glow for the eye-catching Advanced what-if button:
+   a gentle ring that expands and fades — inviting, not a blink. */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(124, 58, 237, 0);
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-glow {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+  }
+}
+
 /* ── Very visible scrollbars ─────────────────────────────────────────────
    Any area that scrolls (the app frame, tables, side panes) gets a thick,
    high-contrast scrollbar so users can always find it and drag it. */

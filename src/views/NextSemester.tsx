@@ -6,7 +6,6 @@ import { permissionOn } from '../permissions';
 import {
   nextSemesterAfter,
   planNextSemester,
-  reshufflePlan,
   reshuffleSpace,
   whatIfGrades,
   type ShuffledCombo,
@@ -24,6 +23,9 @@ const STATUS_TONE: Record<string, string> = {
   impossible: 'bg-red-50 ring-red-300 text-red-800',
   'no-data': 'bg-slate-100 ring-slate-200 text-slate-600',
 };
+
+/** Stable identity of a result form: the ordered grade list. */
+const gradeKey = (c: ShuffledCombo) => c.assignments.map((a) => a.grade).join('|');
 
 export function NextSemester() {
   const d = useDerived();
@@ -46,6 +48,9 @@ export function NextSemester() {
   // reshuffled plans. Undo / Redo walk this history back and forth.
   const [shuffleHistory, setShuffleHistory] = useState<ShuffledCombo[]>([]);
   const [shuffleIndex, setShuffleIndex] = useState(-1);
+  // Short auto-dismissing prompt shown when reshuffle is pressed on the last form.
+  const [shuffleNotice, setShuffleNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const printPlan = () =>
     printSection(planRef.current, {
@@ -135,7 +140,20 @@ export function NextSemester() {
   useEffect(() => {
     setShuffleHistory([]);
     setShuffleIndex(-1);
+    setShuffleNotice(null);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
   }, [plan.requiredNextPoints, plan.next.credits, plan.status, showWhatIf, comboId]);
+
+  // Clear the pending notice timer on unmount.
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+  }, []);
+
+  function showShuffleNotice(msg: string) {
+    setShuffleNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setShuffleNotice(null), 3400);
+  }
 
   // The full space of possible RESULT FORMS for this semester: every valid
   // grade combination that clears the required points, ordered as a ladder
@@ -148,11 +166,20 @@ export function NextSemester() {
 
   function doReshuffle() {
     if (plan.requiredNextPoints === null) return;
-    const used = new Set(shuffleHistory.map((h) => h.assignments.map((a) => a.grade).join('|')));
-    const combo =
-      planSpace.find((c) => !used.has(c.assignments.map((a) => a.grade).join('|'))) ??
-      reshufflePlan(plan.next.courses, grading, plan.requiredNextPoints);
-    if (!combo) return;
+    // A form counts as "taken" only up to (and including) the CURRENT position.
+    // Undo steps back, freeing every form after it — that is how reshuffle
+    // comes back to life. There is deliberately NO random fallback: once the
+    // whole ladder is taken, reshuffle stops working until you undo.
+    const taken = new Set(shuffleHistory.slice(0, shuffleIndex + 1).map(gradeKey));
+    const combo = planSpace.find((c) => !taken.has(gradeKey(c)));
+    if (!combo) {
+      showShuffleNotice(
+        planSpace.length > 0
+          ? `You’ve reached the end of the form ladder (Form ${planSpace.length.toLocaleString()} of ${planSpace.length.toLocaleString()}). Undo to step back, then reshuffle.`
+          : 'There are no other valid forms for this plan.'
+      );
+      return;
+    }
     const keep = shuffleHistory.slice(0, shuffleIndex + 1); // drop any redo tail
     setShuffleHistory([...keep, combo]);
     setShuffleIndex(keep.length);
@@ -422,6 +449,12 @@ export function NextSemester() {
               </p>
             )}
 
+            {shuffleNotice && (
+              <p className="no-print mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                💡 {shuffleNotice}
+              </p>
+            )}
+
             <div className="no-print mt-3 flex flex-wrap gap-2">
               {plan.combos.length > 0 && !showWhatIf && (
                 <>
@@ -455,9 +488,22 @@ export function NextSemester() {
               )}
               <button
                 onClick={() => setShowWhatIf((v) => !v)}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${
+                  showWhatIf
+                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    : 'animate-pulse-glow bg-gradient-to-r from-violet-600 via-brand-600 to-indigo-600 text-white ring-1 ring-white/40 hover:brightness-110'
+                }`}
               >
-                {showWhatIf ? '✕ Close what-if' : 'What if I get a specific grade?'}
+                {showWhatIf ? (
+                  '✕ Close what-if'
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded bg-white/25 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider">
+                      Advanced
+                    </span>
+                    ✨ What if I get a specific grade?
+                  </span>
+                )}
               </button>
               {permissionOn('allowPrinting') && (
                 <button
