@@ -34,6 +34,7 @@ import {
   type AdminCredentialParams,
 } from './passcodeCrypto';
 import type { AdminCatalog } from './adminStorage';
+import type { AiSettings } from './aiSettings';
 import { validateAdminCatalogForPublish } from './catalogValidation';
 
 export type BackendState =
@@ -551,6 +552,197 @@ export async function pullBackendCatalog(deps: AdminApiDeps = {}): Promise<PullR
     };
   } catch {
     return { ok: false, error: 'Could not reach the backend. Check your connection and try again.' };
+  }
+}
+
+/**
+ * Read-only fetch of the backend's stored admin catalog (the last PUBLISHED
+ * working catalog). Unlike pullBackendCatalog this writes NOTHING locally —
+ * it exists so the PREVIEW diff has a "what students see today" reference
+ * without touching the working catalog or the dirty flag.
+ */
+export async function fetchBackendCatalog(deps: AdminApiDeps = {}): Promise<{ ok: boolean; catalog?: AdminCatalog; adminVersion?: number | null; updatedAt?: string | null; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/catalog'), { method: 'GET', cache: 'no-store', headers: headers(deps) });
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 404) return { ok: false, error: 'not-found', message: 'Nothing has been published to the backend yet.' };
+    if (res.status === 503) return { ok: false, error: 'not-configured', message: 'Backend is not configured yet.' };
+    const doc = (await safeJson(res)) as { format?: string; version?: number; updatedAt?: string; catalog?: unknown } | null;
+    if (!res.ok || !doc || doc.format !== 'cgpa-pilot-admin-catalog' || !doc.catalog) {
+      return { ok: false, error: 'http', message: `Request failed (HTTP ${res.status}).` };
+    }
+    return { ok: true, catalog: doc.catalog as AdminCatalog, adminVersion: doc.version ?? null, updatedAt: doc.updatedAt ?? null };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+// ── AI assistant settings (server-side; keys never reach students) ────────
+
+export interface AiAdminDoc {
+  ok: boolean;
+  settings?: AiSettings;
+  hasStored?: boolean;
+  error?: string;
+  issues?: string[];
+  message?: string;
+  version?: number;
+  updatedAt?: string;
+}
+
+/** Fetch the stored AI settings (including keys — admin-only endpoint). */
+export async function getAiSettings(deps: AdminApiDeps = {}): Promise<AiAdminDoc> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/ai'), { method: 'GET', cache: 'no-store', headers: headers(deps) });
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 503) return { ok: false, error: 'not-configured', message: 'Backend is not configured yet.' };
+    const doc = (await safeJson(res)) as AiAdminDoc | null;
+    if (!res.ok || !doc) return { ok: false, error: 'http', message: `Request failed (HTTP ${res.status}).` };
+    return doc;
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+/** Save the AI settings (server validates + bumps the version). */
+export async function saveAiSettings(settings: AiSettings, deps: AdminApiDeps = {}): Promise<AiAdminDoc> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first — saving AI settings needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/ai'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const doc = (await safeJson(res)) as AiAdminDoc | null;
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 400 && doc?.issues?.length) return { ok: false, error: 'validation', issues: doc.issues };
+    if (!res.ok || !doc || doc.ok !== true) {
+      return { ok: false, error: doc?.error ?? 'http', message: doc?.message ?? `Save failed (HTTP ${res.status}).`, issues: doc?.issues };
+    }
+    return { ok: true, version: doc.version, updatedAt: doc.updatedAt };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+/** Test one key of one provider (a real, minimal request to the provider). */
+export async function testAiKey(
+  providerId: string,
+  keyId: string,
+  deps: AdminApiDeps = {}
+): Promise<{ ok: boolean; message: string; model?: string; ms?: number }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, message: 'Sign in first — testing needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/ai/test'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: JSON.stringify({ providerId, keyId }),
+    });
+    const doc = (await safeJson(res)) as { ok: boolean; message: string; model?: string; ms?: number } | null;
+    if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
+    return doc ?? { ok: false, message: `Test failed (HTTP ${res.status}).` };
+  } catch {
+    return { ok: false, message: 'Backend unreachable — cannot run the test.' };
+  }
+}
+
+// ── Catalog drafts (saved WITHOUT publishing) ─────────────────────────────
+
+export interface DraftMeta {
+  id: string;
+  name: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface DraftDoc extends DraftMeta {
+  catalog: AdminCatalog;
+}
+
+/** List backend drafts (metadata only, newest first). */
+export async function listRemoteDrafts(deps: AdminApiDeps = {}): Promise<{ ok: boolean; drafts?: DraftMeta[]; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/drafts'), { method: 'GET', cache: 'no-store', headers: headers(deps) });
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 503) return { ok: false, error: 'not-configured', message: 'Backend is not configured yet.' };
+    const doc = (await safeJson(res)) as { drafts?: DraftMeta[] } | null;
+    if (!res.ok || !doc) return { ok: false, error: 'http', message: `Request failed (HTTP ${res.status}).` };
+    return { ok: true, drafts: Array.isArray(doc.drafts) ? doc.drafts : [] };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+/** Save (or overwrite, by id) a draft on the backend. */
+export async function saveRemoteDraft(
+  id: string,
+  name: string,
+  catalog: AdminCatalog,
+  note: string | null,
+  deps: AdminApiDeps = {}
+): Promise<{ ok: boolean; id?: string; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first — saving drafts needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/drafts'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: JSON.stringify({ id, name, note, catalog }),
+    });
+    const doc = (await safeJson(res)) as { ok?: boolean; id?: string; error?: string; message?: string } | null;
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (!res.ok || !doc || doc.ok !== true) return { ok: false, error: doc?.error ?? 'http', message: doc?.message ?? `Save failed (HTTP ${res.status}).` };
+    return { ok: true, id: doc.id };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+/** Fetch one backend draft (full catalog). */
+export async function getRemoteDraft(id: string, deps: AdminApiDeps = {}): Promise<{ ok: boolean; draft?: DraftDoc; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  try {
+    const res = await f(urlFor(deps, `/api/admin/drafts/${encodeURIComponent(id)}`), { method: 'GET', cache: 'no-store', headers: headers(deps) });
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 404) return { ok: false, error: 'not-found', message: 'Draft not found on the backend.' };
+    const doc = (await safeJson(res)) as DraftDoc | null;
+    if (!res.ok || !doc || !doc.catalog) return { ok: false, error: 'http', message: `Request failed (HTTP ${res.status}).` };
+    return { ok: true, draft: doc };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+/** Delete a backend draft. */
+export async function deleteRemoteDraft(id: string, deps: AdminApiDeps = {}): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  try {
+    const res = await f(urlFor(deps, `/api/admin/drafts/${encodeURIComponent(id)}`), { method: 'DELETE', cache: 'no-store', headers: headers(deps) });
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    const doc = (await safeJson(res)) as { ok?: boolean; message?: string } | null;
+    if (!res.ok || !doc || doc.ok !== true) return { ok: false, error: 'http', message: doc?.message ?? `Delete failed (HTTP ${res.status}).` };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
   }
 }
 

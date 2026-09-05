@@ -184,3 +184,126 @@ export async function rotateAdminCredential(
     .bind(cred.salt, cred.hash, cred.iterations, updatedAt)
     .run();
 }
+
+// ── AI assistant settings (single row; keys live ONLY here — never in the
+//    published student config) and admin catalog drafts (multi-row) ─────────
+
+const SELECT_AI = 'SELECT id, settings_json, updated_at FROM ai_settings WHERE id = 1';
+const UPSERT_AI =
+  'INSERT INTO ai_settings (id, settings_json, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at';
+
+const SELECT_DRAFTS = 'SELECT id, name, note, catalog_json, created_at FROM admin_drafts ORDER BY created_at DESC, id DESC LIMIT 50';
+const SELECT_DRAFT = 'SELECT id, name, note, catalog_json, created_at FROM admin_drafts WHERE id = ?';
+const INSERT_DRAFT =
+  'INSERT INTO admin_drafts (id, name, note, catalog_json, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, note = excluded.note, catalog_json = excluded.catalog_json, created_at = excluded.created_at';
+const DELETE_DRAFT = 'DELETE FROM admin_drafts WHERE id = ?';
+
+/**
+ * Create the AI/draft tables on first use. D1 supports runtime DDL; the
+ * IF NOT EXISTS clauses make this a cheap no-op once created. Per-isolate
+ * promise cache so the check runs at most once per isolate.
+ */
+const ensuredTables: Promise<void> | null = null;
+export function ensureExtraTables(db: D1Database): Promise<void> {
+  // (Module-level cache shared across isolates of the same deployment.)
+  if (!globalThis.__cgpaEnsureExtra) {
+    globalThis.__cgpaEnsureExtra = db
+      .exec(
+        `CREATE TABLE IF NOT EXISTS ai_settings (
+           id INTEGER PRIMARY KEY CHECK (id = 1),
+           settings_json TEXT,
+           updated_at TEXT
+         );
+         CREATE TABLE IF NOT EXISTS admin_drafts (
+           id TEXT PRIMARY KEY,
+           name TEXT,
+           note TEXT,
+           catalog_json TEXT,
+           created_at TEXT
+         );`
+      )
+      .then(() => undefined)
+      .catch(() => undefined); // never let table creation break a request
+  }
+  return globalThis.__cgpaEnsureExtra;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __cgpaEnsureExtra: Promise<void> | undefined;
+}
+
+export interface AiSettingsRow {
+  settingsJson: string;
+  updatedAt: string;
+}
+
+export async function readAiSettingsJson(db: D1Database): Promise<AiSettingsRow | null> {
+  const row = (await db.prepare(SELECT_AI).first()) as {
+    id: number;
+    settings_json: string;
+    updated_at: string;
+  } | null;
+  if (!row) return null;
+  return { settingsJson: row.settings_json, updatedAt: row.updated_at };
+}
+
+export async function writeAiSettingsJson(db: D1Database, json: string, updatedAt: string): Promise<void> {
+  await db.prepare(UPSERT_AI).bind(json, updatedAt).run();
+}
+
+// ── Drafts ────────────────────────────────────────────────────────────────
+
+export interface DraftMeta {
+  id: string;
+  name: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface DraftDoc extends DraftMeta {
+  catalog: AdminCatalog;
+}
+
+export async function listDrafts(db: D1Database): Promise<DraftMeta[]> {
+  const rows = (await db.prepare(SELECT_DRAFTS).all()).results as {
+    id: string;
+    name: string;
+    note: string | null;
+    created_at: string;
+  }[];
+  return rows.map((r) => ({ id: r.id, name: r.name, note: r.note, createdAt: r.created_at }));
+}
+
+export async function readDraft(db: D1Database, id: string): Promise<DraftDoc | null> {
+  const row = (await db.prepare(SELECT_DRAFT).bind(id).first()) as {
+    id: string;
+    name: string;
+    note: string | null;
+    catalog_json: string;
+    created_at: string;
+  } | null;
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    note: row.note,
+    createdAt: row.created_at,
+    catalog: JSON.parse(row.catalog_json) as AdminCatalog,
+  };
+}
+
+export async function writeDraft(
+  db: D1Database,
+  id: string,
+  name: string,
+  note: string | null,
+  catalog: AdminCatalog,
+  createdAt: string
+): Promise<void> {
+  await db.prepare(INSERT_DRAFT).bind(id, name, note, JSON.stringify(catalog), createdAt).run();
+}
+
+export async function deleteDraft(db: D1Database, id: string): Promise<void> {
+  await db.prepare(DELETE_DRAFT).bind(id).run();
+}

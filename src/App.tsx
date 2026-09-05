@@ -16,6 +16,9 @@ import { AppUpdateBanner } from './components/AppUpdateBanner';
 import { useAcademic } from './state/store';
 import { useDerived } from './state/derived';
 import { permissionOn } from './permissions';
+import { getAiStatusShared } from './services/aiChat';
+import type { AiPublicStatus } from './admin/aiSettings';
+import { AiAssistant } from './views/AiAssistant';
 import { toolNameFor, toolHintFor } from './services/semesterModel';
 import {
   installBeforeUnloadGuard,
@@ -45,6 +48,7 @@ type Screen =
   | 'whatif'
   | 'flight'
   | 'milestones'
+  | 'ai'
   | 'privacy';
 
 const TOOLS: {
@@ -103,6 +107,14 @@ const TOOLS: {
     tagline: 'Stage-by-stage checkpoints',
     needsData: true,
   },
+  {
+    id: 'ai',
+    icon: '🤖',
+    emoji: '🤖',
+    title: 'AI Assistant',
+    tagline: 'Ask about your academics',
+    needsData: false,
+  },
 ];
 
 const SCREEN_TITLES: Partial<Record<Screen, { icon: string; title: string }>> = {
@@ -112,12 +124,14 @@ const SCREEN_TITLES: Partial<Record<Screen, { icon: string; title: string }>> = 
   whatif: { icon: '🔀', title: 'What-If Simulator' },
   flight: { icon: '🛩️', title: 'Flight Path' },
   milestones: { icon: '🏁', title: 'Milestones' },
+  ai: { icon: '🤖', title: 'AI Assistant' },
   privacy: { icon: '🔒', title: 'Privacy' },
 };
 
 // Linear order of the tool screens so every open tool can offer an obvious
-// Previous / Next at the bottom for simple thumb navigation.
-const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones'] as const;
+// Previous / Next at the bottom for simple thumb navigation. AI comes AFTER
+// the milestones (the next stage of the app).
+const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones', 'ai'] as const;
 type ToolId = (typeof TOOL_ORDER)[number];
 const isTool = (s: Screen): s is ToolId =>
   (TOOL_ORDER as readonly string[]).includes(s);
@@ -139,7 +153,21 @@ export default function App() {
   // Which view the client should use: Electron (deb/Windows) → desktop,
   // Android/iOS APK → mobile, web → auto-detected from the device.
   const view = useViewMode();
-  const visibleTools = TOOLS.filter((t) => t.id !== 'whatif' || whatIfAllowed);
+  // AI section: hidden from the tool list only when the admin has explicitly
+  // switched it OFF (server status). Unknown / offline → shown (the screen
+  // itself explains "unavailable").
+  const [aiStatus, setAiStatus] = useState<AiPublicStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    void getAiStatusShared().then((s) => {
+      if (live) setAiStatus(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const aiVisible = !(aiStatus && aiStatus.enabled === false);
+  const visibleTools = TOOLS.filter((t) => (t.id !== 'whatif' || whatIfAllowed) && (t.id !== 'ai' || aiVisible));
   const visibleOrder = visibleTools.map((t) => t.id) as ToolId[];
 
   // A newer published configuration was stored mid-session → offer an
@@ -276,6 +304,12 @@ export default function App() {
       {screen === 'whatif' && <WhatIf />}
       {screen === 'flight' && <FlightPathView />}
       {screen === 'milestones' && <Milestones />}
+      {screen === 'ai' && (
+        <AiAssistant
+          aiStatus={aiStatus}
+          onNavigate={(s) => setScreen(s as Screen)}
+        />
+      )}
       {screen === 'privacy' && <Privacy />}
     </>
   );

@@ -317,3 +317,116 @@ export function importAdminBackup(data: AdminBackup): boolean {
   }
   return true;
 }
+
+// ── Published snapshot (the "what students see today" reference) ──────────
+// The PREVIEW diff compares the working catalog against the last published
+// one. We keep a local copy of that published catalog (snapshot) so preview
+// works instantly and offline; it is refreshed on every successful publish
+// and on every backend pull.
+const SNAPSHOT_KEY = 'cgpa-pilot.admin.published-snapshot.v1';
+
+export interface PublishedSnapshot {
+  version: number | null;
+  catalog: AdminCatalog;
+  savedAt: string;
+}
+
+export function readPublishedSnapshot(): PublishedSnapshot | null {
+  if (!storageAvailable()) return null;
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as PublishedSnapshot;
+    if (s && Array.isArray(s.catalog?.universities) && Array.isArray(s.catalog?.curricula)) {
+      if (!Array.isArray(s.catalog.trash)) s.catalog.trash = [];
+      return {
+        version: typeof s.version === 'number' ? s.version : null,
+        catalog: s.catalog,
+        savedAt: typeof s.savedAt === 'string' ? s.savedAt : new Date(0).toISOString(),
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function writePublishedSnapshot(catalog: AdminCatalog, version: number | null): void {
+  if (!storageAvailable()) return;
+  try {
+    const snap: PublishedSnapshot = { version, catalog, savedAt: new Date().toISOString() };
+    window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function clearPublishedSnapshot(): void {
+  if (!storageAvailable()) return;
+  try {
+    window.localStorage.removeItem(SNAPSHOT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── Drafts (local mirror; the backend is the cross-device store) ──────────
+// A DRAFT is a named snapshot of the working catalog, saved WITHOUT
+// publishing (students never see it). Drafts persist on the backend (any
+// admin device can restore them) and are mirrored locally so the list +
+// restore keep working offline.
+const DRAFTS_KEY = 'cgpa-pilot.admin.drafts.v1';
+
+export interface LocalDraft {
+  id: string; // backend id when synced, else a local "local-…" id
+  name: string;
+  note: string | null;
+  createdAt: string;
+  /** true = exists on the backend; false = this device only (offline save). */
+  synced: boolean;
+  catalog: AdminCatalog;
+}
+
+export function readLocalDrafts(): LocalDraft[] {
+  if (!storageAvailable()) return [];
+  try {
+    const raw = window.localStorage.getItem(DRAFTS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as LocalDraft[];
+    if (!Array.isArray(list)) return [];
+    return list.filter((d) => d && typeof d.id === 'string' && Array.isArray(d.catalog?.universities));
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalDrafts(list: LocalDraft[]): void {
+  if (!storageAvailable()) return;
+  try {
+    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Insert or replace (by id) a local draft. Returns the stored draft. */
+export function saveLocalDraft(draft: LocalDraft): LocalDraft {
+  const list = readLocalDrafts().filter((d) => d.id !== draft.id);
+  list.unshift(draft);
+  writeLocalDrafts(list.slice(0, 30));
+  return draft;
+}
+
+export function removeLocalDraft(id: string): void {
+  writeLocalDrafts(readLocalDrafts().filter((d) => d.id !== id));
+}
+
+/** After a successful backend save: keep the local mirror but mark it synced. */
+export function markLocalDraftSynced(id: string): void {
+  const list = readLocalDrafts();
+  const idx = list.findIndex((d) => d.id === id);
+  if (idx !== -1) {
+    list[idx] = { ...list[idx], synced: true };
+    writeLocalDrafts(list);
+  }
+}

@@ -40,13 +40,30 @@ import {
 } from '../../src/admin/passcodeCrypto';
 import {
   createAdminCredential,
+  ensureExtraTables,
+  listDrafts,
   readAdminCatalogDoc,
   readAdminCredential,
+  readAiSettingsJson,
+  readDraft,
   readPublished,
   readPublishedMeta,
   publishAll,
   rotateAdminCredential,
+  writeAiSettingsJson,
+  writeDraft,
+  deleteDraft,
 } from './db';
+import {
+  aiPublicStatus,
+  aiSettingsForServing,
+  maskKey,
+  parseAiSettings,
+  runAiChat,
+  testAiKey,
+  __resetAiRuntime,
+} from './ai';
+import { validateAiSettings, type AiSettings } from '../../src/admin/aiSettings';
 
 export interface Env {
   /** D1 database holding the authoritative configuration. */
@@ -454,6 +471,170 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     return json({ ok: false, error: 'method-not-allowed' }, 405);
   }
 
+  // ── AI assistant: PUBLIC status + chat ──────────────────────────────────
+  // Students only ever see labels/flags (never keys), except direct-mode
+  // providers (local endpoints) whose endpoint+key are intentionally in the
+  // status block — the client calls them directly.
+  if (method === 'GET' && path === '/api/ai/status') {
+    if (!env.CONFIG_DB) {
+      return json({ format: 'cgpa-pilot-ai-status', enabled: false, ready: false, message: 'not-configured' }, 503);
+    }
+    try {
+      await ensureExtraTables(env.CONFIG_DB);
+    } catch {
+      /* table creation is best-effort; reads below no-op on missing rows */
+    }
+    const row = await readAiSettingsJson(env.CONFIG_DB);
+    return json(aiPublicStatus(parseAiSettings(row?.settingsJson ?? null)));
+  }
+
+  if (method === 'POST' && path === '/api/ai/chat') {
+    if (!env.CONFIG_DB) {
+      return json({ ok: false, error: 'not-configured' }, 503);
+    }
+    await ensureExtraTables(env.CONFIG_DB);
+    const row = await readAiSettingsJson(env.CONFIG_DB);
+    const parsed = parseAiSettings(row?.settingsJson ?? null);
+    const body = await parseJsonBody(req);
+    if (!body.ok) return body.response;
+    const ip = req.headers.get('cf-connecting-ip') ?? 'local';
+    const result = await runAiChat(
+      {
+        settings: aiSettingsForServing(parsed),
+        providerId:
+          typeof body.value.providerId === 'string' && body.value.providerId
+            ? body.value.providerId
+            : null,
+        messages: body.value.messages,
+        context:
+          body.value.context && typeof body.value.context === 'object' && !Array.isArray(body.value.context)
+            ? (body.value.context as Record<string, unknown>)
+            : null,
+      },
+      ip
+    );
+    if (result.ok) {
+      return json({ ok: true, text: result.text, provider: result.provider, model: result.model, ms: result.ms });
+    }
+    const status =
+      result.code === 'bad-request'
+        ? 400
+        : result.code === 'rate-limited'
+          ? 429
+          : result.code === 'ai-unavailable'
+            ? 404
+            : 502;
+    return json({ ok: false, error: result.code, message: result.message, retryAfterSec: result.retryAfterSec }, status);
+  }
+
+  // ── AI assistant: AUTHORIZED admin management (settings + keys + drafts) ─
+  if (path === '/api/admin/ai' || path === '/api/admin/ai/test') {
+    const guarded = await guardAdmin(req, env);
+    if (guarded !== true) return guarded;
+    if (!env.CONFIG_DB) {
+      return json({ ok: false, error: 'not-configured', message: 'D1 database is not configured on this Worker.' }, 503);
+    }
+    await ensureExtraTables(env.CONFIG_DB);
+    const row = await readAiSettingsJson(env.CONFIG_DB);
+    const parsed = parseAiSettings(row?.settingsJson ?? null);
+    const current = aiSettingsForServing(parsed);
+
+    if (path === '/api/admin/ai' && method === 'GET') {
+      return json({
+        format: 'cgpa-pilot-ai-settings-admin',
+        settings: current,
+        hasStored: parsed.status === 'ok',
+      });
+    }
+
+    if (path === '/api/admin/ai' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (!body.ok) return body.response;
+      const validation = validateAiSettings(body.value);
+      if (!validation.ok) {
+        return json({ ok: false, error: 'validation', issues: validation.issues }, 400);
+      }
+      const next: AiSettings = {
+        ...validation.normalized,
+        version: current.version + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      await writeAiSettingsJson(env.CONFIG_DB, JSON.stringify(next), next.updatedAt!);
+      return json({ ok: true, version: next.version, updatedAt: next.updatedAt });
+    }
+
+    if (path === '/api/admin/ai/test' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (!body.ok) return body.response;
+      const providerId = typeof body.value.providerId === 'string' ? body.value.providerId : '';
+      const keyId = typeof body.value.keyId === 'string' ? body.value.keyId : '';
+      const provider = current.providers.find((p) => p.id === providerId);
+      if (!provider) {
+        return json({ ok: false, error: 'not-found', message: 'Unknown provider.' }, 404);
+      }
+      const key = provider.keys.find((k) => k.id === keyId);
+      if (!key) {
+        return json({ ok: false, error: 'not-found', message: 'Unknown key for that provider.' }, 404);
+      }
+      const res = await testAiKey(fetch, provider, key, current.systemPrompt);
+      return json(res, res.ok ? 200 : 502);
+    }
+
+    return json({ ok: false, error: 'method-not-allowed' }, 405);
+  }
+
+  // ── Admin catalog DRAFTS (saved without publishing) ─────────────────────
+  const draftMatch = path.match(/^\/api\/admin\/drafts(?:\/([A-Za-z0-9_-]+))?$/);
+  if (draftMatch) {
+    const guarded = await guardAdmin(req, env);
+    if (guarded !== true) return guarded;
+    if (!env.CONFIG_DB) {
+      return json({ ok: false, error: 'not-configured', message: 'D1 database is not configured on this Worker.' }, 503);
+    }
+    await ensureExtraTables(env.CONFIG_DB);
+    const id = draftMatch[1] ?? null;
+
+    if (!id && method === 'GET') {
+      const list = await listDrafts(env.CONFIG_DB);
+      return json({ format: 'cgpa-pilot-admin-drafts', drafts: list });
+    }
+
+    if (!id && method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (!body.ok) return body.response;
+      const catalog = body.value.catalog;
+      // Drafts are snapshots, but they must be structurally sane so a
+      // restore can never put a broken catalog on screen.
+      if (!catalog || typeof catalog !== 'object' || !Array.isArray((catalog as { universities?: unknown }).universities)) {
+        return json({ ok: false, error: 'invalid-body', message: 'Expected { id, name, note?, catalog }.' }, 400);
+      }
+      const validation = validateAdminCatalogForPublish(catalog);
+      const hardErrors = validation.issues.filter((i) => !/warning/i.test(i));
+      void hardErrors; // drafts may be mid-work: store, but surface issues
+      const draftId =
+        typeof body.value.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(body.value.id)
+          ? body.value.id
+          : `draft-${Date.now().toString(36)}`;
+      const name = typeof body.value.name === 'string' && body.value.name.trim() ? body.value.name.trim().slice(0, 80) : `Draft ${new Date().toLocaleString('en-GB')}`;
+      const note = typeof body.value.note === 'string' && body.value.note.trim() ? body.value.note.trim().slice(0, 200) : null;
+      await writeDraft(env.CONFIG_DB, draftId, name, note, catalog as AdminCatalog, new Date().toISOString());
+      return json({ ok: true, id: draftId }, 201);
+    }
+
+    if (id && method === 'GET') {
+      const doc = await readDraft(env.CONFIG_DB, id);
+      if (!doc) return json({ ok: false, error: 'not-found', message: 'Draft not found.' }, 404);
+      return json({ format: 'cgpa-pilot-admin-draft', ...doc });
+    }
+
+    if (id && method === 'DELETE') {
+      await deleteDraft(env.CONFIG_DB, id);
+      return json({ ok: true });
+    }
+
+    return json({ ok: false, error: 'method-not-allowed' }, 405);
+  }
+
   // Latest app version — powers the in-app "new version available" check for
   // clients that cannot self-update (Android APK / iOS). Best-effort: any
   // failure reports `ok:false` and the client stays silent.
@@ -462,6 +643,11 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
   }
 
   return json({ error: 'not-found', message: `Unknown API path: ${path}` }, 404);
+}
+
+/** Test hook: reset the AI runtime (key rotation + rate-limit windows). */
+export function __resetAi(): void {
+  __resetAiRuntime();
 }
 
 /** Repo that CI publishes the release (APK + desktop + latest.yml) to. */

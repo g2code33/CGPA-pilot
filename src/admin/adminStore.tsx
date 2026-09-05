@@ -18,6 +18,7 @@ import {
   hashPasscode,
   readAdminSyncMeta,
   markCatalogDirty,
+  writePublishedSnapshot,
 } from './adminStorage';
 import { seedCatalog } from './adminConfigService';
 import { verifyPasscode } from './passcodeCrypto';
@@ -127,6 +128,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (r.ok && r.catalog) {
           writeAdminCatalog(r.catalog);
           setCatalogState(r.catalog);
+          writePublishedSnapshot(r.catalog, st.adminVersion); // "students see this now"
           setBackend({
             ...st,
             message: `Loaded the latest catalog (v${st.adminVersion}) from the backend.`,
@@ -145,6 +147,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     setSyncing('publishing');
     const r = await publishCatalog(catalogRef.current, { note });
     if (r.ok) {
+      // The catalog we just sent is now what students see → refresh the
+      // preview snapshot so "Preview changes" diffs against THIS publish.
+      writePublishedSnapshot(catalogRef.current, r.adminVersion ?? null);
       setBackend((b) => ({
         ...b,
         adminVersion: r.adminVersion ?? b.adminVersion,
@@ -164,6 +169,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     if (r.ok && r.catalog) {
       writeAdminCatalog(r.catalog);
       setCatalogState(r.catalog);
+      writePublishedSnapshot(r.catalog, r.adminVersion ?? null); // adopt = now published
       applied = true;
     }
     setSyncing('idle');

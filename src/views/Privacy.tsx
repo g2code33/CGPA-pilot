@@ -4,6 +4,7 @@ import {
   PRIVACY_PROMISES,
   PRIVACY_NEVERS,
   PRIVACY_OFFLINE_NOTE,
+  PRIVACY_AI_NOTE,
 } from '../services/privacyService';
 import { cacheInfo } from '../services/curriculumService';
 
@@ -74,6 +75,11 @@ export function Privacy() {
             published academic configuration syncs — never anything you type.
           </span>
         </div>
+      </Card>
+
+      <Card className="bg-indigo-50 ring-indigo-200">
+        <SectionTitle icon="🤖" title="The AI assistant (if enabled)" />
+        <p className="text-sm leading-relaxed text-slate-700">{PRIVACY_AI_NOTE}</p>
       </Card>
 
       <Card>

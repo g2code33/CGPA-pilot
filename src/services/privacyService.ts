@@ -33,6 +33,19 @@ export const PRIVACY_OFFLINE_NOTE =
   'offline. That configuration contains no information about any student.';
 
 /**
+ * The AI assistant disclosure — the ONE place student data may leave the
+ * device, and only under explicit, per-question conditions. The admin can
+ * switch the whole feature off (AI Settings), which also removes this.
+ */
+export const PRIVACY_AI_NOTE =
+  'If your administrator has enabled the AI assistant, then ONLY when you ' +
+  'actively send a question, your current tool data (results, semesters, ' +
+  'target and planned credits) is sent to the AI provider they configured, ' +
+  'for that question. It is not stored by the app, not included in anything ' +
+  'you do not ask, and it is never used for the local calculations. When the ' +
+  'assistant is off, or you never ask it, nothing about you is ever sent.';
+
+/**
  * Clear the temporary academic session. The actual reset is performed by the
  * in-memory store dispatch; this is the service entry point the UI calls.
  */
