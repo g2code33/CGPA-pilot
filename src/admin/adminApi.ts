@@ -592,7 +592,12 @@ export interface AiAdminDoc {
   updatedAt?: string;
 }
 
-/** Fetch the stored AI settings (including keys — admin-only endpoint). */
+/**
+ * Fetch the stored AI settings (including keys — admin-only endpoint).
+ * A 200 answer ALWAYS counts as ok (older workers answer without an explicit
+ * `ok` field — normalizing here so the console can never show a stale/empty
+ * form just because of a contract mismatch).
+ */
 export async function getAiSettings(deps: AdminApiDeps = {}): Promise<AiAdminDoc> {
   const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
@@ -602,7 +607,7 @@ export async function getAiSettings(deps: AdminApiDeps = {}): Promise<AiAdminDoc
     if (res.status === 503) return { ok: false, error: 'not-configured', message: 'Backend is not configured yet.' };
     const doc = (await safeJson(res)) as AiAdminDoc | null;
     if (!res.ok || !doc) return { ok: false, error: 'http', message: `Request failed (HTTP ${res.status}).` };
-    return doc;
+    return { ...doc, ok: true };
   } catch {
     return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
   }
@@ -703,25 +708,34 @@ export interface DiagnosticCheck {
   label: string;
   ok: boolean;
   detail: string;
+  /** Network checks report their latency. */
+  ms?: number;
 }
 
-export async function getDiagnostics(deps: AdminApiDeps = {}): Promise<{ ok: true; at: string; checks: DiagnosticCheck[] } | { ok: false; message: string }> {
+/**
+ * Run the system diagnostics. `deep: true` also fires a REAL request with the
+ * first key of each enabled provider (a few tokens, proves the keys work).
+ */
+export async function getDiagnostics(
+  deep: boolean,
+  deps: AdminApiDeps = {}
+): Promise<{ ok: true; at: string; deep: boolean; checks: DiagnosticCheck[] } | { ok: false; message: string }> {
   const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return { ok: false, message: 'No network available.' };
   const credential = currentCredential(deps);
   if (!credential) return { ok: false, message: 'Sign in first.' };
   try {
-    const res = await f(urlFor(deps, '/api/admin/diagnostics'), {
+    const res = await f(urlFor(deps, `/api/admin/diagnostics${deep ? '?deep=1' : ''}`), {
       method: 'GET',
       cache: 'no-store',
       headers: headers(deps),
     });
     if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
-    const doc = (await safeJson(res)) as { format?: string; at?: string; checks?: DiagnosticCheck[] } | null;
+    const doc = (await safeJson(res)) as { format?: string; at?: string; deep?: boolean; checks?: DiagnosticCheck[] } | null;
     if (!res.ok || !doc || doc.format !== 'cgpa-pilot-admin-diagnostics' || !Array.isArray(doc.checks)) {
       return { ok: false, message: `Diagnostics unavailable (HTTP ${res.status}).` };
     }
-    return { ok: true, at: doc.at ?? '', checks: doc.checks };
+    return { ok: true, at: doc.at ?? '', deep: !!doc.deep, checks: doc.checks };
   } catch {
     return { ok: false, message: 'Backend unreachable.' };
   }

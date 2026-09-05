@@ -12,6 +12,8 @@
 //   Streaming:    SSE meta event + raw provider deltas · failure before the
 //                 first token → SSE error frame + admin error-log row
 //   Admin tools:  error log (list newest-first / clear / 401) + diagnostics
+//                 (quick: every section + student view + endpoint probe +
+//                  24-h error summary · deep: REAL key probes per provider)
 //   Drafts:       save → list → fetch → delete (text ids, newest first)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -710,30 +712,137 @@ test('admin errors: list (newest first) → clear empties it', async () => {
   }
 });
 
-test('admin diagnostics: reports worker/d1/tables/catalog/published/ai', async () => {
+/** Mock provider for diagnostics: GET /models + POST /chat/completions. */
+function mockDiagnosticsProvider(over = {}) {
+  const { modelsStatus = 200, modelsBody = { data: [{ id: 'm1' }, { id: 'm2' }] }, chatStatus = 200, chatError = 'Invalid API key provided' } = over;
+  const calls = [];
+  const f = async (url, opts) => {
+    const u = String(url);
+    calls.push({ url: u, method: opts?.method ?? 'GET', headers: opts?.headers });
+    if (u.endsWith('/models')) {
+      return new Response(JSON.stringify(modelsBody), { status: modelsStatus, headers: { 'content-type': 'application/json' } });
+    }
+    if (u.endsWith('/chat/completions')) {
+      if (chatStatus !== 200) {
+        return new Response(JSON.stringify({ error: { message: chatError } }), { status: chatStatus, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ready' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response('not found', { status: 404, headers: { 'content-type': 'application/json' } });
+  };
+  return { f, calls };
+}
+
+test('admin diagnostics: quick checks cover every section incl. student view, endpoint + 24h errors', async () => {
   const e = env();
   __resetAi();
   await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
   let res = await worker.fetch(req('/api/admin/diagnostics'), e);
   assert.equal(res.status, 401); // unauthorized
 
-  res = await worker.fetch(req('/api/admin/diagnostics', { token: TOKEN }), e);
+  const { f } = mockDiagnosticsProvider();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    res = await worker.fetch(req('/api/admin/diagnostics', { token: TOKEN }), e);
+    assert.equal(res.status, 200);
+    const doc = await j(res);
+    assert.equal(doc.format, 'cgpa-pilot-admin-diagnostics');
+    assert.ok(doc.at);
+    assert.equal(doc.deep, false);
+    const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+    assert.equal(byId.worker.ok, true);
+    assert.equal(byId.d1.ok, true);
+    assert.equal(byId.tables.ok, true);
+    // No catalog / published config saved in this test env → those report not-ok.
+    assert.equal(byId.catalog.ok, false);
+    assert.equal(byId.published.ok, false);
+    // AI is enabled + has keys → ok, and so is the STUDENT view.
+    assert.equal(byId.ai.ok, true);
+    assert.equal(byId.students.ok, true);
+    assert.match(byId.students.detail, /ready to answer/);
+    // The provider endpoint was probed (reachability + latency).
+    assert.equal(byId['endpoint-prov-1'].ok, true);
+    assert.match(byId['endpoint-prov-1'].detail, /Reachable in \d+ ms/);
+    assert.match(byId['endpoint-prov-1'].detail, /lists 2 model\(s\)/);
+    assert.equal(typeof byId['endpoint-prov-1'].ms, 'number');
+    // No student errors recorded → clean.
+    assert.equal(byId['errors-24h'].ok, true);
+    assert.match(byId['errors-24h'].detail, /No student errors/);
+    // Quick mode must NOT run key probes.
+    assert.ok(!doc.checks.some((c) => c.id.startsWith('key-')));
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('admin diagnostics: endpoint probe reports a rejected key as a key problem', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const { f, calls } = mockDiagnosticsProvider({ modelsStatus: 401 });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(req('/api/admin/diagnostics', { token: TOKEN }), e);
+    const doc = await j(res);
+    const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+    assert.equal(byId['endpoint-prov-1'].ok, false);
+    assert.match(byId['endpoint-prov-1'].detail, /key was REJECTED \(HTTP 401\)/);
+    // It probed with the first key of the pool.
+    assert.equal(calls[0].headers.authorization, 'Bearer nvapi-11112222');
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('admin diagnostics deep: a REAL request proves which key works (and which does not)', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  // 1) healthy key → the probe passes with a latency.
+  let { f } = mockDiagnosticsProvider({ chatStatus: 200 });
+  let realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    let res = await worker.fetch(req('/api/admin/diagnostics?deep=1', { token: TOKEN }), e);
+    let doc = await j(res);
+    assert.equal(doc.deep, true);
+    let byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+    assert.equal(byId['key-prov-1'].ok, true);
+    assert.match(byId['key-prov-1'].detail, /Key works — answered in \d+ ms/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  // 2) rejected key → the probe reports the provider's exact HTTP error.
+  __resetAi();
+  ({ f } = mockDiagnosticsProvider({ chatStatus: 401, chatError: 'Invalid API key provided' }));
+  realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(req('/api/admin/diagnostics?deep=1', { token: TOKEN }), e);
+    const doc = await j(res);
+    const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+    assert.equal(byId['key-prov-1'].ok, false);
+    assert.match(byId['key-prov-1'].detail, /HTTP 401/);
+    assert.match(byId['key-prov-1'].detail, /Invalid API key provided/);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('admin GET /api/admin/ai answers with ok:true (the console must render stored keys)', async () => {
+  const e = env();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const res = await worker.fetch(req('/api/admin/ai', { token: TOKEN }), e);
   assert.equal(res.status, 200);
   const doc = await j(res);
-  assert.equal(doc.format, 'cgpa-pilot-admin-diagnostics');
-  assert.ok(doc.at);
-  const ids = doc.checks.map((c) => c.id);
-  for (const want of ['worker', 'd1', 'tables', 'catalog', 'published', 'ai']) {
-    assert.ok(ids.includes(want), `missing check ${want}`);
-  }
-  const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
-  assert.equal(byId.worker.ok, true);
-  assert.equal(byId.d1.ok, true);
-  assert.equal(byId.tables.ok, true);
-  // No catalog / published config saved in this test env → those report not-ok.
-  assert.equal(byId.catalog.ok, false);
-  assert.equal(byId.published.ok, false);
-  // AI is enabled + has keys → ok.
-  assert.equal(byId.ai.ok, true);
-  __resetAi();
+  assert.equal(doc.ok, true);
+  assert.equal(doc.hasStored, true);
+  assert.equal(doc.settings.providers[0].keys[0].value, 'nvapi-11112222');
+  assert.ok(doc.version >= 1);
+  assert.ok(doc.updatedAt);
 });

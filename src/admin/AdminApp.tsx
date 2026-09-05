@@ -26,6 +26,7 @@ import { RecycleBin } from './views/RecycleBin';
 import { IconManager } from './views/IconManager';
 import { StudentPreview } from './views/StudentPreview';
 import { AiSettings } from './views/AiSettings';
+import { AiMonitor } from './views/AiMonitor';
 import { PublishPreview } from './components/PublishPreview';
 import { DraftsPanel } from './components/DraftsPanel';
 
@@ -38,6 +39,7 @@ type ViewName =
   | 'permissions'
   | 'appearance'
   | 'aisettings'
+  | 'aimonitor'
   | 'recycle'
   | 'previewapp'
   | 'testlab'
@@ -54,6 +56,7 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
   { id: 'permissions', label: 'Permissions', icon: '🔐' },
   { id: 'appearance', label: 'Icons & Branding', icon: '🎨' },
   { id: 'aisettings', label: 'AI Assistant', icon: '🤖' },
+  { id: 'aimonitor', label: 'AI Monitor', icon: '🩺' },
   { id: 'recycle', label: 'Recycle Bin', icon: '🗑️' },
   { id: 'previewapp', label: 'Student Preview', icon: '📱' },
   { id: 'testlab', label: 'Test Lab', icon: '🧪' },
@@ -127,7 +130,10 @@ export function AdminApp() {
           {view.name === 'ideatips' && <IdeaIcons />}
           {view.name === 'permissions' && <Permissions />}
           {view.name === 'appearance' && <IconManager />}
-          {view.name === 'aisettings' && <AiSettings toast={flashSave} />}
+          {view.name === 'aisettings' && (
+            <AiSettings toast={flashSave} onNavigate={(v) => setView({ name: v as View['name'] })} />
+          )}
+          {view.name === 'aimonitor' && <AiMonitor toast={flashSave} />}
           {view.name === 'recycle' && <RecycleBin />}
           {view.name === 'previewapp' && <StudentPreview />}
           {view.name === 'testlab' && <TestLab />}

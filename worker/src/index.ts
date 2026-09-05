@@ -68,8 +68,9 @@ import {
   streamAiChat,
   testAiKey,
   __resetAiRuntime,
+  type ParsedAi,
 } from './ai';
-import { sanitizeProvider, validateAiSettings, type AiKey, type AiSettings } from '../../src/admin/aiSettings';
+import { sanitizeProvider, validateAiSettings, type AiKey, type AiProvider, type AiSettings } from '../../src/admin/aiSettings';
 
 export interface Env {
   /** D1 database holding the authoritative configuration. */
@@ -589,9 +590,12 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
 
     if (path === '/api/admin/ai' && method === 'GET') {
       return json({
+        ok: true,
         format: 'cgpa-pilot-ai-settings-admin',
         settings: current,
         hasStored: parsed.status === 'ok',
+        version: current.version,
+        updatedAt: current.updatedAt ?? null,
       });
     }
 
@@ -737,11 +741,13 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     if (method !== 'GET') return json({ ok: false, error: 'method-not-allowed' }, 405);
     const guarded = await guardAdmin(req, env);
     if (guarded !== true) return guarded;
-    const checks: { id: string; label: string; ok: boolean; detail: string }[] = [];
+    const deep = url.searchParams.get('deep') === '1';
+    type Check = { id: string; label: string; ok: boolean; detail: string; ms?: number };
+    const checks: Check[] = [];
     checks.push({ id: 'worker', label: 'API Worker reachable', ok: true, detail: 'You are reading its answer right now.' });
     if (!env.CONFIG_DB) {
       checks.push({ id: 'd1', label: 'D1 database attached', ok: false, detail: 'The CONFIG_DB binding is missing on this deployment.' });
-      return json({ format: 'cgpa-pilot-admin-diagnostics', at: new Date().toISOString(), checks });
+      return json({ format: 'cgpa-pilot-admin-diagnostics', at: new Date().toISOString(), deep, checks });
     }
     checks.push({ id: 'd1', label: 'D1 database attached', ok: true, detail: 'Binding present.' });
     let tablesOk = false;
@@ -777,40 +783,91 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
       ok: published !== null,
       detail: published ? `Published version ${published.version} is live for students.` : 'Nothing published yet — students run on the bundled seed.',
     });
-    let ai: { enabled: boolean; ready: boolean; version: number; keys: number; providers: number } | null = null;
+
+    // ── AI settings (read once, reused by the AI / student / provider checks) ──
+    let s: AiSettings | null = null;
+    let parsed: ParsedAi | null = null;
     try {
       const row = await readAiSettingsJson(env.CONFIG_DB);
-      const parsed = parseAiSettings(row?.settingsJson ?? null);
-      const s = aiSettingsForServing(parsed);
-      const keys = s.providers.reduce((n, p) => n + (p.enabled ? p.keys.length : 0), 0);
-      ai = {
-        enabled: s.enabled,
-        ready: parsed.status === 'ok' ? publicAiStatus(s).ready : false,
-        version: s.version,
-        keys,
-        providers: s.providers.filter((p) => p.enabled).length,
-      };
+      parsed = parseAiSettings(row?.settingsJson ?? null);
+      s = aiSettingsForServing(parsed);
     } catch {
       /* below */
     }
-    if (ai) {
-      const ok = ai.enabled && ai.ready && ai.keys > 0;
+    if (s) {
+      const keys = s.providers.reduce((n, p) => n + (p.enabled ? p.keys.length : 0), 0);
+      const providers = s.providers.filter((p) => p.enabled).length;
+      const ready = parsed!.status === 'ok' ? publicAiStatus(s).ready : false;
       checks.push({
         id: 'ai',
         label: 'AI assistant',
-        ok,
-        detail: !ai.enabled
+        ok: s.enabled && ready && keys > 0,
+        detail: !s.enabled
           ? 'OFF — students cannot see the assistant. Turn the Feature switch on.'
-          : ai.keys === 0
+          : keys === 0
             ? 'ON but no usable API keys in any enabled provider.'
-            : ai.ready
-              ? `ON · settings v${ai.version} · ${ai.providers} enabled provider(s) · ${ai.keys} key(s) in the rotation pool.`
+            : ready
+              ? `ON · settings v${s.version} · ${providers} enabled provider(s) · ${keys} key(s) in the rotation pool.`
               : 'ON but not ready — check the providers/keys.',
       });
+      // What the STUDENT actually experiences right now.
+      checks.push({
+        id: 'students',
+        label: 'Student view',
+        ok: s.enabled && ready,
+        detail: !s.enabled
+          ? 'Students see NO AI at all (feature switch is off).'
+          : ready
+            ? 'Students see the AI and it is ready to answer.'
+            : 'Students see the AI, but it cannot answer yet (no usable provider/key).',
+      });
+      // Reachability of each enabled worker-mode provider endpoint.
+      for (const p of s.providers.filter((p) => p.enabled && p.mode === 'worker')) {
+        const probe = await probeProviderEndpoint(p);
+        checks.push({
+          id: `endpoint-${p.id}`,
+          label: `Endpoint · ${p.label}`,
+          ok: probe.ok,
+          detail: `${probe.detail} · model “${p.model}”.`,
+          ms: probe.ms,
+        });
+      }
+      // Student error activity over the last 24 hours.
+      try {
+        const recent = await listAiErrors(env.CONFIG_DB, 500);
+        const dayAgo = Date.now() - 86_400_000;
+        const last24 = recent.filter((e) => Date.parse(e.ts) >= dayAgo);
+        checks.push({
+          id: 'errors-24h',
+          label: 'Student errors (24 h)',
+          ok: last24.length === 0,
+          detail:
+            last24.length === 0
+              ? 'No student errors in the last 24 hours.'
+              : `${last24.length} student error(s) in the last 24 h — latest: ${last24[0].provider ?? 'unknown provider'}${last24[0].status ? ` · HTTP ${last24[0].status}` : ''} · ${String(last24[0].detail ?? '').slice(0, 140)}`,
+        });
+      } catch {
+        checks.push({ id: 'errors-24h', label: 'Student errors (24 h)', ok: false, detail: 'Could not read the error log.' });
+      }
+      // Deep mode: a REAL request with the first key of each provider.
+      if (deep) {
+        const withKeys = s.providers.filter((p) => p.enabled && p.mode === 'worker' && p.keys.length > 0);
+        if (!withKeys.length) {
+          checks.push({ id: 'key-none', label: 'Key probe', ok: false, detail: 'No worker-mode provider with a key to probe.' });
+        }
+        for (const p of withKeys) {
+          const key = p.keys[0];
+          checks.push({
+            id: `key-${p.id}`,
+            label: `Key probe · ${p.label}${key.label ? ` (${key.label})` : ''}`,
+            ...(await probeAiKey(p, key)),
+          });
+        }
+      }
     } else {
       checks.push({ id: 'ai', label: 'AI assistant', ok: false, detail: 'AI settings could not be read.' });
     }
-    return json({ format: 'cgpa-pilot-admin-diagnostics', at: new Date().toISOString(), checks });
+    return json({ format: 'cgpa-pilot-admin-diagnostics', at: new Date().toISOString(), deep, checks });
   }
 
   // Latest app version — powers the in-app "new version available" check for
@@ -824,6 +881,71 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
 }
 
 /** Test hook: reset the AI runtime (key rotation + rate-limit windows). */
+/**
+ * Lightweight reachability probe for a provider endpoint. A 200/4xx means the
+ * network path is alive (a 401/403 specifically means the KEY was rejected);
+ * a 5xx or a network failure means the endpoint itself is the problem.
+ */
+async function probeProviderEndpoint(p: AiProvider): Promise<{ ok: boolean; detail: string; ms: number }> {
+  const base = p.baseUrl.replace(/\/+$/, '');
+  const key = p.keys[0]?.value;
+  const t0 = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const headers: Record<string, string> = {};
+    let url: string;
+    if (p.type === 'anthropic') {
+      url = `${base}/v1/models`;
+      if (key) headers['x-api-key'] = key;
+      headers['anthropic-version'] = '2023-06-01';
+    } else {
+      url = `${base}/models`;
+      if (key) headers.authorization = `Bearer ${key}`;
+    }
+    const res = await fetch(url, { method: 'GET', signal: ctrl.signal, headers });
+    const ms = Date.now() - t0;
+    if (res.status === 200) {
+      let n = 0;
+      try {
+        const d = (await res.json()) as { data?: unknown[] } | unknown[];
+        const arr = Array.isArray(d) ? d : (d as { data?: unknown[] } | null)?.data;
+        n = Array.isArray(arr) ? arr.length : 0;
+      } catch {
+        n = 0;
+      }
+      return { ok: true, detail: `Reachable in ${ms} ms${n ? ` · lists ${n} model(s)` : ''}`, ms };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, detail: `Endpoint reachable (${ms} ms) but the key was REJECTED (HTTP ${res.status}).`, ms };
+    }
+    if (res.status >= 400 && res.status < 500) {
+      return { ok: true, detail: `Reachable in ${ms} ms (HTTP ${res.status} on the probe path — expected).`, ms };
+    }
+    return { ok: false, detail: `Endpoint answered HTTP ${res.status} in ${ms} ms — the provider is having trouble.`, ms };
+  } catch (e) {
+    const ms = Date.now() - t0;
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, detail: `Unreachable after ${ms} ms — ${/abort|timeout/i.test(msg) ? 'timed out' : msg.slice(0, 120)}`, ms };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Deep check: a REAL minimal chat request with one key (costs a few tokens). */
+async function probeAiKey(p: AiProvider, key: AiKey): Promise<{ ok: boolean; detail: string; ms: number }> {
+  const t0 = Date.now();
+  try {
+    const r = await testAiKey(fetch, p, key, 'You are a connectivity probe.');
+    const ms = r.ms ?? Date.now() - t0;
+    if (r.ok) return { ok: true, detail: `Key works — answered in ${ms} ms.`, ms };
+    return { ok: false, detail: `${r.message}${r.detail ? ` · ${r.detail}` : ''} (${ms} ms)`, ms };
+  } catch (e) {
+    const ms = Date.now() - t0;
+    return { ok: false, detail: `Probe failed after ${ms} ms — ${e instanceof Error ? e.message : String(e)}`, ms };
+  }
+}
+
 export function __resetAi(): void {
   __resetAiRuntime();
 }

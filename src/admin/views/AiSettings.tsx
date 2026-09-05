@@ -15,7 +15,7 @@
 // and shown masked here with a reveal toggle.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AI_PRESETS,
   defaultAiSettings,
@@ -24,16 +24,7 @@ import {
   type AiProvider,
   type AiSettings,
 } from '../aiSettings';
-import {
-  clearAiErrors,
-  getAiErrors,
-  getAiSettings,
-  getDiagnostics,
-  saveAiSettings,
-  testAiKey,
-  type AiErrorEntry,
-  type DiagnosticCheck,
-} from '../adminApi';
+import { getAiSettings, saveAiSettings, testAiKey } from '../adminApi';
 
 type Toast = (m: string) => void;
 
@@ -41,17 +32,18 @@ function newId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function AiSettings({ toast }: { toast: Toast }) {
+export function AiSettings({ toast, onNavigate }: { toast: Toast; onNavigate: (v: string) => void }) {
   const [settings, setSettings] = useState<AiSettings>(defaultAiSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [switchSaving, setSwitchSaving] = useState(false);
   const [hasStored, setHasStored] = useState(false);
-  // The technical error log of what students hit + one-tap diagnostics.
-  const [errors, setErrors] = useState<AiErrorEntry[] | null>(null);
-  const [errorsTotal, setErrorsTotal] = useState(0);
-  const [diagnostics, setDiagnostics] = useState<{ at: string; checks: DiagnosticCheck[] } | null>(null);
-  const [diagRunning, setDiagRunning] = useState(false);
+  // Did we manage to load the stored settings from the server?
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
+  // What the server currently holds — the baseline for the “saved vX · time”
+  // indicator and the “unsaved changes” dot.
+  const [saved, setSaved] = useState<{ version: number; updatedAt: string | null } | null>(null);
+  const savedRef = useRef<AiSettings | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -61,6 +53,14 @@ export function AiSettings({ toast }: { toast: Toast }) {
       if (r.ok && r.settings) {
         setSettings(r.settings);
         setHasStored(!!r.hasStored);
+        savedRef.current = r.settings;
+        setSaved({ version: r.settings.version, updatedAt: r.updatedAt ?? r.settings.updatedAt ?? null });
+        setLoadFailed(null);
+      } else {
+        // Never silently show an empty form when the real settings exist on
+        // the server but couldn't be read — that invites an accidental
+        // overwrite.
+        setLoadFailed(r.message ?? r.error ?? 'Could not load the stored AI settings.');
       }
       setLoading(false);
     })();
@@ -69,54 +69,11 @@ export function AiSettings({ toast }: { toast: Toast }) {
     };
   }, []);
 
-  async function refreshErrors() {
-    const r = await getAiErrors();
-    if (r.ok) {
-      setErrors(r.errors);
-      setErrorsTotal(r.total);
-    }
-  }
-
-  // Keep the error log fresh while the admin is on this page.
-  useEffect(() => {
-    let live = true;
-    let timer = 0;
-    (async () => {
-      await refreshErrors();
-      if (!live) return;
-      timer = window.setInterval(() => void refreshErrors(), 20_000);
-    })();
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function clearErrorsNow() {
-    if (!window.confirm('Clear the whole AI error log?')) return;
-    const r = await clearAiErrors();
-    if (r.ok) {
-      toast('🧹 Error log cleared.');
-      await refreshErrors();
-    } else {
-      toast(`⛔ ${r.message ?? 'Could not clear the log.'}`);
-    }
-  }
-
-  async function runDiagnostics() {
-    setDiagRunning(true);
-    const r = await getDiagnostics();
-    setDiagRunning(false);
-    if (r.ok) {
-      setDiagnostics(r);
-      toast(r.checks.every((c) => c.ok) ? '🩺 All systems healthy.' : '🩺 Diagnostics found problems — see the section below.');
-    } else {
-      toast(`⛔ ${r.message ?? 'Diagnostics failed.'}`);
-    }
-  }
-
   const issues = useMemo(() => (loading ? [] : validateAiSettings(settings).issues), [loading, settings]);
+  const dirty = useMemo(
+    () => savedRef.current !== null && JSON.stringify(settings) !== JSON.stringify(savedRef.current),
+    [settings]
+  );
 
   function patch(p: Partial<AiSettings>) {
     setSettings((s) => ({ ...s, ...p }));
@@ -155,13 +112,26 @@ export function AiSettings({ toast }: { toast: Toast }) {
       toast(`⛔ Fix AI settings first — ${v.issues[0]}`);
       return;
     }
+    // Never overwrite the server's stored settings from a form we failed to
+    // load — require an explicit "yes, I understand".
+    if (loadFailed) {
+      const okc = window.confirm(
+        'The stored settings could NOT be loaded (see the red note above). Saving now will REPLACE whatever is on the server with exactly what is in this form.\n\nAre you sure you want to do that?'
+      );
+      if (!okc) return;
+    }
     setSaving(true);
     const r = await saveAiSettings(v.normalized);
     setSaving(false);
     if (r.ok) {
-      setSettings((s) => ({ ...s, version: r.version ?? s.version, updatedAt: r.updatedAt ?? null }));
+      // The screen now shows EXACTLY what the server holds (the normalized
+      // doc + fresh version), and the dirty-dot baseline matches it.
+      const next: AiSettings = { ...v.normalized, version: r.version ?? v.normalized.version, updatedAt: r.updatedAt ?? null };
+      savedRef.current = next;
+      setSettings(next);
+      setSaved({ version: next.version, updatedAt: next.updatedAt });
       setHasStored(true);
-      toast(`✅ AI settings saved${r.version ? ` (v${r.version})` : ''}. Students pick it up within seconds.`);
+      toast(`✅ AI settings saved${r.version ? ` (v${r.version})` : ''}. They stay on the server and reappear after any refresh.`);
     } else {
       toast(`⛔ ${r.issues?.[0] ?? r.message ?? 'Save failed'}`);
     }
@@ -170,6 +140,12 @@ export function AiSettings({ toast }: { toast: Toast }) {
   // The master switch saves ITSELF the moment you flip it — no “Save”
   // button needed, and students pick the change up within ~30 seconds.
   async function toggleEnabled(v: boolean) {
+    if (loadFailed) {
+      const okc = window.confirm(
+        'The stored settings could NOT be loaded, so flipping this switch would REPLACE the stored settings with this (possibly empty) form.\n\nSign in again and reload first — continue anyway?'
+      );
+      if (!okc) return;
+    }
     const next = { ...settings, enabled: v };
     setSettings(next);
     const sv = validateAiSettings(next);
@@ -182,7 +158,10 @@ export function AiSettings({ toast }: { toast: Toast }) {
     const r = await saveAiSettings(sv.normalized);
     setSwitchSaving(false);
     if (r.ok) {
-      setSettings((s) => ({ ...s, version: r.version ?? s.version, updatedAt: r.updatedAt ?? null, enabled: v }));
+      const next: AiSettings = { ...sv.normalized, version: r.version ?? sv.normalized.version, updatedAt: r.updatedAt ?? null };
+      savedRef.current = next;
+      setSettings(next);
+      setSaved({ version: next.version, updatedAt: next.updatedAt });
       setHasStored(true);
       toast(v ? '🟢 AI switched ON for students (saved).' : '🔕 AI switched OFF for students (saved).');
     } else {
@@ -197,18 +176,30 @@ export function AiSettings({ toast }: { toast: Toast }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-black text-slate-900">🤖 AI Assistant</h1>
+        <div className="min-w-0">
+          <h1 className="text-lg font-black text-slate-900">
+            🤖 AI Assistant
+            {dirty && <span className="ml-2 align-middle text-[11px] font-black text-amber-600">● unsaved changes</span>}
+          </h1>
           <p className="text-[11px] font-semibold text-slate-500">
-            Configure the providers, key pool and rules that power the student AI. Keys stay on the server.
+            Everything below lives on the server — saved keys, the switch and the rules stay for every admin, on
+            every login and after every refresh.
+            {saved && (
+              <span className="ml-1 font-black text-emerald-600">
+                Saved v{saved.version}
+                {saved.updatedAt ? ` · ${new Date(saved.updatedAt).toLocaleString()}` : ''}
+              </span>
+            )}
           </p>
         </div>
         <button
           onClick={() => void onSave()}
           disabled={saving}
-          className="rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:opacity-60"
+          className={`rounded-xl px-4 py-2.5 text-xs font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-60 ${
+            dirty ? 'bg-brand-600 hover:bg-brand-700 ring-2 ring-brand-300' : 'bg-slate-700 hover:bg-slate-600'
+          }`}
         >
-          {saving ? 'Saving…' : '💾 Save AI settings'}
+          {saving ? 'Saving…' : dirty ? '💾 Save AI settings' : '✅ Saved'}
         </button>
       </div>
 
@@ -220,6 +211,16 @@ export function AiSettings({ toast }: { toast: Toast }) {
               <li key={k}>{i}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {loadFailed && (
+        <div className="rounded-2xl bg-red-50 p-3 ring-1 ring-red-200">
+          <p className="text-[11px] font-black text-red-700">⛔ Couldn’t load the stored settings: {loadFailed}</p>
+          <p className="mt-0.5 text-[11px] font-semibold text-red-600">
+            The form below may be EMPTY even though your keys are safe on the server. Sign in again and reload
+            before saving — otherwise you could overwrite what’s stored.
+          </p>
         </div>
       )}
 
@@ -399,99 +400,23 @@ export function AiSettings({ toast }: { toast: Toast }) {
         )}
       </section>
 
-      {/* ── Student errors (technical log) ─────────────────────────────── */}
-      <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+      {/* Diagnostics + the student error log live in their own section now. */}
+      <section className="rounded-2xl bg-brand-50 p-4 ring-1 ring-brand-200">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-black text-slate-800">🚨 Student errors (AI)</h2>
-            <p className="text-[11px] font-semibold text-slate-500">
-              Every AI failure a student would have hit — with the provider’s raw detail for you. Students only see a friendly note; no student content is ever stored. Refreshes every 20 s.
-            </p>
-          </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => void refreshErrors()}
-              className="rounded-xl bg-white px-3 py-2 text-[11px] font-black text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-            >
-              ↻ Refresh
-            </button>
-            <button
-              onClick={() => void clearErrorsNow()}
-              disabled={errorsTotal === 0}
-              className="rounded-xl bg-red-50 px-3 py-2 text-[11px] font-black text-red-600 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-40"
-            >
-              🧹 Clear log
-            </button>
-          </div>
-        </div>
-        {errors === null ? (
-          <p className="mt-3 rounded-xl bg-slate-50 p-3 text-center text-[11px] font-semibold text-slate-400 ring-1 ring-slate-200">Loading error log…</p>
-        ) : errors.length > 0 ? (
-          <>
-            <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto pr-1">
-              {errors.map((e) => (
-                <div key={e.id} className="rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                    <span className={`rounded-full px-2 py-0.5 font-black ring-1 ${e.status ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-                      {e.status ? `HTTP ${e.status}` : 'network / timeout'}
-                    </span>
-                    <span className="font-black text-slate-700">{e.provider ?? '—'}</span>
-                    {e.model && <code className="font-mono text-[10px] text-slate-400">{e.model}</code>}
-                    {e.keyLabel && <span className="rounded bg-slate-200 px-1.5 text-[10px] font-bold text-slate-600">key: {e.keyLabel}</span>}
-                    <span className="ml-auto shrink-0 text-[10px] font-semibold text-slate-400">{new Date(e.ts).toLocaleString()}</span>
-                  </div>
-                  {e.detail && (
-                    <p className="mt-1.5 max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-2 font-mono text-[10px] leading-relaxed text-emerald-300">
-                      {e.detail}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-            {errorsTotal > errors.length && (
-              <p className="mt-1 text-center text-[10px] font-semibold text-slate-400">
-                showing the latest {errors.length} of {errorsTotal}
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
-            ✅ No student errors recorded — the AI is running clean.
-          </p>
-        )}
-      </section>
-
-      {/* ── System diagnostics ─────────────────────────────────────────── */}
-      <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-black text-slate-800">🩺 System diagnostics</h2>
-            <p className="text-[11px] font-semibold text-slate-500">
-              One tap checks every section: Worker, database, tables, course catalog, published student config and the AI settings.
+            <h2 className="text-sm font-black text-brand-900">🩺 AI Monitor</h2>
+            <p className="text-[11px] font-semibold text-brand-800">
+              Powerful diagnostics (with real key tests) and the full log of student errors now live in their own
+              section — just like Curricula.
             </p>
           </div>
           <button
-            onClick={() => void runDiagnostics()}
-            disabled={diagRunning}
-            className="rounded-xl bg-slate-900 px-3 py-2 text-[11px] font-black text-white hover:bg-slate-700 disabled:opacity-60"
+            onClick={() => onNavigate('aimonitor')}
+            className="rounded-xl bg-brand-600 px-3 py-2 text-[11px] font-black text-white shadow-sm transition hover:bg-brand-700"
           >
-            {diagRunning ? '… running' : '▶ Run checks'}
+            Open AI Monitor →
           </button>
         </div>
-        {diagnostics && (
-          <div className="mt-3 space-y-1.5">
-            {diagnostics.checks.map((c) => (
-              <div key={c.id} className={`flex items-start gap-2 rounded-xl p-2.5 ring-1 ${c.ok ? 'bg-emerald-50/60 ring-emerald-200' : 'bg-red-50 ring-red-200'}`}>
-                <span className="text-sm leading-none">{c.ok ? '✅' : '⛔'}</span>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-black text-slate-800">{c.label}</p>
-                  <p className={`break-words text-[11px] font-semibold ${c.ok ? 'text-slate-500' : 'text-red-600'}`}>{c.detail}</p>
-                </div>
-              </div>
-            ))}
-            <p className="text-center text-[10px] font-semibold text-slate-400">checked {new Date(diagnostics.at).toLocaleString()}</p>
-          </div>
-        )}
       </section>
     </div>
   );
