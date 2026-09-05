@@ -26,6 +26,8 @@ export interface AdminSyncMeta {
   adminVersion: number | null;
   publishedVersion: number | null;
   lastSyncAt: string | null;
+  /** True while the local working catalog has edits that were never published. */
+  dirty?: boolean;
 }
 
 // Pure catalog types live in ./catalogTypes (importable by the Worker and
@@ -201,18 +203,19 @@ export function currentAuthCredential(): { token: string | null; source: 'sessio
 // ── Backend sync metadata + operator API token (admin device state only) ───
 
 export function readAdminSyncMeta(): AdminSyncMeta {
-  if (!storageAvailable()) return { adminVersion: null, publishedVersion: null, lastSyncAt: null };
+  if (!storageAvailable()) return { adminVersion: null, publishedVersion: null, lastSyncAt: null, dirty: false };
   try {
     const raw = window.localStorage.getItem(SYNC_KEY);
-    if (!raw) return { adminVersion: null, publishedVersion: null, lastSyncAt: null };
+    if (!raw) return { adminVersion: null, publishedVersion: null, lastSyncAt: null, dirty: false };
     const m = JSON.parse(raw) as AdminSyncMeta;
     return {
       adminVersion: typeof m.adminVersion === 'number' ? m.adminVersion : null,
       publishedVersion: typeof m.publishedVersion === 'number' ? m.publishedVersion : null,
       lastSyncAt: typeof m.lastSyncAt === 'string' ? m.lastSyncAt : null,
+      dirty: m.dirty === true,
     };
   } catch {
-    return { adminVersion: null, publishedVersion: null, lastSyncAt: null };
+    return { adminVersion: null, publishedVersion: null, lastSyncAt: null, dirty: false };
   }
 }
 
@@ -223,6 +226,19 @@ export function writeAdminSyncMeta(meta: AdminSyncMeta): void {
   } catch {
     /* storage unavailable */
   }
+}
+
+/**
+ * Mark the local working catalog as having unpublished edits (set on every
+ * admin change). While this is true the console must NEVER silently replace
+ * the local catalog with a newer backend one — that would discard work like
+ * an uploaded logo.
+ */
+export function markCatalogDirty(): void {
+  if (!storageAvailable()) return;
+  const m = readAdminSyncMeta();
+  if (m.dirty) return;
+  writeAdminSyncMeta({ ...m, dirty: true });
 }
 
 /**

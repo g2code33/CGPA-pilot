@@ -240,6 +240,12 @@ export function Overview({
           </button>
         </div>
 
+        {readAdminSyncMeta().dirty && (
+          <p className="mt-2 rounded-lg bg-amber-400/20 px-2.5 py-1.5 text-[11px] font-bold text-amber-100 ring-1 ring-amber-300/40">
+            ● You have UNPUBLISHED changes on this browser — students are NOT seeing them yet. Use “Save &amp; Publish” to ship them.
+          </p>
+        )}
+
         {/* Connection state */}
         <div className="mt-3 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
           {backend.state === 'unknown' && syncing === 'checking' && (
@@ -255,6 +261,9 @@ export function Overview({
                 {backend.adminVersion != null && <> · admin catalog <strong>v{backend.adminVersion}</strong></>}
                 {backend.publishedVersion != null && <> · student config <strong>v{backend.publishedVersion}</strong></>}
               </p>
+              {backend.message && (
+                <p className="text-[10px] font-semibold leading-relaxed text-brand-200">{backend.message}</p>
+              )}
               {backend.updatedAt && (
                 <p className="text-[10px] font-medium text-brand-200">
                   Last published {new Date(backend.updatedAt).toLocaleString()}

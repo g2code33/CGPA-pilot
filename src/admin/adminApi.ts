@@ -489,6 +489,7 @@ export async function publishCatalog(
       adminVersion: doc.adminVersion ?? null,
       publishedVersion: doc.publishedVersion ?? null,
       lastSyncAt: new Date().toISOString(),
+      dirty: false, // the backend now holds this exact catalog — nothing left unpublished
     };
     writeAdminSyncMeta(meta);
     return {
@@ -539,6 +540,7 @@ export async function pullBackendCatalog(deps: AdminApiDeps = {}): Promise<PullR
       adminVersion: doc.version ?? null,
       publishedVersion: null,
       lastSyncAt: new Date().toISOString(),
+      dirty: false, // explicitly loading the backend catalog replaces local edits
     };
     writeAdminSyncMeta(meta);
     return {

@@ -17,6 +17,7 @@ import {
   logoutKeepCredential,
   hashPasscode,
   readAdminSyncMeta,
+  markCatalogDirty,
 } from './adminStorage';
 import { seedCatalog } from './adminConfigService';
 import { verifyPasscode } from './passcodeCrypto';
@@ -111,6 +112,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     if (st.state === 'connected' && st.adminVersion != null) {
       const meta = readAdminSyncMeta();
       if (meta.adminVersion == null || st.adminVersion > meta.adminVersion) {
+        if (meta.dirty) {
+          // This device holds unpublished edits (an uploaded logo, text
+          // changes, …). Silently adopting the backend would discard them —
+          // surface the conflict and let the admin choose instead.
+          setBackend({
+            ...st,
+            message: `The backend catalog is v${st.adminVersion}, but THIS browser has unpublished changes — use “Save & Publish” to keep and ship them, or load the backend version to discard them.`,
+          });
+          setSyncing('idle');
+          return st;
+        }
         const r = await pullBackendCatalog();
         if (r.ok && r.catalog) {
           writeAdminCatalog(r.catalog);
@@ -167,7 +179,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     () => ({
       catalog,
       authed,
-      apply: (fn) => setCatalogState((c) => fn(c)),
+      apply: (fn) => {
+        markCatalogDirty();
+        setCatalogState((c) => fn(c));
+      },
       setCatalog: (c) => setCatalogState(c),
       async login(pass) {
         if (!pass || pass.trim().length === 0) {
