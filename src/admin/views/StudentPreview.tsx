@@ -73,12 +73,6 @@ export function StudentPreview() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-slate-900">Student preview</h1>
-        <p className="text-xs text-slate-500">
-          This is exactly how a student experiences the app with your current
-          catalog — play the Sky Dash opener, pick a university/department/
-          programme, choose a mode, then navigate the tools. Only PUBLISHED
-          curricula are served to students.
-        </p>
       </header>
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">

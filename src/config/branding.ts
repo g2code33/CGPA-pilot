@@ -29,21 +29,18 @@ export interface IconSlotDef {
 }
 
 /** Icon-manager section order + labels. */
-export const ICON_GROUPS: { id: IconGroup; label: string; blurb: string }[] = [
+export const ICON_GROUPS: { id: IconGroup; label: string }[] = [
   {
     id: 'identity',
     label: 'App identity',
-    blurb: 'The wordmark, app logo and app icon students first see.',
   },
   {
     id: 'tools',
     label: 'Tools & screens',
-    blurb: 'Icons on the student home hub and at the top of every tool.',
   },
   {
     id: 'game',
     label: 'Splash & game',
-    blurb: 'The aeroplane (and friends) from the opening Sky Dash mini-game.',
   },
 ];
 

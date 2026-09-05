@@ -171,10 +171,6 @@ export function Overview({
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-slate-900">Admin Dashboard</h1>
-          <p className="text-xs text-slate-500">
-            Manage institutions and published curriculum. Students only ever
-            receive PUBLISHED, non-personal configuration.
-          </p>
         </div>
         <button
           onClick={() => void doPublish()}
@@ -221,13 +217,6 @@ export function Overview({
             {syncing === 'checking' ? 'Checking…' : '🔄 Refresh status'}
           </button>
         </div>
-
-        <p className="mt-1 text-[11px] leading-relaxed text-brand-100">
-          Publishing saves this catalog to the backend (the source of truth) and
-          publishes the student configuration in one step. Every student device —
-          and every other admin device — picks it up automatically the next time
-          it opens online. No files, no Git, no redeploy.
-        </p>
 
         {/* Connection state */}
         <div className="mt-3 rounded-xl bg-white/10 p-3 ring-1 ring-white/15">
@@ -360,12 +349,6 @@ export function Overview({
       {/* Local device utilities (backup files — NOT the publishing workflow) */}
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
         <h2 className="text-sm font-bold text-slate-800">Autosave &amp; local backups</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          Every edit autosaves to <em>this device</em> immediately (a working
-          copy). The cross-device permanent store is the backend above. These
-          files remain useful as offline backups or for moving data to a new
-          admin device.
-        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             onClick={() => {
@@ -421,13 +404,6 @@ export function Overview({
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
         <h2 className="text-sm font-bold text-slate-800">Offline configuration files</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          Utilities for the versioned configuration document. Normal distribution
-          happens automatically via the backend (Save &amp; Publish above) —
-          downloads here are backups, and imports feed the local catalog.
-          Synchronization is one-way (config → student); student academic data is
-          never uploaded.
-        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button onClick={exportDistribution} className="btn-primary">
             ⬇️ Download published configuration
@@ -443,11 +419,6 @@ export function Overview({
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
         <h2 className="text-sm font-bold text-slate-800">Change admin passcode</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          There is ONE admin passcode for ALL devices. The backend stores only a
-          salted PBKDF2 digest — never the passcode itself. Changing it updates
-          every device the next time each one signs in. Requires a connection.
-        </p>
         <form onSubmit={savePass} className="mt-3 flex flex-wrap items-end gap-2">
           <input
             type="password"

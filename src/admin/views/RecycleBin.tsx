@@ -62,11 +62,6 @@ export function RecycleBin() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-slate-900">Recycle bin</h1>
-        <p className="text-xs text-slate-500">
-          Deleted universities, departments, programmes and curriculum versions
-          are kept here so you can recover them. Nothing is permanently removed
-          until you purge it.
-        </p>
       </header>
 
       {toast && (

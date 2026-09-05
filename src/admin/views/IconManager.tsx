@@ -32,13 +32,6 @@ export function IconManager() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-slate-900">Icons &amp; branding</h1>
-        <p className="text-xs text-slate-500">
-          Every icon and image students see — the app logo, the wordmark, each
-          tool icon and the opening Sky Dash aeroplane. Upload a PNG or JPEG, or
-          use an emoji as a fallback. Then use{' '}
-          <em>Apply to this device</em> on the Dashboard (or download the
-          published configuration) to push it to students.
-        </p>
       </header>
 
       {toast && (
@@ -49,10 +42,7 @@ export function IconManager() {
 
       {/* ── App identity ─────────────────────────────────────────────── */}
       <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
-        <SectionTitle
-          title="App identity"
-          sub="Wordmark, app logo and app icon shown at the very opening and in the app header."
-        />
+        <SectionTitle title="App identity" />
 
         {/* Wordmark */}
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -79,10 +69,6 @@ export function IconManager() {
         {/* App logo */}
         <div className="mt-4 border-t border-slate-100 pt-4">
           <p className="text-sm font-extrabold text-slate-800">App logo</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">
-            Shown at the opening and in the app header. Upload a PNG/JPEG to
-            replace the bundled logo.
-          </p>
           <div className="mt-2 flex flex-wrap items-center gap-4">
             {appearance?.logo ? (
               <img
@@ -126,9 +112,6 @@ export function IconManager() {
         {/* App icon mark */}
         <div className="mt-4 border-t border-slate-100 pt-4">
           <p className="text-sm font-extrabold text-slate-800">App icon</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">
-            The small app mark used for the logo placeholder when no image is set.
-          </p>
           <div className="mt-2">
             <SlotEditor
               title="App icon"
@@ -146,7 +129,6 @@ export function IconManager() {
           key={group.id}
           group={group.id}
           label={group.label}
-          blurb={group.blurb}
           appearance={appearance}
           onCommit={(v, slotId) =>
             commit((a) => {
@@ -165,19 +147,17 @@ export function IconManager() {
 function GroupSection({
   group,
   label,
-  blurb,
   appearance,
   onCommit,
 }: {
   group: IconGroup;
   label: string;
-  blurb: string;
   appearance?: AppAppearance;
   onCommit: (v: AppIcon | undefined, slotId: string) => void;
 }) {
   return (
     <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
-      <SectionTitle title={label} sub={blurb} />
+      <SectionTitle title={label} />
       <div className="mt-4 space-y-2.5">
         {slotsByGroup(group).map((slot) => (
           <SlotEditor
@@ -284,11 +264,11 @@ function renderPreview(value: AppIcon | undefined, fallbackEmoji: string, isPlan
   return <span className="text-2xl">{el.text}</span>;
 }
 
-function SectionTitle({ title, sub }: { title: string; sub: string }) {
+function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   return (
     <div>
       <h2 className="text-sm font-black text-slate-800">{title}</h2>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{sub}</p>
+      {sub && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{sub}</p>}
     </div>
   );
 }
