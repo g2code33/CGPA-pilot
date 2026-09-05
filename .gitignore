@@ -14,6 +14,10 @@ android/local.properties
 android/.idea/
 android/captures/
 
+# Capacitor / iOS build artifacts (the ios/ project itself IS committed)
+ios/DerivedData/
+ios/App/Pods/
+
 # Signing material — never commit
 *.keystore
 *.jks

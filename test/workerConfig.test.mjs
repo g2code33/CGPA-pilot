@@ -14,7 +14,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../worker/src/index.ts';
+import worker, { __resetLatestAppVersionCache } from '../worker/src/index.ts';
 import { createD1Stub } from './helpers/d1Stub.mjs';
 import { makeValidCatalog } from './helpers/fixtures.mjs';
 import { validateDistributionDocument } from '../src/admin/catalogValidation.ts';
@@ -312,4 +312,50 @@ test('PWA identity before any publish still answers (bundled defaults)', async (
   const doc = await (await worker.fetch(req('/manifest.webmanifest'), env())).json();
   assert.equal(doc.short_name, 'CGPA Pilot');
   assert.ok(doc.icons.every((i) => i.src === 'icon-512.png'));
+});
+
+// ── /api/app/latest (in-app update check for Android/iOS) ─────────────────
+
+test('GET /api/app/latest reports the latest GitHub release version', async () => {
+  __resetLatestAppVersionCache();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /api\.github\.com\/repos\/g2code33\/CGPA-pilot\/releases\/latest/);
+    return new Response(
+      JSON.stringify({
+        tag_name: 'v9.9.9',
+        html_url: 'https://github.com/g2code33/CGPA-pilot/releases/tag/v9.9.9',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } }
+    );
+  };
+  try {
+    const res = await worker.fetch(req('/api/app/latest'), env());
+    assert.equal(res.status, 200);
+    const doc = await res.json();
+    assert.equal(doc.ok, true);
+    assert.equal(doc.version, '9.9.9');
+    assert.match(doc.url, /releases\/tag\/v9\.9\.9/);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetLatestAppVersionCache();
+  }
+});
+
+test('GET /api/app/latest is unavailable (silent) when GitHub is unreachable', async () => {
+  __resetLatestAppVersionCache();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error('offline');
+  };
+  try {
+    const res = await worker.fetch(req('/api/app/latest'), env());
+    assert.equal(res.status, 200);
+    const doc = await res.json();
+    assert.equal(doc.ok, false);
+    assert.equal(doc.error, 'unavailable');
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetLatestAppVersionCache();
+  }
 });

@@ -454,7 +454,54 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     return json({ ok: false, error: 'method-not-allowed' }, 405);
   }
 
+  // Latest app version — powers the in-app "new version available" check for
+  // clients that cannot self-update (Android APK / iOS). Best-effort: any
+  // failure reports `ok:false` and the client stays silent.
+  if (path === '/api/app/latest') {
+    return handleAppLatest();
+  }
+
   return json({ error: 'not-found', message: `Unknown API path: ${path}` }, 404);
+}
+
+/** Repo that CI publishes the release (APK + desktop + latest.yml) to. */
+const APP_REPO = 'g2code33/CGPA-pilot';
+const LATEST_TTL_MS = 5 * 60 * 1000; // 5-minute in-isolate cache
+let latestCache: { at: number; value: string | null; url: string | null } | null = null;
+
+async function handleAppLatest(): Promise<Response> {
+  if (latestCache && Date.now() - latestCache.at < LATEST_TTL_MS) {
+    const { value, url } = latestCache;
+    return value
+      ? json({ ok: true, format: 'cgpa-pilot-app-latest', version: value, url })
+      : json({ ok: false, format: 'cgpa-pilot-app-latest', error: 'unavailable' });
+  }
+  let value: string | null = null;
+  let url: string | null = null;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${APP_REPO}/releases/latest`, {
+      headers: { accept: 'application/vnd.github+json' },
+    });
+    if (res.ok) {
+      const doc = (await res.json()) as { tag_name?: string; html_url?: string };
+      const tag = (doc.tag_name ?? '').replace(/^v/, '');
+      if (/^\d+\.\d+\.\d+$/.test(tag)) {
+        value = tag;
+        url = doc.html_url ?? null;
+      }
+    }
+  } catch {
+    /* offline / rate-limited / network error → unavailable */
+  }
+  latestCache = { at: Date.now(), value, url };
+  return value
+    ? json({ ok: true, format: 'cgpa-pilot-app-latest', version: value, url })
+    : json({ ok: false, format: 'cgpa-pilot-app-latest', error: 'unavailable' });
+}
+
+/** Test hook: clear the latest-version cache between assertions. */
+export function __resetLatestAppVersionCache(): void {
+  latestCache = null;
 }
 
 // ── PWA identity (dynamic manifest + app icon) ───────────────────────────

@@ -260,3 +260,58 @@ Body limit 15 MB.
   console and run `npm run seed:apply -- file.json`, commit
   `src/config/seed/admin-catalog.json` — this updates the *fallback* that
   fresh offline devices boot from.
+
+---
+
+## 9. Clients, views & updates
+
+### 9.1 Which view each client gets
+
+The app is designed mobile-first (the view most students use). Every client
+is given the view it is best served by (`src/platform.ts`):
+
+| Client | Detection | View |
+| --- | --- | --- |
+| Electron — Windows `.exe` | `window.cgpaPilot` preload bridge | **PC (desktop) view** |
+| Electron — Linux `.deb` / `.AppImage` | `window.cgpaPilot` preload bridge | **PC (desktop) view** |
+| Android APK (Capacitor) | `window.Capacitor` + user agent | **Mobile view** |
+| iOS app (Capacitor) | `window.Capacitor` + user agent | **Mobile view** |
+| Browser web / PWA | screen size + pointer type | **Auto**: wide fine-pointer screens (laptops/desktops) get the PC view; phones/tablets keep the mobile view — re-evaluated on resize |
+
+The **PC view** is a two-pane shell: a persistent left sidebar (all tools +
+Privacy, role-aware names, disabled tools until results are entered) beside a
+wide content column (home = hero + 2–3 column tool grid; tools render full
+width up to ~768px). The mobile view is unchanged: home hub + drill-in
+screens + bottom Prev/Next/Home bar.
+
+### 9.2 How every user receives updates
+
+| Client | Mechanism | What the user sees |
+| --- | --- | --- |
+| Desktop (deb/Windows) | `electron-updater` reads `latest.yml` / `latest-linux.yml` from the GitHub Release (CI publishes on every `main` push) — check on startup + manual 🔄 | "Update available → Download & install → restart" |
+| Web / PWA | Service worker: navigation is network-first, so the next open loads the new build; a waiting worker is offered via the 🔄 button (reload to apply) | 🔄 "update ready" → one tap reloads |
+| Android APK | **No self-update** — `GET /api/app/latest` (Worker → latest GitHub Release of this repo) powers an in-app banner linking to the release (where CI attaches the new APK) | amber "New version available → Download" |
+| iOS | same in-app banner (release contains the unsigned `.app` zip; signed builds come from Xcode) | amber "New version available → Download" |
+
+**To ship an update to everyone:** bump `"version"` in `package.json`
+(e.g. `1.0.0 → 1.0.1`), push to `main` — CI rebuilds, publishes the new
+GitHub Release (desktop installers + `latest*.yml`, Android APK, iOS `.app`
+zip), and:
+
+- every desktop app shows the update on its next launch (or the manual 🔄);
+- every web/PWA user gets the new build on their next open (🔄 for immediate);
+- every Android/iOS user gets the download banner automatically.
+
+The configuration (curriculum) update path is separate and unchanged: admin
+**Save & Publish** → devices show the "📥 new configuration ready → reload to
+apply" banner.
+
+### 9.3 iOS
+
+The Capacitor **iOS project is committed** in `ios/` (like `android/`).
+`npm run mobile:sync:ios` rebuilds it after a web build;
+`npm run mobile:open:ios` opens Xcode for signing/run. The CI **ios** job
+(macos-latest, main branch) builds an **unsigned** `App.app` on every release
+and uploads `cgpa-pilot-<v>.ios.app.zip` to the GitHub Release — for
+distribution, open the project in Xcode with your signing team and archive to
+TestFlight / the App Store (or an enterprise certificate).

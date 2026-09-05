@@ -37,6 +37,8 @@ declare global {
   interface ImportMetaEnv {
     readonly PROD: boolean;
     readonly DEV: boolean;
+    /** This build's app version (package.json "version", injected at build). */
+    readonly VITE_APP_VERSION: string;
     /**
      * Optional base URL of the configuration API (full URL). Unset =
      * same-origin /api (the Cloudflare Worker hosts the app and the API).

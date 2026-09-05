@@ -1,6 +1,6 @@
 {
   "name": "cgpa-pilot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "author": {
     "name": "CGPA Pilot",
@@ -25,9 +25,12 @@
     "dist:win": "npm run build:web && npm run build:electron && electron-builder --win",
     "dist:linux": "npm run build:web && npm run build:electron && electron-builder --linux",
     "mobile:add": "cap add android",
+    "mobile:add:ios": "cap add ios",
     "mobile:sync": "npm run build:web && cap sync android",
+    "mobile:sync:ios": "npm run build:web && cap sync ios",
     "mobile:build": "npm run build:web && cap sync android",
     "mobile:open": "cap open android",
+    "mobile:open:ios": "cap open ios",
     "release:patch": "npm version patch --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main",
     "release:minor": "npm version minor --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main",
     "release:major": "npm version major --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main"
@@ -35,6 +38,7 @@
   "dependencies": {
     "@capacitor/android": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.5.1",
     "electron-updater": "^6.3.9",
     "pdfjs-dist": "^4.9.155",
     "react": "^18.3.1",

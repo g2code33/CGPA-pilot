@@ -12,6 +12,7 @@ import { useInstitution, listUniversities } from './state/institutionSelection';
 import { UpdateButton } from './components/UpdateButton';
 import { ClearButton } from './components/ClearButton';
 import { UpdateBanner } from './components/UpdateBanner';
+import { AppUpdateBanner } from './components/AppUpdateBanner';
 import { useAcademic } from './state/store';
 import { useDerived } from './state/derived';
 import { permissionOn } from './permissions';
@@ -30,6 +31,7 @@ import { Privacy } from './views/Privacy';
 import { InstitutionSelector } from './components/InstitutionSelector';
 import { Info } from './components/ui';
 import { ideaTip } from './infoTips';
+import { useViewMode } from './platform';
 import { SkySplash } from './components/SkySplash';
 import { AppGlyph } from './components/AppGlyph';
 import { fmt2 } from './util/format';
@@ -133,6 +135,9 @@ export default function App() {
   const [splashDone, setSplashDone] = useState(!splashAllowed);
   const [splashRun, setSplashRun] = useState(0);
   const [screen, setScreen] = useState<Screen>('home');
+  // Which view the client should use: Electron (deb/Windows) → desktop,
+  // Android/iOS APK → mobile, web → auto-detected from the device.
+  const view = useViewMode();
   const visibleTools = TOOLS.filter((t) => t.id !== 'whatif' || whatIfAllowed);
   const visibleOrder = visibleTools.map((t) => t.id) as ToolId[];
 
@@ -226,21 +231,351 @@ export default function App() {
   // An admin-hidden tool can never be the active screen — fall back to home.
   const effectiveScreen: Screen = screen === 'whatif' && !whatIfAllowed ? 'home' : screen;
 
+  // ── Shared derived values (used by both the mobile and desktop views) ──
+  // "Results entered" == the user has typed a CGPA (Quick: current standing;
+  // History: at least one completed level). This mirrors the Proceed gate so
+  // proceeding home actually unlocks the tools and shows the entered state.
+  const resultsEntered =
+    d.state.mode === 'history'
+      ? d.state.semesters.some((s) => s.gpa !== null)
+      : d.state.baseline.cgpa !== null;
+  const hasData = resultsEntered;
+  const heroCgpa =
+    d.record.cgpa !== null
+      ? d.record.cgpa
+      : d.state.mode === 'history'
+        ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)
+        : d.state.baseline.cgpa;
+  // Home help sentence — registry-driven so the admin can reword or hide it.
+  const homeHowItWorks = ideaTip('home.howItWorks');
+
+  // "Next Semester" adapts its title to the semantic semester role so a
+  // mid-semester student never sees their current / already-written semester
+  // called "next". (d.semesterRole is already 'next-semester' in History mode.)
+  const screenTitle =
+    screen === 'next'
+      ? d.semesterRole === 'finish-current'
+        ? 'Finish This Semester'
+        : d.semesterRole === 'upon-release'
+          ? 'Upon Release'
+          : 'Next Semester'
+      : SCREEN_TITLES[screen]?.title;
+
+  // The active tool's body — identical in both views; only the container
+  // width around it differs (narrow phone column vs. wide desktop column).
+  const toolBody = (
+    <>
+      {screen === 'calculate' && <Calculate onProceed={() => setScreen('home')} />}
+      {screen === 'target' && <Target />}
+      {screen === 'next' && <NextSemester />}
+      {screen === 'whatif' && <WhatIf />}
+      {screen === 'flight' && <FlightPathView />}
+      {screen === 'milestones' && <Milestones />}
+      {screen === 'privacy' && <Privacy />}
+    </>
+  );
+
+  const pendingCfgBanner = pendingCfg ? (
+    <div className="no-print flex flex-wrap items-center justify-center gap-2 bg-sky-600 px-4 py-2 text-center text-xs font-semibold text-white">
+      <span>📥 New curriculum configuration{pendingCfg.version ? ` (v${pendingCfg.version})` : ''} is ready on this device.</span>
+      <button
+        className="rounded-lg bg-white/20 px-2.5 py-1 font-bold hover:bg-white/30"
+        onClick={() => {
+          clearPendingConfigUpdate();
+          window.location.reload();
+        }}
+      >
+        Reload to apply
+      </button>
+    </div>
+  ) : null;
+
+  // The home hub content (hero + tool tiles + privacy). `wide` switches the
+  // tile grid to the desktop 2–3 column arrangement.
+  const homeContent = (wide: boolean) => (
+    <>
+      {/* Hero */}
+      <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-4 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
+        {hasData ? (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
+                ✓ Results entered
+              </span>
+              <button
+                onClick={() => setScreen('calculate')}
+                title="Edit results — change level, CGPA or not-released courses"
+                aria-label="Edit results — change level, CGPA or not-released courses"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
+              >
+                ✏️
+              </button>
+            </div>
+            <div className="mt-2 flex items-end justify-between gap-4">
+              <p className="text-3xl font-black tabular-nums leading-none">
+                {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
+              </p>
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-brand-200">
+                  Target
+                </p>
+                <p className="text-3xl font-black tabular-nums leading-none text-emerald-300">
+                  {fmt2(d.state.targetCgpa ?? 3.6)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] font-semibold text-brand-100">
+              🏅 {d.classBand?.label ?? '—'}
+              <span className="mx-1.5 text-brand-300">·</span>
+              Level {d.state.baseline.levelIndex * 100}
+              {d.record.creditHours > 0 ? (
+                <>
+                  <span className="mx-1.5 text-brand-300">·</span>
+                  {d.record.creditHours} graded credits
+                </>
+              ) : null}
+            </p>
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="flex items-center justify-center text-2xl">
+              {/* Fixed slot: an admin-enlarged plane overflows, the hero stays */}
+              <span className="grid h-8 w-12 place-items-center">
+                <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={26} />
+              </span>
+            </p>
+            <h2 className="mt-1 text-lg font-black">Let’s get you off the ground</h2>
+            <button
+              onClick={() => setScreen('calculate')}
+              className="mt-2.5 rounded-2xl bg-white px-6 py-2.5 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
+            >
+              📝 Enter my results
+            </button>
+          </div>
+      )}
+      {/* Help tip — same guidance as the onboarding line, always reachable */}
+      <div className="mt-2.5 flex justify-end">
+        {homeHowItWorks && (
+          <Info
+            label="How does this work?"
+            className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25"
+          >
+            {homeHowItWorks}
+          </Info>
+        )}
+      </div>
+    </section>
+
+      {/* Tool tiles */}
+      <p className="mt-3 mb-1.5 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
+        Tools
+      </p>
+      <div className={wide ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3' : 'grid grid-cols-1 gap-2 sm:grid-cols-2'}>
+        {visibleTools.map((t) => {
+          const disabled = t.needsData && !hasData;
+          const isResults = t.id === 'calculate';
+          const isNext = t.id === 'next';
+          // The "Next Semester" tool tile name adapts to the student's
+          // standing (Finish This Semester / Upon Release / Next Semester).
+          const title = isNext ? toolNameFor(d.semesterRole) : t.title;
+          const hint = isNext ? toolHintFor(d.semesterRole) : t.tagline;
+          const tagline = isResults && hasData ? 'Results entered — tap to Edit' : hint;
+          return (
+            <button
+              key={t.id}
+              onClick={() => !disabled && setScreen(t.id)}
+              disabled={disabled}
+              className={`flex w-full items-center gap-2.5 rounded-2xl p-2 text-left ring-1 transition ${
+                disabled
+                  ? 'bg-slate-100 ring-slate-200 opacity-70'
+                  : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
+              }`}
+            >
+              {/* Fixed-size, invisible slot: an admin-enlarged image
+                  overflows this box — it never moves the tile. */}
+              <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
+                <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-extrabold leading-tight text-slate-900">
+                  {title}
+                </span>
+                <span className="block truncate text-[10px] leading-tight text-slate-500">{tagline}</span>
+              </span>
+              {disabled ? (
+                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-500">
+                  add results first
+                </span>
+              ) : isResults && hasData ? (
+                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-700">
+                  ✓ entered
+                </span>
+              ) : (
+                <span className="shrink-0 text-slate-300">›</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Privacy */}
+      <button
+        onClick={() => setScreen('privacy')}
+        className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
+      >
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base">
+          <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
+        </span>
+        <span className="flex-1 text-[11px] font-bold text-emerald-800">
+          No account. Nothing you type is saved or shared — see how.
+        </span>
+        <span className="text-emerald-400">›</span>
+      </button>
+
+      <p className="mt-3 px-2 text-center text-[10px] leading-snug text-slate-400">
+        {d.university.shortName} grading &amp; classification per published
+        university rules · CGPA PILOT is an unofficial planning aid, not an
+        academic record.
+      </p>
+    </>
+  );
+
+  // ── DESKTOP SHELL (the PC view) ─────────────────────────────────────────
+  // Electron (Windows .exe / Linux .deb / .AppImage) always renders this; on
+  // the web it appears on wide fine-pointer screens (laptops/desktops).
+  // A persistent left sidebar replaces the mobile bottom bar — the mobile
+  // flow below stays exactly as it is.
+  if (view === 'desktop') {
+    return (
+      <div className="h-[100dvh] flex flex-col bg-slate-100">
+        <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/80 px-4 py-2 backdrop-blur">
+          <Brand appearance={appearance} />
+          <div className="flex shrink-0 items-center gap-1.5">
+            <UpdateButton />
+            <ClearButton />
+          </div>
+        </header>
+        <UpdateBanner />
+        <AppUpdateBanner />
+        {pendingCfgBanner}
+        <div className="flex min-h-0 flex-1">
+          {/* Sidebar navigation */}
+          <aside className="no-print flex w-64 shrink-0 flex-col gap-1 overflow-y-auto border-r border-slate-200 bg-white p-3">
+            <p className="px-2 pb-1 pt-1 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
+              Tools
+            </p>
+            {visibleTools.map((t) => {
+              const disabled = t.needsData && !hasData;
+              const active = screen === t.id;
+              const title = t.id === 'next' ? toolNameFor(d.semesterRole) : t.title;
+              const hint = t.id === 'next' ? toolHintFor(d.semesterRole) : t.tagline;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => !disabled && setScreen(t.id)}
+                  disabled={disabled}
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                    active
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : disabled
+                        ? 'cursor-not-allowed bg-slate-50 text-slate-400'
+                        : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {/* Fixed slot: an admin-enlarged image overflows, the nav row stays */}
+                  <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
+                    <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-extrabold leading-tight">
+                      {title}
+                    </span>
+                    <span
+                      className={`block truncate text-[11px] leading-tight ${
+                        active ? 'text-brand-100' : 'text-slate-500'
+                      }`}
+                    >
+                      {hint}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+            <div className="my-1.5 h-px shrink-0 bg-slate-200" />
+            <button
+              onClick={() => setScreen('privacy')}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                screen === 'privacy'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-emerald-800 hover:bg-emerald-50'
+              }`}
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center text-xl leading-none">
+                <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-6 w-6" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-extrabold leading-tight">Privacy</span>
+                <span
+                  className={`block truncate text-[11px] leading-tight ${
+                    screen === 'privacy' ? 'text-emerald-100' : 'text-slate-500'
+                  }`}
+                >
+                  No account. Nothing is saved or shared.
+                </span>
+              </span>
+            </button>
+            <div className="mt-auto shrink-0 px-2 pb-1 pt-3 text-[10px] font-semibold leading-relaxed text-slate-400">
+              v{import.meta.env.VITE_APP_VERSION || 'dev'} · {appName(appearance)}
+              <br />
+              Offline-ready · works with no connection
+            </div>
+          </aside>
+          {/* Content area */}
+          <div className="app-frame min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <div
+              className={`mx-auto w-full px-6 py-5 ${
+                effectiveScreen === 'home' ? 'max-w-5xl' : 'max-w-3xl'
+              }`}
+            >
+              {effectiveScreen === 'home' ? (
+                homeContent(true)
+              ) : (
+                <>
+                  <div className="no-print mb-4 flex items-center justify-between gap-3">
+                    <h1 className="flex min-w-0 items-center gap-2 text-xl font-black tracking-tight text-slate-900">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center text-lg leading-none">
+                        {SCREEN_TITLES[screen] && (
+                          <SlotGlyph
+                            appearance={appearance}
+                            slot={screen}
+                            fallback={SCREEN_TITLES[screen]!.icon}
+                            imgCls="h-5 w-5 object-contain"
+                          />
+                        )}
+                      </span>
+                      <span className="truncate">{screenTitle}</span>
+                    </h1>
+                    <button
+                      onClick={() => setScreen('home')}
+                      className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
+                    >
+                      🏠 Home
+                    </button>
+                  </div>
+                  {toolBody}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Tool screens (drill-in). Fixed app frame: header + scrollable content +
   // a Previous / Next / Home bottom bar for simple navigation.
   if (effectiveScreen !== 'home') {
     const meta = SCREEN_TITLES[screen];
-    // The "Next Semester" tab title adapts to the semantic semester role so a
-    // mid-semester student never sees their current / already-written semester
-    // called "next". (d.semesterRole is already 'next-semester' in History mode.)
-    const screenTitle =
-      screen === 'next'
-        ? d.semesterRole === 'finish-current'
-          ? 'Finish This Semester'
-          : d.semesterRole === 'upon-release'
-            ? 'Upon Release'
-            : 'Next Semester'
-        : meta?.title;
     const idx = visibleOrder.indexOf(screen as ToolId);
     const prev = idx > 0 ? visibleTools[idx - 1] : null;
     const next = idx >= 0 && idx < visibleTools.length - 1 ? visibleTools[idx + 1] : null;
@@ -274,15 +609,7 @@ export default function App() {
           </div>
         </header>
         <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-3 py-3">
-          <div className="mx-auto w-full max-w-md">
-            {screen === 'calculate' && <Calculate onProceed={() => setScreen('home')} />}
-            {screen === 'target' && <Target />}
-            {screen === 'next' && <NextSemester />}
-            {screen === 'whatif' && <WhatIf />}
-            {screen === 'flight' && <FlightPathView />}
-            {screen === 'milestones' && <Milestones />}
-            {screen === 'privacy' && <Privacy />}
-          </div>
+          <div className="mx-auto w-full max-w-md">{toolBody}</div>
         </div>
         {/* Bottom tool navigation */}
         <nav className="no-print shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
@@ -333,23 +660,7 @@ export default function App() {
     );
   }
 
-  // ── HOME HUB ─────────────────────────────────────────────────────────
-  // "Results entered" == the user has typed a CGPA (Quick: current standing;
-  // History: at least one completed level). This mirrors the Proceed gate so
-  // proceeding home actually unlocks the tools and shows the entered state.
-  const resultsEntered =
-    d.state.mode === 'history'
-      ? d.state.semesters.some((s) => s.gpa !== null)
-      : d.state.baseline.cgpa !== null;
-  const hasData = resultsEntered;
-  const heroCgpa =
-    d.record.cgpa !== null
-      ? d.record.cgpa
-      : d.state.mode === 'history'
-        ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)
-        : d.state.baseline.cgpa;
-  // Home help sentence — registry-driven so the admin can reword or hide it.
-  const homeHowItWorks = ideaTip('home.howItWorks');
+  // ── HOME HUB (mobile view — the layout most students use) ─────────────
   return (
     <div className="h-[100dvh] flex flex-col bg-gradient-to-b from-brand-50 to-white">
       <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
@@ -360,165 +671,11 @@ export default function App() {
         </div>
       </header>
       <UpdateBanner />
-      {pendingCfg && (
-        <div className="no-print flex flex-wrap items-center justify-center gap-2 bg-sky-600 px-4 py-2 text-center text-xs font-semibold text-white">
-          <span>📥 New curriculum configuration{pendingCfg.version ? ` (v${pendingCfg.version})` : ''} is ready on this device.</span>
-          <button
-            className="rounded-lg bg-white/20 px-2.5 py-1 font-bold hover:bg-white/30"
-            onClick={() => {
-              clearPendingConfigUpdate();
-              window.location.reload();
-            }}
-          >
-            Reload to apply
-          </button>
-        </div>
-      )}
+      <AppUpdateBanner />
+      {pendingCfgBanner}
       <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-4 pb-3">
         <div className="mx-auto w-full max-w-md">
-          {/* Hero */}
-          <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-4 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
-            {hasData ? (
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
-                    ✓ Results entered
-                  </span>
-                  <button
-                    onClick={() => setScreen('calculate')}
-                    title="Edit results — change level, CGPA or not-released courses"
-                    aria-label="Edit results — change level, CGPA or not-released courses"
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
-                  >
-                    ✏️
-                  </button>
-                </div>
-                <div className="mt-2 flex items-end justify-between gap-4">
-                  <p className="text-3xl font-black tabular-nums leading-none">
-                    {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
-                  </p>
-                  <div className="text-right">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-brand-200">
-                      Target
-                    </p>
-                    <p className="text-3xl font-black tabular-nums leading-none text-emerald-300">
-                      {fmt2(d.state.targetCgpa ?? 3.6)}
-                    </p>
-                  </div>
-                </div>
-                <p className="mt-2 text-[11px] font-semibold text-brand-100">
-                  🏅 {d.classBand?.label ?? '—'}
-                  <span className="mx-1.5 text-brand-300">·</span>
-                  Level {d.state.baseline.levelIndex * 100}
-                  {d.record.creditHours > 0 ? (
-                    <>
-                      <span className="mx-1.5 text-brand-300">·</span>
-                      {d.record.creditHours} graded credits
-                    </>
-                  ) : null}
-                </p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <p className="flex items-center justify-center text-2xl">
-                  {/* Fixed slot: an admin-enlarged plane overflows, the hero stays */}
-                  <span className="grid h-8 w-12 place-items-center">
-                    <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={26} />
-                  </span>
-                </p>
-                <h2 className="mt-1 text-lg font-black">Let’s get you off the ground</h2>
-                <button
-                  onClick={() => setScreen('calculate')}
-                  className="mt-2.5 rounded-2xl bg-white px-6 py-2.5 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
-                >
-                  📝 Enter my results
-                </button>
-              </div>
-          )}
-          {/* Help tip — same guidance as the onboarding line, always reachable */}
-          <div className="mt-2.5 flex justify-end">
-            {homeHowItWorks && (
-              <Info
-                label="How does this work?"
-                className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25"
-              >
-                {homeHowItWorks}
-              </Info>
-            )}
-          </div>
-        </section>
-
-          {/* Tool tiles */}
-          <p className="mt-3 mb-1.5 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
-            Tools
-          </p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {visibleTools.map((t) => {
-              const disabled = t.needsData && !hasData;
-              const isResults = t.id === 'calculate';
-              const isNext = t.id === 'next';
-              // The "Next Semester" tool tile name adapts to the student's
-              // standing (Finish This Semester / Upon Release / Next Semester).
-              const title = isNext ? toolNameFor(d.semesterRole) : t.title;
-              const hint = isNext ? toolHintFor(d.semesterRole) : t.tagline;
-              const tagline = isResults && hasData ? 'Results entered — tap to Edit' : hint;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => !disabled && setScreen(t.id)}
-                  disabled={disabled}
-                  className={`flex w-full items-center gap-2.5 rounded-2xl p-2 text-left ring-1 transition ${
-                    disabled
-                      ? 'bg-slate-100 ring-slate-200 opacity-70'
-                      : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
-                  }`}
-                >
-                  {/* Fixed-size, invisible slot: an admin-enlarged image
-                      overflows this box — it never moves the tile. */}
-                  <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
-                    <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-extrabold leading-tight text-slate-900">
-                      {title}
-                    </span>
-                    <span className="block truncate text-[10px] leading-tight text-slate-500">{tagline}</span>
-                  </span>
-                  {disabled ? (
-                    <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-500">
-                      add results first
-                    </span>
-                  ) : isResults && hasData ? (
-                    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-700">
-                      ✓ entered
-                    </span>
-                  ) : (
-                    <span className="shrink-0 text-slate-300">›</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Privacy */}
-          <button
-            onClick={() => setScreen('privacy')}
-            className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
-          >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base">
-              <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
-            </span>
-            <span className="flex-1 text-[11px] font-bold text-emerald-800">
-              No account. Nothing you type is saved or shared — see how.
-            </span>
-            <span className="text-emerald-400">›</span>
-          </button>
-
-          <p className="mt-3 px-2 text-center text-[10px] leading-snug text-slate-400">
-            {d.university.shortName} grading &amp; classification per published
-            university rules · CGPA PILOT is an unofficial planning aid, not an
-            academic record.
-          </p>
+          {homeContent(false)}
         </div>
       </div>
     </div>
