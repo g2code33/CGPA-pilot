@@ -1,13 +1,17 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Info } from '../components/ui';
 import {
   nextSemesterAfter,
   planNextSemester,
+  reshufflePlan,
   whatIfGrades,
+  type ShuffledCombo,
 } from '../services/nextSemesterService';
 import { classifyCgpa } from '../services/classificationService';
-import { printSection } from '../services/scopedPrint';
+import { printAppLogo } from '../config/branding';
+import { getRuntimeCatalog } from '../config/runtime';
+import { printFileName, printSection } from '../services/scopedPrint';
 import { fmt2 } from '../util/format';
 import type { PendingProjection } from '../services/pendingService';
 
@@ -35,6 +39,10 @@ export function NextSemester() {
   const [comboId, setComboId] = useState<'efficient' | 'balanced' | 'top'>('efficient');
   const [locked, setLocked] = useState<Record<string, string>>({});
   const [showWhatIf, setShowWhatIf] = useState(false);
+  // Reshuffle history: index -1 = the selected preset plan; 0..n-1 = the
+  // reshuffled plans. Undo / Redo walk this history back and forth.
+  const [shuffleHistory, setShuffleHistory] = useState<ShuffledCombo[]>([]);
+  const [shuffleIndex, setShuffleIndex] = useState(-1);
   const planRef = useRef<HTMLDivElement>(null);
   const printPlan = () =>
     printSection(planRef.current, {
@@ -42,6 +50,9 @@ export function NextSemester() {
       institutionLabel: d.institutionLabel,
       programmeName: d.programme?.name ?? '',
       curriculumVersion: d.curriculum?.versionName,
+      appLogo: printAppLogo(getRuntimeCatalog().appearance),
+      institutionLogo: d.university?.logo,
+      fileName: printFileName(next.label.replace(/—/g, ' '), isUponRelease ? 'On-Release Plan' : 'Semester Plan'),
     });
 
   // The semester this screen acts on = the one immediately after the CONFIRMED
@@ -112,9 +123,27 @@ export function NextSemester() {
   }, [showWhatIf, locked, plan, grading]);
 
   const activeCombo = plan.combos.find((c) => c.id === comboId) ?? plan.combos[0];
+  const activeShuffle = shuffleIndex >= 0 ? shuffleHistory[shuffleIndex] ?? null : null;
   const rows = showWhatIf && whatIf
     ? whatIf.assignments
-    : activeCombo?.assignments ?? [];
+    : activeShuffle?.assignments ?? activeCombo?.assignments ?? [];
+
+  // A reshuffle only makes sense for the plan it was generated from.
+  useEffect(() => {
+    setShuffleHistory([]);
+    setShuffleIndex(-1);
+  }, [plan.requiredNextPoints, plan.next.credits, plan.status, showWhatIf, comboId]);
+
+  function doReshuffle() {
+    if (plan.requiredNextPoints === null) return;
+    const combo = reshufflePlan(plan.next.courses, grading, plan.requiredNextPoints);
+    if (!combo) return;
+    const keep = shuffleHistory.slice(0, shuffleIndex + 1); // drop any redo tail
+    setShuffleHistory([...keep, combo]);
+    setShuffleIndex(keep.length);
+  }
+  const canUndo = shuffleIndex >= 0;
+  const canRedo = shuffleIndex < shuffleHistory.length - 1;
 
   // The GPA used for the semester being acted on. For the study-plan roles this
   // is the derived required average; for "upon release" it is the pending
@@ -271,7 +300,11 @@ export function NextSemester() {
                 {plan.combos.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => setComboId(c.id)}
+                    onClick={() => {
+                      setComboId(c.id);
+                      setShuffleHistory([]);
+                      setShuffleIndex(-1);
+                    }}
                     className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ring-1 transition ${
                       !showWhatIf && comboId === c.id
                         ? 'bg-brand-600 text-white ring-brand-600'
@@ -284,10 +317,17 @@ export function NextSemester() {
               </div>
             )}
 
-            {activeCombo && (
-              <p className="no-print mb-2 text-[11px] text-slate-500">
-                {activeCombo.description}
+            {activeShuffle ? (
+              <p className="no-print mb-2 text-[11px] font-semibold text-brand-700">
+                🔀 Reshuffled plan — a different mix of target grades that still meets
+                the required GPA.
               </p>
+            ) : (
+              activeCombo && (
+                <p className="no-print mb-2 text-[11px] text-slate-500">
+                  {activeCombo.description}
+                </p>
+              )
             )}
 
             <div className="overflow-x-auto">
@@ -329,7 +369,9 @@ export function NextSemester() {
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
               <span>
                 Semester average: <span className="text-brand-700">
-                  {showWhatIf && whatIf ? whatIf.semesterGpa.toFixed(2) : activeCombo?.semesterGpa.toFixed(2)}
+                  {showWhatIf && whatIf
+                    ? whatIf.semesterGpa.toFixed(2)
+                    : (activeShuffle?.semesterGpa ?? activeCombo?.semesterGpa ?? 0).toFixed(2)}
                 </span>
               </span>
               <span>
@@ -351,11 +393,35 @@ export function NextSemester() {
             )}
 
             <div className="no-print mt-3 flex flex-wrap gap-2">
+              {plan.combos.length > 0 && !showWhatIf && (
+                <>
+                  <button
+                    onClick={doReshuffle}
+                    className="rounded-lg bg-brand-50 px-3 py-1.5 text-[11px] font-bold text-brand-700 ring-1 ring-brand-200 transition hover:bg-brand-100"
+                  >
+                    🔀 Reshuffle
+                  </button>
+                  <button
+                    onClick={() => setShuffleIndex((i) => Math.max(-1, i - 1))}
+                    disabled={!canUndo}
+                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ↩ Undo
+                  </button>
+                  <button
+                    onClick={() => setShuffleIndex((i) => Math.min(shuffleHistory.length - 1, i + 1))}
+                    disabled={!canRedo}
+                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ↪ Redo
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => setShowWhatIf((v) => !v)}
                 className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
               >
-                {showWhatIf ? '✕ Close what-if' : '🔀 What if I get a specific grade?'}
+                {showWhatIf ? '✕ Close what-if' : 'What if I get a specific grade?'}
               </button>
               <button
                 onClick={printPlan}

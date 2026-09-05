@@ -2,7 +2,9 @@ import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Stat } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { InstitutionSelector } from '../components/InstitutionSelector';
-import { printHtml } from '../services/scopedPrint';
+import { printFileName, printHtml } from '../services/scopedPrint';
+import { printAppLogo } from '../config/branding';
+import { getRuntimeCatalog } from '../config/runtime';
 import { summaryReport, fullReport, pilotBriefReport } from '../services/reportComposer';
 import { toolNameFor } from '../services/semesterModel';
 import { fmt2, fmt1, clamp } from '../util/format';
@@ -42,16 +44,22 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
       ? d.progress.remainingCredits
       : Math.max(0, d.totalProgrammeCredits - record.creditHours);
 
+  // Standard save name: CGPA PILOT - <the student's level & semester> - <doc>.
+  const posLabel = `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`;
   const branding = {
     title: 'Pilot Brief',
     institutionLabel: model.institutionLabel,
     programmeName: d.programme?.name ?? '',
     curriculumVersion: model.curriculumVersion ?? undefined,
+    appLogo: printAppLogo(getRuntimeCatalog().appearance),
+    institutionLogo: d.university?.logo,
+    fileName: printFileName(posLabel, 'Pilot Brief'),
   };
-  const printSummary = () => printHtml([summaryReport(model)], { ...branding, title: 'Print Summary' });
+  const printSummary = () =>
+    printHtml([summaryReport(model)], { ...branding, title: 'Print Summary', fileName: printFileName(posLabel, 'Print Summary') });
   const printBrief = () => printHtml([pilotBriefReport(model)], branding);
   const printFull = () =>
-    printHtml(fullReport(model), { ...branding, title: 'Full Report' });
+    printHtml(fullReport(model), { ...branding, title: 'Full Report', fileName: printFileName(posLabel, 'Full Report') });
 
   return (
     <div className="space-y-4">

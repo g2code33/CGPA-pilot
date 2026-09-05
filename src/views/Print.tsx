@@ -1,6 +1,8 @@
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
-import { printHtml, sectionHeading } from '../services/scopedPrint';
+import { printAppLogo } from '../config/branding';
+import { getRuntimeCatalog } from '../config/runtime';
+import { printFileName, printHtml, sectionHeading } from '../services/scopedPrint';
 import {
   summaryReport,
   fullReport,
@@ -17,10 +19,14 @@ export function PrintView() {
   const d = useDerived();
   const m = d.dashboard;
 
+  // Standard save name: CGPA PILOT - <the student's level & semester> - <doc>.
+  const posLabel = `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`;
   const branding = {
     institutionLabel: m.institutionLabel,
     programmeName: d.programme?.name ?? '',
     curriculumVersion: m.curriculumVersion ?? undefined,
+    appLogo: printAppLogo(getRuntimeCatalog().appearance),
+    institutionLogo: d.university?.logo,
   };
 
   const options = [
@@ -28,7 +34,7 @@ export function PrintView() {
       icon: '🧾',
       title: 'Print Summary',
       desc: 'Current level, CGPA & classification, target, required future GPA and projected final CGPA.',
-      run: () => printHtml([summaryReport(m)], { ...branding, title: 'Print Summary' }),
+      run: () => printHtml([summaryReport(m)], { ...branding, title: 'Print Summary', fileName: printFileName(posLabel, 'Print Summary') }),
       ready: m.hasData,
     },
     {
@@ -47,7 +53,7 @@ export function PrintView() {
         const html = `${sectionHeading('🛩️', 'Flight path & milestones')}
           <p style="font-size:10px;color:#64748b;">Current CGPA ${m.currentCgpa?.toFixed(2) ?? '—'} · Target ${m.targetCgpa.toFixed(2)} (a goal). Projected trajectory assumes a steady future GPA — a scenario, not a guaranteed outcome. The full colour graph prints from the Flight Path tab.</p>
           <div class="print-card">${rowsTable(rows)}</div>`;
-        printHtml([{ html }], { ...branding, title: 'Print Flight Path' });
+        printHtml([{ html }], { ...branding, title: 'Print Flight Path', fileName: printFileName(posLabel, 'Flight Path') });
       },
       ready: m.hasData,
     },
@@ -80,7 +86,7 @@ export function PrintView() {
               )}
               ${m.next?.requiredNextGpa != null ? `<p style="font-size:10px;color:#64748b;margin-top:4px;">Required steady average across these pending credits and what remains: ${f(m.next.requiredNextGpa)}.</p>` : ''}
             </div>`;
-          printHtml([{ html }], { ...branding, title: 'Print On-Release Result' });
+          printHtml([{ html }], { ...branding, title: 'Print On-Release Result', fileName: printFileName(posLabel, 'On-Release Result') });
           return;
         }
         const next = m.next;
@@ -97,7 +103,7 @@ export function PrintView() {
             <p style="margin:0 0 4px;"><strong>${next?.next.label ?? '—'}</strong> · Required GPA <strong>${next?.requiredNextGpa?.toFixed(2) ?? '—'}</strong> · Target: ${next?.targetClassLabel ?? '—'}</p>
             ${courseRows.length ? rowsTable(courseRows, ['Course', 'Credits', 'Target grade']) : '<p style="font-size:10px;color:#64748b;">Curriculum courses not published yet. Target grades are planning targets, not predicted grades.</p>'}
           </div>`;
-        printHtml([{ html }], { ...branding, title: heading });
+        printHtml([{ html }], { ...branding, title: heading, fileName: printFileName(posLabel, heading) });
       },
       ready: m.hasData && !!m.next,
     },
@@ -105,14 +111,14 @@ export function PrintView() {
       icon: '🗣️',
       title: 'Print Pilot Brief',
       desc: 'The concise co-pilot summary: current, target, status, required GPA, next-semester target, max possible CGPA, assumptions and curriculum version.',
-      run: () => printHtml([pilotBriefReport(m)], { ...branding, title: 'Pilot Brief' }),
+      run: () => printHtml([pilotBriefReport(m)], { ...branding, title: 'Pilot Brief', fileName: printFileName(posLabel, 'Pilot Brief') }),
       ready: m.hasData,
     },
     {
       icon: '📚',
       title: 'Print Full Report',
       desc: 'Combines summary, flight path & milestones, next-semester plan and pilot brief into one A4 multi-page report.',
-      run: () => printHtml(fullReport(m), { ...branding, title: 'Full Report' }),
+      run: () => printHtml(fullReport(m), { ...branding, title: 'Full Report', fileName: printFileName(posLabel, 'Full Report') }),
       ready: m.hasData,
     },
   ];

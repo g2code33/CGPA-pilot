@@ -6,7 +6,7 @@
 // its program. adminStorage re-exports everything here for compatibility.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { AppAppearance, CurriculumVersion, University } from '../config/types';
+import type { AppAppearance, CurriculumVersion, StudentSettings, University } from '../config/types';
 
 /** What kind of entity a recycled/trashed item was. */
 export type TrashKind = 'university' | 'school' | 'programme' | 'curriculum';
@@ -31,6 +31,8 @@ export interface AdminCatalog {
   trash?: TrashEntry[];
   /** Optional branding the admin has set for the student app. */
   appearance?: AppAppearance;
+  /** Optional admin-controlled student permissions (ships with the config). */
+  settings?: StudentSettings;
 }
 
 /**

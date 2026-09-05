@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useDerived } from '../state/derived';
+import { getRuntimeCatalog } from '../config/runtime';
 import { Card, SectionTitle } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { analyzeTarget, type TargetAnalysis } from '../services/targetService';
@@ -132,8 +133,17 @@ export function Target() {
   const [custom, setCustom] = useState<string>('');
   const [howOpen, setHowOpen] = useState(false);
   const [mathOpen, setMathOpen] = useState(false);
-  const creditsCompleted = Math.max(0, completed ?? defaultCompleted);
-  const creditsRemaining = Math.max(0, remaining ?? defaultRemaining);
+  // Admin-controlled permission (published config): absent/off = credits are
+  // locked to the curriculum and no user override is applied.
+  const creditEditingAllowed = getRuntimeCatalog().settings?.allowCreditEditing === true;
+  const creditsCompleted = Math.max(
+    0,
+    creditEditingAllowed ? completed ?? defaultCompleted : defaultCompleted
+  );
+  const creditsRemaining = Math.max(
+    0,
+    creditEditingAllowed ? remaining ?? defaultRemaining : defaultRemaining
+  );
 
   const target = state.targetCgpa ?? 3.6;
 
@@ -295,67 +305,95 @@ export function Target() {
         <SectionTitle
           icon="🧮"
           title="Credits completed & remaining"
-          subtitle="Auto-filled from the admin curriculum — tap to edit for your own scenario."
+          subtitle={
+            creditEditingAllowed
+              ? 'Auto-filled from the admin curriculum — tap to edit for your own scenario.'
+              : 'From your institution’s published curriculum — locked.'
+          }
           info={
-            <>
-              Completed and remaining credits are <strong>filled in automatically</strong>{' '}
-              from your institution’s published curriculum.
-              <br />
-              <br />
-              You can <strong>edit either number</strong> for a custom scenario (e.g. a
-              different course load). Use the reset button below to snap back to the
-              curriculum values at any time.
-            </>
+            creditEditingAllowed ? (
+              <>
+                Completed and remaining credits are <strong>filled in automatically</strong>{' '}
+                from your institution’s published curriculum.
+                <br />
+                <br />
+                You can <strong>edit either number</strong> for a custom scenario (e.g. a
+                different course load). Use the reset button below to snap back to the
+                curriculum values at any time.
+              </>
+            ) : (
+              <>
+                These numbers are <strong>locked to your institution’s published
+                curriculum</strong> — every calculation uses exactly those credits. Your
+                administrator controls this setting.
+              </>
+            )
           }
         />
         <div className="grid grid-cols-2 gap-3 text-center">
           <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-            <input
-              type="number"
-              min={0}
-              max={400}
-              className="input w-full bg-white text-center text-2xl font-black text-slate-800"
-              value={completed ?? creditsCompleted}
-              onChange={(e) =>
-                e.target.value === ''
-                  ? setCompleted(null)
-                  : setCompleted(Math.max(0, Number(e.target.value) || 0))
-              }
-            />
+            {creditEditingAllowed ? (
+              <input
+                type="number"
+                min={0}
+                max={400}
+                className="input w-full bg-white text-center text-2xl font-black text-slate-800"
+                value={completed ?? creditsCompleted}
+                onChange={(e) =>
+                  e.target.value === ''
+                    ? setCompleted(null)
+                    : setCompleted(Math.max(0, Number(e.target.value) || 0))
+                }
+              />
+            ) : (
+              <p className="text-2xl font-black text-slate-800">{creditsCompleted}</p>
+            )}
             <p className="mt-1 text-[11px] font-semibold text-slate-500">credits completed</p>
-            {curriculumCompleted !== null && completed === null && (
-              <p className="mt-1 text-[9px] font-bold text-brand-600">auto · from curriculum</p>
+            {creditEditingAllowed ? (
+              curriculumCompleted !== null && completed === null && (
+                <p className="mt-1 text-[9px] font-bold text-brand-600">auto · from curriculum</p>
+              )
+            ) : (
+              <p className="mt-1 text-[9px] font-bold text-brand-600">🔒 locked · from curriculum</p>
             )}
           </div>
           <div className="rounded-xl bg-brand-50 p-3 ring-1 ring-brand-100">
-            <input
-              type="number"
-              min={0}
-              max={400}
-              className="input w-full bg-white text-center text-2xl font-black text-brand-700"
-              value={remaining ?? creditsRemaining}
-              onChange={(e) =>
-                e.target.value === ''
-                  ? setRemaining(null)
-                  : setRemaining(Math.max(0, Number(e.target.value) || 0))
-              }
-            />
+            {creditEditingAllowed ? (
+              <input
+                type="number"
+                min={0}
+                max={400}
+                className="input w-full bg-white text-center text-2xl font-black text-brand-700"
+                value={remaining ?? creditsRemaining}
+                onChange={(e) =>
+                  e.target.value === ''
+                    ? setRemaining(null)
+                    : setRemaining(Math.max(0, Number(e.target.value) || 0))
+                }
+              />
+            ) : (
+              <p className="text-2xl font-black text-brand-700">{creditsRemaining}</p>
+            )}
             <p className="mt-1 text-[11px] font-semibold text-brand-700">credits remaining</p>
           </div>
         </div>
-        <button
-          onClick={() => {
-            setCompleted(null);
-            setRemaining(null);
-          }}
-          disabled={completed === null && remaining === null}
-          className="mt-2.5 w-full rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-slate-100"
-        >
-          ↺ Reset to auto-filled ({defaultCompleted} done · {defaultRemaining} to go)
-        </button>
-        <p className="mt-1 text-center text-[9px] text-slate-400">
-          Snaps the numbers back to what was auto-filled from the admin curriculum.
-        </p>
+        {creditEditingAllowed && (
+          <>
+            <button
+              onClick={() => {
+                setCompleted(null);
+                setRemaining(null);
+              }}
+              disabled={completed === null && remaining === null}
+              className="mt-2.5 w-full rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-slate-100"
+            >
+              ↺ Reset to auto-filled ({defaultCompleted} done · {defaultRemaining} to go)
+            </button>
+            <p className="mt-1 text-center text-[9px] text-slate-400">
+              Snaps the numbers back to what was auto-filled from the admin curriculum.
+            </p>
+          </>
+        )}
       </Card>
 
       {/* ── RESULT ──────────────────────────────────────────────────── */}

@@ -3,7 +3,9 @@ import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Badge, Info } from '../components/ui';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
 import { progressThrough } from '../services/structureService';
-import { printSection } from '../services/scopedPrint';
+import { printFileName, printSection } from '../services/scopedPrint';
+import { printAppLogo } from '../config/branding';
+import { getRuntimeCatalog } from '../config/runtime';
 import { fmt2, clamp } from '../util/format';
 
 const COLORS = {
@@ -37,6 +39,12 @@ export function Milestones() {
       institutionLabel: d.institutionLabel,
       programmeName: d.programme?.name ?? '',
       curriculumVersion: d.curriculum?.versionName,
+      appLogo: printAppLogo(getRuntimeCatalog().appearance),
+      institutionLogo: d.university?.logo,
+      fileName: printFileName(
+        `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
+        'Milestones'
+      ),
     });
 
   const currentLevel =

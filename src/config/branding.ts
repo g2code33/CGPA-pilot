@@ -106,6 +106,14 @@ export function appLogoImage(appearance: AppAppearance | undefined): string | un
   return appearance?.logo ?? appearance?.appIcon?.image;
 }
 
+/**
+ * App logo for print sheets: the admin-uploaded logo, or the bundled default
+ * so every printout always carries the app mark.
+ */
+export function printAppLogo(appearance: AppAppearance | undefined): string {
+  return appLogoImage(appearance) ?? 'icon-512.png';
+}
+
 /** The app-name wordmark the admin set, or the default. */
 export function appName(appearance: AppAppearance | undefined): string {
   return appearance?.appName?.trim() || DEFAULT_APP_NAME;

@@ -19,6 +19,26 @@ export interface PrintBranding {
   curriculumVersion?: string;
   /** Small note distinguishing target vs projection. */
   disclaimer?: string;
+  /** App logo image (data URL or bundled path) shown in the sheet header. */
+  appLogo?: string;
+  /** University / institution logo image shown in the sheet header. */
+  institutionLogo?: string;
+  /** Default Save-as-PDF file name (browser print dialog). */
+  fileName?: string;
+}
+
+/** Build the standard save name: CGPA PILOT - <position> - <document>. */
+export function printFileName(positionLabel: string, docName: string): string {
+  return `CGPA PILOT - ${positionLabel} - ${docName}`;
+}
+
+/** Make a string safe for use as a file name. */
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 90);
 }
 
 const DEFAULT_DISCLAIMER =
@@ -43,21 +63,33 @@ function brandingHtml(b: PrintBranding): string {
     month: 'long',
     day: 'numeric',
   });
+  const appLogo = b.appLogo
+    ? `<img src="${esc(b.appLogo)}" alt="" style="width:34px;height:34px;object-fit:contain;border-radius:8px;">`
+    : '';
+  const instLogo = b.institutionLogo
+    ? `<img src="${esc(b.institutionLogo)}" alt="" style="width:34px;height:34px;object-fit:contain;border-radius:8px;">`
+    : '';
   return `
     <div class="print-brand" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-      <div>
-        <div style="font-size:18px;font-weight:900;letter-spacing:0.5px;">
-          CGPA <span style="color:#4f46e5;">PILOT</span>
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        ${appLogo}
+        <div>
+          <div style="font-size:18px;font-weight:900;letter-spacing:0.5px;">
+            CGPA <span style="color:#4f46e5;">PILOT</span>
+          </div>
+          <div style="font-style:italic;color:#64748b;font-size:10px;">Navigate Your Academic Future.</div>
+          <div style="font-weight:800;margin-top:4px;">${esc(b.title)}</div>
         </div>
-        <div style="font-style:italic;color:#64748b;font-size:10px;">Navigate Your Academic Future.</div>
-        <div style="font-weight:800;margin-top:4px;">${esc(b.title)}</div>
       </div>
-      <div style="text-align:right;font-size:10px;color:#475569;">
-        ${b.institutionLabel ? `<div style="font-weight:700;">${esc(b.institutionLabel)}</div>` : ''}
-        ${b.programmeName ? `<div>${esc(b.programmeName)}</div>` : ''}
-        <div>Curriculum: ${esc(b.curriculumVersion) || 'not published'}</div>
-        <div>${date}</div>
-        <div style="font-weight:700;color:#059669;">Anonymous · no personal data</div>
+      <div style="display:flex;align-items:flex-start;gap:10px;justify-content:flex-end;">
+        <div style="text-align:right;font-size:10px;color:#475569;">
+          ${b.institutionLabel ? `<div style="font-weight:700;">${esc(b.institutionLabel)}</div>` : ''}
+          ${b.programmeName ? `<div>${esc(b.programmeName)}</div>` : ''}
+          <div>Curriculum: ${esc(b.curriculumVersion) || 'not published'}</div>
+          <div>${date}</div>
+          <div style="font-weight:700;color:#059669;">Anonymous · no personal data</div>
+        </div>
+        ${instLogo}
       </div>
     </div>`;
 }
@@ -78,9 +110,14 @@ function ensureRoot(): HTMLElement {
 
 let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
 
-function triggerPrintAndCleanup(root: HTMLElement) {
+function triggerPrintAndCleanup(root: HTMLElement, fileName?: string) {
+  const originalTitle = document.title;
+  const pretty = fileName ? sanitizeFileName(fileName) : '';
+  if (pretty) document.title = pretty; // becomes the Save-as-PDF default name
+
   const cleanup = () => {
     root.innerHTML = '';
+    document.title = originalTitle;
     window.removeEventListener('afterprint', cleanup);
     if (cleanupTimer) clearTimeout(cleanupTimer);
   };
@@ -113,7 +150,7 @@ export function printSection(
     <div class="print-content">${clone.outerHTML}</div>
     ${disclaimerHtml(branding.disclaimer)}
   `;
-  triggerPrintAndCleanup(root);
+  triggerPrintAndCleanup(root, branding.fileName);
 }
 
 /** Print composed HTML sections (used by the full/summary reports). */
@@ -133,7 +170,7 @@ export function printHtml(
     ${body}
     ${disclaimerHtml(branding.disclaimer)}
   `;
-  triggerPrintAndCleanup(root);
+  triggerPrintAndCleanup(root, branding.fileName);
 }
 
 // ── Small HTML helpers used by the composed reports ───────────────────────

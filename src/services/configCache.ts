@@ -27,7 +27,7 @@
 // it downloaded.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { AppAppearance, CurriculumVersion, University } from '../config/types';
+import type { AppAppearance, CurriculumVersion, StudentSettings, University } from '../config/types';
 import type { CachedConfig, ConfigSource } from '../config/runtime';
 import { BUNDLED_CURRICULA, UNIVERSITIES } from '../config/context';
 
@@ -50,6 +50,7 @@ interface StoredPayload {
   universities: University[];
   curricula: CurriculumVersion[];
   appearance?: AppAppearance;
+  settings?: StudentSettings;
   version: number | null;
   updatedAt: string | null;
   source: ConfigSource;
@@ -314,7 +315,12 @@ export interface WriteOptions {
  * "null" and re-syncs on the next boot instead of believing it is current.
  */
 export async function writeCachedConfig(
-  config: { universities: University[]; curricula: CurriculumVersion[]; appearance?: AppAppearance },
+  config: {
+    universities: University[];
+    curricula: CurriculumVersion[];
+    appearance?: AppAppearance;
+    settings?: StudentSettings;
+  },
   opts: WriteOptions
 ): Promise<void> {
   const cachedAt = new Date().toISOString();
@@ -322,6 +328,7 @@ export async function writeCachedConfig(
     universities: config.universities,
     curricula: config.curricula,
     appearance: config.appearance,
+    settings: config.settings,
     version: opts.version,
     updatedAt: opts.updatedAt ?? null,
     source: opts.source ?? 'local',

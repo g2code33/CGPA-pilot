@@ -152,6 +152,19 @@ export interface InstitutionContext {
   curriculumId?: string;
 }
 
+/**
+ * Admin-controlled student permissions. Non-personal; ships with the
+ * published configuration so every student device obeys the same rules.
+ */
+export interface StudentSettings {
+  /**
+   * When true, students may override the completed / remaining credit
+   * numbers in the Target tool. Absent/false = credits are locked to the
+   * published curriculum (the default).
+   */
+  allowCreditEditing?: boolean;
+}
+
 /** A replaceable app icon: an emoji OR an uploaded image (data URL). */
 export interface AppIcon {
   /** Emoji used when no image is supplied (fallback). */

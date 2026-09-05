@@ -389,6 +389,14 @@ export function validateAdminCatalogForPublish(input: unknown): ValidationResult
   if (!structural.ok) return structural;
   const issues: string[] = [];
   validateAppearance((input as AdminCatalog).appearance, issues);
+  const st = (input as AdminCatalog).settings;
+  if (st !== undefined && st !== null) {
+    if (!isPlainObject(st)) {
+      issues.push('settings must be an object when present.');
+    } else if (st.allowCreditEditing !== undefined && typeof st.allowCreditEditing !== 'boolean') {
+      issues.push('settings.allowCreditEditing must be a boolean when present.');
+    }
+  }
   return { ok: issues.length === 0, issues };
 }
 

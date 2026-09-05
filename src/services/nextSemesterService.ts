@@ -388,3 +388,89 @@ export function whatIfGrades(
     clears: totalPoints >= requiredNextPoints - 1e-9,
   };
 }
+
+/** One reshuffled (random-but-valid) grade combination. */
+export interface ShuffledCombo {
+  assignments: GradeAssignment[];
+  totalPoints: number;
+  semesterGpa: number;
+  clears: boolean;
+}
+
+/**
+ * Produce an ALTERNATIVE target-grade mix for the same required points.
+ *
+ * Starts from the guaranteed minimal combination (the lightest one that
+ * clears the required points), then applies a handful of random single-band
+ * upgrades — so every result is a valid plan: same courses, same credits,
+ * never under the required points, but a different shape of grades. The
+ * view keeps a history of these so the student can undo / redo reshuffles.
+ */
+export function reshufflePlan(
+  courses: NextCourse[],
+  grading: GradingSystem,
+  requiredPoints: number
+): ShuffledCombo | null {
+  if (courses.length === 0) return null;
+  const bandsDesc: Band[] = [...grading.bands]
+    .sort((a, b) => b.points - a.points)
+    .map((b) => ({ grade: b.grade, points: b.points }));
+  const base = minimalCombo(courses, bandsDesc, Math.max(0, requiredPoints));
+  const required = Math.max(0, requiredPoints);
+  const totalAt = () =>
+    base.assignments.reduce(
+      (s, a) => s + a.course.creditHours * bandsDesc[a.bandIndex].points,
+      0
+    );
+  // Upgrade up to half the courses (at least one) at random for variety.
+  const upgrades = Math.max(1, Math.round(courses.length / 2));
+  let applied = 0;
+  let guard = 0;
+  while (applied < upgrades && guard++ < 200) {
+    const pick = base.assignments[Math.floor(Math.random() * base.assignments.length)];
+    if (pick.bandIndex > 0) {
+      pick.bandIndex -= 1;
+      applied++;
+    }
+  }
+  // Redistributing swap (keeps the total at/above the required points): bump
+  // one course up a band and another down a band. This keeps reshuffles from
+  // converging when the required average is close to the ceiling.
+  let swapGuard = 0;
+  while (swapGuard++ < 100) {
+    const i = Math.floor(Math.random() * base.assignments.length);
+    const j = Math.floor(Math.random() * base.assignments.length);
+    if (i === j) continue;
+    const up = base.assignments[i];
+    const down = base.assignments[j];
+    if (up.bandIndex === 0 || down.bandIndex === bandsDesc.length - 1) continue;
+    const gain =
+      up.course.creditHours *
+      (bandsDesc[up.bandIndex - 1].points - bandsDesc[up.bandIndex].points);
+    const loss =
+      down.course.creditHours *
+      (bandsDesc[down.bandIndex].points - bandsDesc[down.bandIndex + 1].points);
+    if (totalAt() + gain - loss < required - 1e-9) continue;
+    up.bandIndex -= 1;
+    down.bandIndex += 1;
+    break;
+  }
+  const assignments: GradeAssignment[] = courses.map((c, i) => {
+    const band = bandsDesc[base.assignments[i].bandIndex];
+    return {
+      code: c.code,
+      name: c.name,
+      creditHours: c.creditHours,
+      grade: band.grade,
+      points: band.points,
+    };
+  });
+  const totalPoints = assignments.reduce((s, a) => s + a.points * a.creditHours, 0);
+  const credits = courses.reduce((s, c) => s + c.creditHours, 0);
+  return {
+    assignments,
+    totalPoints,
+    semesterGpa: credits > 0 ? totalPoints / credits : 0,
+    clears: totalPoints >= Math.max(0, requiredPoints) - 1e-9,
+  };
+}

@@ -13,6 +13,7 @@
 import type {
   AppAppearance,
   CurriculumVersion,
+  StudentSettings,
   University,
 } from '../config/types';
 import type { AdminCatalog } from './catalogTypes';
@@ -158,6 +159,8 @@ export interface DistributionPayload {
   curricula: CurriculumVersion[];
   /** Optional non-personal branding/icons the admin set for the student app. */
   appearance?: AppAppearance;
+  /** Optional admin-controlled student permissions. */
+  settings?: StudentSettings;
 }
 
 /**
@@ -175,6 +178,7 @@ export function buildDistribution(catalog: AdminCatalog): DistributionPayload {
     universities: deepClone(catalog.universities),
     curricula: catalog.curricula.filter((c) => c.status === 'published').map(deepClone),
     appearance: catalog.appearance ? deepClone(catalog.appearance) : undefined,
+    settings: catalog.settings ? deepClone(catalog.settings) : undefined,
   };
 }
 

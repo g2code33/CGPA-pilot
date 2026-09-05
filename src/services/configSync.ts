@@ -201,12 +201,14 @@ export async function checkAndSync(
       universities: unknown[];
       curricula: unknown[];
       appearance?: unknown;
+      settings?: unknown;
     };
     await writeCachedConfig(
       {
         universities: payload.universities as never,
         curricula: payload.curricula as never,
         appearance: payload.appearance as never,
+        settings: payload.settings as never,
       },
       { version: latest.version ?? serverVersion, updatedAt: latest.updatedAt ?? meta.updatedAt ?? null, source: 'backend' }
     );
@@ -214,6 +216,7 @@ export async function checkAndSync(
       universities: payload.universities as never,
       curricula: payload.curricula as never,
       appearance: payload.appearance as never,
+      settings: payload.settings as never,
       version: latest.version ?? serverVersion,
       updatedAt: latest.updatedAt ?? meta.updatedAt ?? null,
       cachedAt: new Date().toISOString(),

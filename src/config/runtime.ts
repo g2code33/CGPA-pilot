@@ -12,7 +12,7 @@
 // is exclusively the published, non-personal catalog.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { AppAppearance, CurriculumVersion, University } from './types';
+import type { AppAppearance, CurriculumVersion, StudentSettings, University } from './types';
 import { SEED_CURRICULA, SEED_UNIVERSITIES } from './seed';
 
 /** Where the currently-running catalog came from. */
@@ -23,6 +23,8 @@ export interface CachedConfig {
   universities: University[];
   curricula: CurriculumVersion[];
   appearance?: AppAppearance;
+  /** Admin-controlled student permissions (locked when absent). */
+  settings?: StudentSettings;
   /** Published-config version from the backend (null = seed / local preview). */
   version: number | null;
   /** Backend updatedAt timestamp of the synced version, if any. */

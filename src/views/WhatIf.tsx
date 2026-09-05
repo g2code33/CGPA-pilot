@@ -10,7 +10,9 @@ import {
 } from '../services/scenarioService';
 import { analyzeTarget } from '../services/targetService';
 import { progressThrough } from '../services/structureService';
-import { printHtml, sectionHeading, htmlTable, TONE } from '../services/scopedPrint';
+import { printFileName, printHtml, sectionHeading, htmlTable, TONE } from '../services/scopedPrint';
+import { printAppLogo } from '../config/branding';
+import { getRuntimeCatalog } from '../config/runtime';
 import type { CourseEntry } from '../state/studentState';
 import { fmt2, clamp } from '../util/format';
 
@@ -156,6 +158,8 @@ export function WhatIf() {
     institutionLabel: d.institutionLabel,
     programmeName: d.programme?.name ?? '',
     curriculumVersion: d.curriculum?.versionName,
+    appLogo: printAppLogo(getRuntimeCatalog().appearance),
+    institutionLogo: d.university?.logo,
   };
 
   // Print ONLY the single selected scenario as a standalone one-page sheet.
@@ -183,6 +187,10 @@ export function WhatIf() {
     printHtml([{ html }], {
       ...branding,
       title: `What-If Scenario · ${s.label}`,
+      fileName: printFileName(
+        `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
+        `What-If · ${s.label}`
+      ),
     });
   }
 

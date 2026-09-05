@@ -232,3 +232,37 @@ test('combinations never use points outside the configured grading system', () =
     }
   }
 });
+
+test('reshuffle: every reshuffled plan is valid (same courses, clears required points)', () => {
+  const p = plan();
+  const codes = p.next.courses.map((c) => c.code).sort();
+  for (let i = 0; i < 25; i++) {
+    const combo = ns.reshufflePlan(p.next.courses, grading, p.requiredNextPoints);
+    assert.ok(combo, 'produces a combo');
+    // Same course set, same credits per course.
+    assert.deepEqual(combo.assignments.map((a) => a.code).sort(), codes);
+    for (const a of combo.assignments) {
+      const src = p.next.courses.find((c) => c.code === a.code);
+      assert.equal(a.creditHours, src.creditHours);
+      assert.ok(grading.bands.some((b) => b.grade === a.grade), 'grade from configured scale');
+    }
+    // Still meets the required points — a reshuffle never breaks the plan.
+    assert.ok(combo.totalPoints >= p.requiredNextPoints - 1e-9, 'clears required points');
+    assert.equal(combo.clears, true);
+  }
+});
+
+test('reshuffle: repeated reshuffles produce variety (not always identical)', () => {
+  // A lower target leaves headroom, so different valid mixes exist.
+  const p = plan({ targetCgpa: 3.0 });
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) {
+    const combo = ns.reshufflePlan(p.next.courses, grading, p.requiredNextPoints);
+    seen.add(combo.assignments.map((a) => a.grade).join('|'));
+  }
+  assert.ok(seen.size > 1, `expected variety across reshuffles, got ${seen.size} distinct mixes`);
+});
+
+test('reshuffle: returns null for an empty course list', () => {
+  assert.equal(ns.reshufflePlan([], grading, 10), null);
+});

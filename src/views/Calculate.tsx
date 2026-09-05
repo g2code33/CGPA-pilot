@@ -358,7 +358,7 @@ function StandingEditor({
           </label>
         </div>
         <div className="mt-2">
-          <span className="label">Where are you right now?</span>
+          <span className="label">Status?</span>
           <StatusPicker value={status} onChange={onStatus} />
         </div>
       </div>
