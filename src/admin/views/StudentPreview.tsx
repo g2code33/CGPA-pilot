@@ -31,7 +31,13 @@ const TOOL_META: Record<string, ToolMeta> = {
   milestones: { title: 'Milestones', tagline: 'Stage-by-stage checkpoints', emoji: '🏁', needsData: true },
 };
 const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones'];
-const FRAME_H = 600;
+// The preview is ALWAYS full phone size — a fixed 390×800 device frame
+// (standard smartphone), with the journey content scrolling inside it, at
+// every stage (game, selection, mode, home, tools).
+const FRAME_W = 390;
+const FRAME_H = 800;
+// Inner content height = frame height minus the 4px device border on each side.
+const FRAME_CONTENT_H = FRAME_H - 8;
 
 type Stage = 'game' | 'select' | 'mode' | 'home';
 type ToolId = (typeof TOOL_ORDER)[number];
@@ -100,10 +106,13 @@ export function StudentPreview() {
         </button>
       </div>
 
-      {/* Device frame */}
-      <div className="mx-auto w-full max-w-[400px] overflow-hidden rounded-[2.2rem] border-4 border-slate-800 bg-slate-100 shadow-2xl">
+      {/* Device frame — always full phone size */}
+      <div
+        className="mx-auto overflow-hidden rounded-[2.2rem] border-4 border-slate-800 bg-slate-100 shadow-2xl"
+        style={{ width: `min(${FRAME_W}px, 100%)`, height: FRAME_H }}
+      >
         {stage === 'game' && playSplash && (
-          <SkySplash key={gameKey} appearance={appearance} height={FRAME_H} onDone={() => setStage('select')} />
+          <SkySplash key={gameKey} appearance={appearance} height={FRAME_CONTENT_H} onDone={() => setStage('select')} />
         )}
 
         {stage === 'select' && (

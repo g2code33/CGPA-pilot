@@ -173,8 +173,14 @@ export function Milestones() {
             <div className="flex items-end gap-2">
               <label className="block">
                 <span className="label">Credits/sem</span>
-                <input type="number" min={1} max={30} className="input w-20 text-center font-black" value={fallbackCredits}
-                  onChange={(e) => setFallbackCredits(clamp(Math.round(Number(e.target.value) || 1), 1, 30))} />
+                {permissionOn('allowCreditEditing') ? (
+                  <input type="number" min={1} max={30} className="input w-20 text-center font-black" value={fallbackCredits}
+                    onChange={(e) => setFallbackCredits(clamp(Math.round(Number(e.target.value) || 1), 1, 30))} />
+                ) : (
+                  <p className="w-20 rounded-xl bg-slate-50 px-2 py-2 text-center font-black text-slate-700 ring-1 ring-slate-200">
+                    {fallbackCredits} <span className="text-[8px] font-bold text-brand-600">🔒</span>
+                  </p>
+                )}
               </label>
               <label className="block">
                 <span className="label">Semesters</span>

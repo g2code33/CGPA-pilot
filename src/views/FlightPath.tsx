@@ -277,16 +277,23 @@ export function FlightPathView() {
             <>
               <label className="block">
                 <span className="label">Credits / semester</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  className="input text-center font-black"
-                  value={fallbackCredits}
-                  onChange={(e) =>
-                    setFallbackCredits(clamp(Math.round(Number(e.target.value) || 1), 1, 30))
-                  }
-                />
+                {permissionOn('allowCreditEditing') ? (
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    className="input text-center font-black"
+                    value={fallbackCredits}
+                    onChange={(e) =>
+                      setFallbackCredits(clamp(Math.round(Number(e.target.value) || 1), 1, 30))
+                    }
+                  />
+                ) : (
+                  <p className="input bg-slate-50 text-center font-black text-slate-700">
+                    {fallbackCredits}{' '}
+                    <span className="align-middle text-[9px] font-bold text-brand-600">🔒 locked</span>
+                  </p>
+                )}
               </label>
               <label className="block">
                 <span className="label">Future semesters</span>

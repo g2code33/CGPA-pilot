@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle } from '../components/ui';
+import { permissionOn } from '../permissions';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { validateGpa } from '../services/gradingService';
 import { curriculumSemesterCourses } from '../services/structureService';
@@ -560,23 +561,31 @@ function CurrentStanding() {
                 ) : (
                   <label className="block rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
                     <span className="label">Results not released (credits)</span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="input text-center text-lg font-black"
-                      placeholder="e.g. 6"
-                      value={b.pendingCreditHours ? String(b.pendingCreditHours) : ''}
-                      onChange={(e) => {
-                        const v = Math.max(0, Number(e.target.value) || 0);
-                        dispatch({
-                          type: 'setBaseline',
-                          patch: { pendingCreditHours: v, pendingCourseIds: [] },
-                        });
-                      }}
-                    />
+                    {permissionOn('allowCreditEditing') ? (
+                      <input
+                        type="number"
+                        min={0}
+                        className="input text-center text-lg font-black"
+                        placeholder="e.g. 6"
+                        value={b.pendingCreditHours ? String(b.pendingCreditHours) : ''}
+                        onChange={(e) => {
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          dispatch({
+                            type: 'setBaseline',
+                            patch: { pendingCreditHours: v, pendingCourseIds: [] },
+                          });
+                        }}
+                      />
+                    ) : (
+                      <p className="rounded-xl bg-white px-3 py-2 text-center text-lg font-black text-slate-700 ring-1 ring-slate-200">
+                        {b.pendingCreditHours || 0}{' '}
+                        <span className="align-middle text-[9px] font-bold text-brand-600">🔒 locked</span>
+                      </p>
+                    )}
                     <span className="mt-1 block text-[10px] text-slate-400">
-                      The admin hasn’t published this semester’s courses yet, so enter the
-                      total credits whose results are pending.
+                      {permissionOn('allowCreditEditing')
+                        ? 'The admin hasn’t published this semester’s courses yet, so enter the total credits whose results are pending.'
+                        : '🔒 Credit editing is switched off by your administrator, so this credit count is locked.'}
                     </span>
                   </label>
                 )}

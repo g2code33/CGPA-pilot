@@ -59,6 +59,9 @@ export function WhatIf() {
   const target = state.targetCgpa ?? 3.6;
   const role = d.semesterRole;
   const period = PERIOD[role] ?? PERIOD['next-semester'];
+  // Credit counts are admin-controlled: when the permission is off, only the
+  // GPA simulation knobs stay free — every credit field below is locked.
+  const creditEditingAllowed = permissionOn('allowCreditEditing');
 
   // ── Future credit context (curriculum-driven when available) ──────────
   const nextCreditsDefault = useMemo(() => {
@@ -250,18 +253,24 @@ export function WhatIf() {
                   label="What do these credits mean?"
                 />
               </span>
-              <input
-                type="number"
-                min={1}
-                max={40}
-                className="input text-center text-lg font-black"
-                value={futureCredits ?? ncr}
-                onChange={(e) =>
-                  setFutureCredits(
-                    e.target.value === '' ? null : Math.max(1, Number(e.target.value) || 1)
-                  )
-                }
-              />
+              {creditEditingAllowed ? (
+                <input
+                  type="number"
+                  min={1}
+                  max={40}
+                  className="input text-center text-lg font-black"
+                  value={futureCredits ?? ncr}
+                  onChange={(e) =>
+                    setFutureCredits(
+                      e.target.value === '' ? null : Math.max(1, Number(e.target.value) || 1)
+                    )
+                  }
+                />
+              ) : (
+                <p className="rounded-xl bg-slate-50 px-3 py-2 text-center text-lg font-black text-slate-700 ring-1 ring-slate-200">
+                  {ncr} <span className="align-middle text-[9px] font-bold text-brand-600">🔒 locked</span>
+                </p>
+              )}
             </label>
             <label className="block">
               <span className="label flex items-center gap-1">
@@ -271,18 +280,24 @@ export function WhatIf() {
                   label="What does remaining mean?"
                 />
               </span>
-              <input
-                type="number"
-                min={0}
-                max={400}
-                className="input text-center text-lg font-black"
-                value={remaining ?? rem}
-                onChange={(e) =>
-                  setRemaining(
-                    e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0)
-                  )
-                }
-              />
+              {creditEditingAllowed ? (
+                <input
+                  type="number"
+                  min={0}
+                  max={400}
+                  className="input text-center text-lg font-black"
+                  value={remaining ?? rem}
+                  onChange={(e) =>
+                    setRemaining(
+                      e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0)
+                    )
+                  }
+                />
+              ) : (
+                <p className="rounded-xl bg-slate-50 px-3 py-2 text-center text-lg font-black text-slate-700 ring-1 ring-slate-200">
+                  {rem} <span className="align-middle text-[9px] font-bold text-brand-600">🔒 locked</span>
+                </p>
+              )}
             </label>
             <label className="block col-span-2 sm:col-span-1">
               <span className="label">{period.ask}: {activeCustom.toFixed(2)}</span>
@@ -452,6 +467,7 @@ export function WhatIf() {
 function PendingGradesCard() {
   const d = useDerived();
   const { record, grading, classification } = d;
+  const creditEditingAllowed = permissionOn('allowCreditEditing');
 
   const pendingCourses = useMemo(
     () => collectPending(d.state.semesters),
@@ -559,6 +575,8 @@ function PendingGradesCard() {
                 max={12}
                 className="input col-span-2 text-center"
                 value={c.creditHours}
+                disabled={!creditEditingAllowed}
+                title={creditEditingAllowed ? '' : '🔒 Credit editing is switched off by your administrator'}
                 onChange={(e) =>
                   patchHypo(c.id, {
                     creditHours: Math.max(1, Number(e.target.value) || 1),
