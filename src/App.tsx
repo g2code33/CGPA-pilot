@@ -50,7 +50,6 @@ const TOOLS: {
   title: string;
   tagline: string;
   emoji: string;
-  grad: string;
   needsData: boolean;
 }[] = [
   {
@@ -59,7 +58,6 @@ const TOOLS: {
     emoji: '📝',
     title: 'My results',
     tagline: 'Enter grades & see your confirmed CGPA',
-    grad: 'from-slate-700 to-slate-900',
     needsData: false,
   },
   {
@@ -68,7 +66,6 @@ const TOOLS: {
     emoji: '🎯',
     title: 'Target',
     tagline: 'Pick a goal — see if it is reachable',
-    grad: 'from-brand-600 to-indigo-700',
     needsData: true,
   },
   {
@@ -77,7 +74,6 @@ const TOOLS: {
     emoji: '▶️',
     title: 'Next Semester',
     tagline: 'Grades you need to stay on track',
-    grad: 'from-emerald-600 to-teal-700',
     needsData: true,
   },
   {
@@ -86,7 +82,6 @@ const TOOLS: {
     emoji: '🔀',
     title: 'What-If',
     tagline: 'Try different future GPAs',
-    grad: 'from-violet-600 to-purple-700',
     needsData: true,
   },
   {
@@ -95,7 +90,6 @@ const TOOLS: {
     emoji: '🛩️',
     title: 'Flight Path',
     tagline: 'Your route to graduation',
-    grad: 'from-sky-600 to-blue-700',
     needsData: true,
   },
   {
@@ -104,7 +98,6 @@ const TOOLS: {
     emoji: '🏁',
     title: 'Milestones',
     tagline: 'Stage-by-stage checkpoints',
-    grad: 'from-orange-500 to-amber-600',
     needsData: true,
   },
 ];
@@ -183,8 +176,8 @@ export default function App() {
           🎮 Play
         </button>
         <div className="w-full max-w-md py-8 text-center">
-          <div className="mx-auto mb-6 h-24 w-24 rounded-[2rem] bg-white/10 backdrop-blur ring-2 ring-white/20 shadow-2xl shadow-brand-900/30 flex items-center justify-center">
-            <AppLogoImg appearance={appearance} className="h-16 w-16 rounded-2xl shadow-lg" alt="CGPA Pilot" />
+          <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center">
+            <AppLogoImg appearance={appearance} className="h-20 w-20 object-contain drop-shadow-xl" alt="CGPA Pilot" />
           </div>
           <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-xl">
             {appearance?.appName?.trim() ? (
@@ -221,7 +214,7 @@ export default function App() {
               <span className="block text-xs font-medium opacity-90">Current level + CGPA to begin</span>
             </button>
             <button onClick={() => { dispatch({ type: 'setInputMode', inputMode: 'history' }); setModeSelected('history'); }} className="w-full rounded-2xl bg-white px-5 py-4 text-left text-base font-black text-brand-600 ring-1 ring-brand-200 shadow-sm hover:bg-brand-50 active:scale-[0.98] transition">
-              📚 CGPA History
+              CGPA History
               <span className="block text-xs font-medium opacity-80">Enter each level for advance planning</span>
             </button>
           </div>
@@ -479,12 +472,8 @@ export default function App() {
                       : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
                   }`}
                 >
-                  <span
-                    // Fixed badge: a custom image at its chosen size overflows
-                    // this box visually, but never moves the tile or its text.
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-base text-white shadow ${t.grad}`}
-                  >
-                    <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} />
+                  <span className="grid w-8 shrink-0 place-items-center text-2xl leading-none">
+                    <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-extrabold leading-tight text-slate-900">

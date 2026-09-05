@@ -72,7 +72,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
       <div className="no-print grid grid-cols-1 gap-2 sm:grid-cols-3">
         {[
           { id: 'quick' as const, icon: '⚡', title: 'Quick mode', hint: 'Current level + CGPA' },
-          { id: 'history' as const, icon: '📚', title: 'GPA History', hint: 'Enter each semester GPA' },
+          { id: 'history' as const, icon: '', title: 'GPA History', hint: 'Enter each semester GPA' },
           { id: 'planning' as const, icon: '🗺️', title: 'Planning mode', hint: 'Target + future scenarios' },
         ].map((m) => (
           <button

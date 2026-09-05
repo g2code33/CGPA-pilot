@@ -15,7 +15,7 @@
 //
 // Bump `CACHE` whenever you change this file's caching rules; old caches are
 // deleted on activate so devices pick up the new rules immediately.
-const CACHE = 'cgpa-pilot-v5';
+const CACHE = 'cgpa-pilot-v6';
 
 const SHELL = [
   './',
@@ -23,6 +23,7 @@ const SHELL = [
   './admin.html',
   './manifest.webmanifest',
   './icon-512.png',
+  './app-icon',
 ];
 
 self.addEventListener('install', (event) => {
@@ -52,6 +53,38 @@ self.addEventListener('fetch', (event) => {
     if (new URL(request.url).pathname.startsWith('/api/')) return;
   } catch {
     /* non-URL request — fall through to normal handling */
+  }
+
+  // PWA identity (manifest + app icon) → NETWORK-FIRST: the admin can
+  // rebrand the app at any time, so the next launch must show the new logo.
+  // Offline we fall back to the last cached identity — never the app shell.
+  let identityPath = null;
+  try {
+    const p = new URL(request.url).pathname;
+    if (p === '/manifest.webmanifest' || p === '/app-icon') identityPath = p;
+  } catch {
+    /* non-URL request — ignore */
+  }
+  if (identityPath) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+          return res;
+        })
+        .catch(() =>
+          caches.match(request).then(
+            (cached) =>
+              cached ||
+              (identityPath === '/app-icon'
+                ? caches.match('./icon-512.png')
+                : Promise.resolve(undefined))
+          )
+        )
+        .then((res) => res || new Response('PWA identity unavailable offline', { status: 503, statusText: 'Offline' }))
+    );
+    return;
   }
 
   // Navigation / page requests → NETWORK-FIRST (fresh build when online).

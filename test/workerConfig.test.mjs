@@ -262,3 +262,54 @@ test('without an ASSETS binding non-API routes 404 (API-only deployment)', async
   const res = await worker.fetch(req('/index.html'), env());
   assert.equal(res.status, 404);
 });
+
+// ── PWA identity (manifest + app icon) ────────────────────────────────────
+// The admin-set app logo must reach the browser tab + the installed PWA
+// (desktop) icon: the Worker serves /manifest.webmanifest and /app-icon
+// from the PUBLISHED catalog, falling back to the bundled icon.
+
+test('PWA identity: manifest + /app-icon reflect the admin-set logo', async () => {
+  const e = env();
+  const LOGO_B64 = Buffer.from('fake-png-bytes-for-test').toString('base64');
+  const catalog = {
+    ...makeValidCatalog(),
+    appearance: { appName: 'Sky CGPA', logo: `data:image/png;base64,${LOGO_B64}` },
+  };
+  assert.equal((await publish(e, catalog)).status, 200);
+
+  const m = await worker.fetch(req('/manifest.webmanifest'), e);
+  assert.equal(m.status, 200);
+  assert.match(m.headers.get('content-type') ?? '', /application\/manifest\+json/);
+  assert.match(m.headers.get('cache-control') ?? '', /no-store/);
+  const doc = await m.json();
+  assert.equal(doc.short_name, 'Sky CGPA');
+  assert.ok(doc.name.startsWith('Sky CGPA'));
+  assert.ok(doc.icons.some((i) => i.src === '/app-icon' && i.purpose === 'any' && i.type === 'image/png'));
+  assert.ok(doc.icons.some((i) => i.src === '/app-icon' && i.purpose === 'maskable'));
+
+  const ic = await worker.fetch(req('/app-icon'), e);
+  assert.equal(ic.status, 200);
+  assert.equal(ic.headers.get('content-type'), 'image/png');
+  assert.match(ic.headers.get('cache-control') ?? '', /max-age=300/);
+  assert.equal(Buffer.from(await ic.arrayBuffer()).toString('base64'), LOGO_B64);
+});
+
+test('PWA identity without a custom logo keeps the bundled icon', async () => {
+  const e = env();
+  assert.equal((await publish(e, makeValidCatalog())).status, 200);
+
+  const doc = await (await worker.fetch(req('/manifest.webmanifest'), e)).json();
+  assert.ok(doc.icons.every((i) => i.src === 'icon-512.png'));
+
+  // /app-icon falls through to the static default icon asset.
+  e.ASSETS = { fetch: (request) => Promise.resolve(new Response(`static:${new URL(request.url).pathname}`)) };
+  const ic = await worker.fetch(req('/app-icon'), e);
+  assert.equal(ic.status, 200);
+  assert.equal(await ic.text(), 'static:/icon-512.png');
+});
+
+test('PWA identity before any publish still answers (bundled defaults)', async () => {
+  const doc = await (await worker.fetch(req('/manifest.webmanifest'), env())).json();
+  assert.equal(doc.short_name, 'CGPA Pilot');
+  assert.ok(doc.icons.every((i) => i.src === 'icon-512.png'));
+});

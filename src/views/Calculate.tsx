@@ -224,7 +224,7 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
           {helpOpen ? '✕' : '💡'}
         </button>
         <p className="text-[11px] font-bold text-slate-500">
-          {state.inputMode === 'quick' ? 'Quick mode' : '📚 CGPA History'}
+          {state.inputMode === 'quick' ? 'Quick mode' : 'CGPA History'}
         </p>
         <button
           onClick={() => dispatch({ type: 'setInputMode', inputMode: state.inputMode === 'quick' ? 'history' : 'quick' })}
@@ -720,7 +720,6 @@ function HistoryMode() {
 
       <Card>
         <SectionTitle
-          icon="📚"
           title="Enter CGPA per completed level"
           subtitle="Type the CGPA for each level you have finished."
         />

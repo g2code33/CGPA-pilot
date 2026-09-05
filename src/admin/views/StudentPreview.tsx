@@ -305,10 +305,7 @@ function ModeScreen({ appearance, onPick }: { appearance?: AppAppearance; onPick
           <span className="block text-xs font-medium opacity-90">Current level + CGPA to begin</span>
         </button>
         <button onClick={() => onPick('history')} className="w-full rounded-2xl bg-white px-5 py-4 text-left text-base font-black text-brand-600 ring-1 ring-brand-200 shadow-sm transition hover:bg-brand-50 active:scale-[0.98]">
-          <span className="inline-flex items-center gap-2">
-            <AppGlyph appearance={appearance} slot="historymode" fallback="📚" size={20} />
-            CGPA History
-          </span>
+          <span className="inline-flex items-center gap-2">CGPA History</span>
           <span className="block text-xs font-medium opacity-80">Enter each level for advance planning</span>
         </button>
       </div>
@@ -430,7 +427,7 @@ function HomeScreen(props: {
                     disabled ? 'bg-slate-100 opacity-70 ring-slate-200' : 'bg-white shadow-sm ring-slate-200 active:scale-[0.99]'
                   }`}
                 >
-                  <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-brand-600 to-indigo-700 text-white shadow">
+                  <span className="grid w-9 shrink-0 place-items-center text-2xl leading-none">
                     <AppGlyph appearance={appearance} slot={id} fallback={m.emoji} size={24} />
                   </span>
                   <span className="min-w-0 flex-1 text-left">

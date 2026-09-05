@@ -272,11 +272,11 @@ export function SkySplash({
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-4">
         <div className="flex items-center gap-2">
           {logo ? (
-            <img src={logo} alt="app logo" className="h-9 w-9 rounded-xl bg-white/90 object-contain p-0.5 shadow ring-1 ring-white/30" />
+            <img src={logo} alt="app logo" className="h-9 w-9 object-contain drop-shadow" />
           ) : glyph ? (
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/15 text-xl ring-1 ring-white/25">{glyph}</span>
+            <span className="text-3xl leading-none drop-shadow">{glyph}</span>
           ) : (
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/15 text-sm font-black uppercase ring-1 ring-white/25">CP</span>
+            <span className="text-sm font-black uppercase drop-shadow">CP</span>
           )}
           <div>
             <p className="text-sm font-black uppercase tracking-wide drop-shadow">
@@ -323,7 +323,7 @@ export function SkySplash({
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={skip}
-            className="pointer-events-auto rounded-full bg-white/15 px-4 py-1.5 text-[11px] font-black uppercase tracking-wide ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25 active:scale-95"
+            className="pointer-events-auto rounded-full bg-white/20 px-6 py-2.5 text-xs font-black uppercase tracking-wide ring-1 ring-white/40 backdrop-blur transition hover:bg-white/30 active:scale-95"
           >
             ⏭ Skip
           </button>

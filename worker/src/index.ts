@@ -457,6 +457,98 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
   return json({ error: 'not-found', message: `Unknown API path: ${path}` }, 404);
 }
 
+// ── PWA identity (dynamic manifest + app icon) ───────────────────────────
+// The app logo the admin sets must be reflected EVERYWHERE the app identity
+// appears — including the browser tab icon and the installed PWA icon (the
+// desktop shortcut / standalone window). Those come from the manifest + an
+// icon file, so both are served from the PUBLISHED catalog: the admin's logo
+// when set, the bundled icon-512.png otherwise.
+
+/** Parse a `data:image/png|jpeg;base64,...` URL into mime + bytes. */
+function dataUrlInfo(dataUrl: string | undefined): { mime: string; bytes: Uint8Array } | null {
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) return null;
+  const semi = dataUrl.indexOf(';');
+  const comma = dataUrl.indexOf(',');
+  if (semi === -1 || comma === -1 || comma < semi) return null;
+  const mime = dataUrl.slice(5, semi);
+  if (!mime.endsWith('png') && !mime.endsWith('jpeg')) return null;
+  try {
+    const bin = atob(dataUrl.slice(comma + 1));
+    if (!bin.length) return null;
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { mime, bytes };
+  } catch {
+    return null;
+  }
+}
+
+/** The published catalog's appearance block (null until first publish). */
+async function publishedAppearance(env: Env): Promise<{ logo?: string; appName?: string; tagline?: string } | null> {
+  if (!env.CONFIG_DB) return null;
+  try {
+    const doc = await readPublished(env.CONFIG_DB);
+    return (doc?.payload.appearance as { logo?: string; appName?: string; tagline?: string } | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function handlePwaIdentity(url: URL, req: Request, env: Env): Promise<Response> {
+  const appearance = await publishedAppearance(env);
+  const logoInfo = dataUrlInfo(appearance?.logo);
+
+  if (url.pathname === '/app-icon') {
+    if (logoInfo) {
+      return new Response(logoInfo.bytes, {
+        status: 200,
+        headers: { 'content-type': logoInfo.mime, 'cache-control': 'public, max-age=300' },
+      });
+    }
+    // No custom logo → the bundled default icon (static asset).
+    if (env.ASSETS) {
+      const res = await env.ASSETS.fetch(new Request(new URL('icon-512.png', url.href).href));
+      return new Response(res.body, {
+        status: res.ok ? 200 : 404,
+        headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=300' },
+      });
+    }
+    return new Response(null, { status: 404 });
+  }
+
+  // manifest.webmanifest — app name follows the admin branding, and the
+  // icons point at /app-icon (admin logo) or the bundled default.
+  const appName = appearance?.appName?.trim() || 'CGPA Pilot';
+  const manifest = {
+    name: appearance?.appName?.trim()
+      ? `${appName} — Navigate Your Academic Future`
+      : 'CGPA Pilot — Navigate Your Academic Future',
+    short_name: appName,
+    description:
+      appearance?.tagline?.trim() ||
+      'Offline-first CGPA calculator, target planner and flight-path tool. No account, no tracking, nothing stored.',
+    start_url: './',
+    scope: './',
+    display: 'standalone',
+    orientation: 'portrait',
+    background_color: '#eef2f7',
+    theme_color: '#4f46e5',
+    icons: logoInfo
+      ? [
+          { src: '/app-icon', sizes: 'any', type: logoInfo.mime, purpose: 'any' },
+          { src: '/app-icon', sizes: 'any', type: logoInfo.mime, purpose: 'maskable' },
+        ]
+      : [
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+  };
+  return new Response(JSON.stringify(manifest), {
+    status: 200,
+    headers: { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────
 
 export default {
@@ -477,6 +569,15 @@ export default {
     if (url.pathname.startsWith('/api/')) {
       try {
         return await handleApi(req, url, env);
+      } catch {
+        return json({ ok: false, error: 'internal', message: 'Unexpected server error.' }, 500);
+      }
+    }
+
+    // PWA identity: dynamic manifest + app icon (admin branding).
+    if (url.pathname === '/manifest.webmanifest' || url.pathname === '/app-icon') {
+      try {
+        return await handlePwaIdentity(url, req, env);
       } catch {
         return json({ ok: false, error: 'internal', message: 'Unexpected server error.' }, 500);
       }

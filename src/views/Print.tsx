@@ -115,7 +115,7 @@ export function PrintView() {
       ready: m.hasData,
     },
     {
-      icon: '📚',
+      icon: '',
       title: 'Print Full Report',
       desc: 'Combines summary, flight path & milestones, next-semester plan and pilot brief into one A4 multi-page report.',
       run: () => printHtml(fullReport(m), { ...branding, title: 'Full Report', fileName: printFileName(posLabel, 'Full Report') }),
@@ -139,7 +139,7 @@ export function PrintView() {
               disabled={!o.ready}
               className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="text-xl">{o.icon}</span>
+              {o.icon && <span className="text-xl">{o.icon}</span>}
               <span>
                 <span className="block text-sm font-extrabold text-slate-800">{o.title}</span>
                 <span className="block text-[11px] leading-snug text-slate-500">{o.desc}</span>

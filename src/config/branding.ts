@@ -93,6 +93,24 @@ export function iconGlyph(icon: AppIcon | undefined, fallbackEmoji: string): str
   return icon.image || icon.emoji || fallbackEmoji;
 }
 
+/**
+ * Point the browser tab icon at the admin-set app logo (data URL) so the
+ * "preview in the web browser" matches the branding. Keeps the bundled
+ * icon when the admin has not set a logo (or on non-browser runtimes).
+ */
+export function applyBrandFavicon(appearance: AppAppearance | undefined): void {
+  if (typeof document === 'undefined') return;
+  const logo = appLogoImage(appearance);
+  if (!logo) return;
+  const link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+  if (!link) return;
+  link.setAttribute(
+    'type',
+    logo.startsWith('data:image/jpeg') || logo.startsWith('data:image/jpg') ? 'image/jpeg' : 'image/png'
+  );
+  link.setAttribute('href', logo);
+}
+
 /** Default product wordmark when the admin has not overridden it. */
 export const DEFAULT_APP_NAME = 'CGPA Pilot';
 export const DEFAULT_TAGLINE = 'Navigate Your Academic Future.';

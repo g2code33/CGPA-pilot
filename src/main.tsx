@@ -8,6 +8,8 @@ import {
   bootStudentConfig,
   startBackgroundConfigSync,
 } from './services/configSync';
+import { applyBrandFavicon } from './config/branding';
+import { getRuntimeCatalog } from './config/runtime';
 import './index.css';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -61,6 +63,11 @@ async function main() {
   // Defensive: boot must never block the app — on any unexpected failure the
   // runtime catalog still holds a valid (cached/seed) configuration.
   console.info('[config]', outcome ? `boot sync: ${outcome.status}` : 'boot sync skipped (local config only)');
+
+  // Browser tab icon = the admin-set app logo (keeps the bundled icon when
+  // the admin has not set one). PWA/desktop icon: served dynamically by the
+  // Worker (manifest + /app-icon) and refreshed on the next app launch.
+  applyBrandFavicon(getRuntimeCatalog().appearance);
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
