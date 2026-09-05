@@ -266,3 +266,35 @@ test('reshuffle: repeated reshuffles produce variety (not always identical)', ()
 test('reshuffle: returns null for an empty course list', () => {
   assert.equal(ns.reshufflePlan([], grading, 10), null);
 });
+
+test('smart reshuffles: every returned plan is valid and distinct', () => {
+  // A mid target leaves headroom, so the different strategies produce
+  // different shapes of plan. (At a ceiling target they legitimately
+  // converge on the single plan that clears.)
+  const p = plan({ targetCgpa: 3.0 });
+  const combos = ns.smartReshuffles(p.next.courses, grading, p.requiredNextPoints);
+  assert.ok(combos.length >= 3, `expected several smart plans, got ${combos.length}`);
+  const codes = p.next.courses.map((c) => c.code).sort();
+  const keys = new Set();
+  for (const c of combos) {
+    assert.ok(c.totalPoints >= p.requiredNextPoints - 1e-9, 'clears required points');
+    assert.equal(c.clears, true);
+    assert.deepEqual(c.assignments.map((a) => a.code).sort(), codes, 'same courses');
+    const key = c.assignments.map((a) => a.grade).join('|');
+    assert.ok(!keys.has(key), 'plans are distinct');
+    keys.add(key);
+  }
+});
+
+test('smart reshuffles: a high target still yields only valid plans', () => {
+  const p = plan({ targetCgpa: 3.9 });
+  const combos = ns.smartReshuffles(p.next.courses, grading, p.requiredNextPoints);
+  assert.ok(combos.length >= 1);
+  for (const c of combos) {
+    assert.ok(c.totalPoints >= p.requiredNextPoints - 1e-9, 'never under the required points');
+  }
+});
+
+test('smart reshuffles: empty course list yields nothing', () => {
+  assert.deepEqual(ns.smartReshuffles([], grading, 10), []);
+});

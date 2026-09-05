@@ -207,6 +207,35 @@ export function Overview({
         <Stat label="Curricula" value={catalog.curricula.length} />
       </div>
 
+      {/* Student permissions — kept near the top so it's always easy to find */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
+        <h2 className="text-sm font-bold text-slate-800">Student permissions</h2>
+        <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200">
+          <span className="text-xs font-bold text-slate-700">
+            Students can edit their credits (completed / remaining)
+          </span>
+          <input
+            type="checkbox"
+            checked={!!catalog.settings?.allowCreditEditing}
+            onChange={(e) => {
+              setCatalog({
+                ...catalog,
+                settings: { ...(catalog.settings ?? {}), allowCreditEditing: e.target.checked || undefined },
+              });
+              flash(
+                e.target.checked
+                  ? 'Credit editing unlocked for students — remembered after Save & Publish.'
+                  : 'Credits locked to the published curriculum again — remembered after Save & Publish.'
+              );
+            }}
+            className="h-5 w-5 shrink-0 accent-brand-600"
+          />
+        </label>
+        <p className="mt-1.5 text-[11px] text-slate-500">
+          Off = every calculation uses the published curriculum’s credits only.
+        </p>
+      </div>
+
       {/* ── Publish / backend (the permanent store) ─────────────────────── */}
       <div className="rounded-2xl bg-gradient-to-r from-brand-700 to-indigo-800 p-4 text-white shadow-sm ring-1 ring-brand-300/30 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -440,35 +469,6 @@ export function Overview({
             {passBusy ? 'Updating…' : 'Update'}
           </button>
         </form>
-      </div>
-
-      {/* Student permissions */}
-      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
-        <h2 className="text-sm font-bold text-slate-800">Student permissions</h2>
-        <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200">
-          <span className="text-xs font-bold text-slate-700">
-            Students can edit their credits (completed / remaining)
-          </span>
-          <input
-            type="checkbox"
-            checked={!!catalog.settings?.allowCreditEditing}
-            onChange={(e) => {
-              setCatalog({
-                ...catalog,
-                settings: { ...(catalog.settings ?? {}), allowCreditEditing: e.target.checked || undefined },
-              });
-              flash(
-                e.target.checked
-                  ? 'Credit editing unlocked for students — remembered after Save & Publish.'
-                  : 'Credits locked to the published curriculum again — remembered after Save & Publish.'
-              );
-            }}
-            className="h-5 w-5 shrink-0 accent-brand-600"
-          />
-        </label>
-        <p className="mt-1.5 text-[11px] text-slate-500">
-          Off = every calculation uses the published curriculum’s credits only.
-        </p>
       </div>
 
       <button

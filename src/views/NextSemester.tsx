@@ -5,6 +5,7 @@ import {
   nextSemesterAfter,
   planNextSemester,
   reshufflePlan,
+  smartReshuffles,
   whatIfGrades,
   type ShuffledCombo,
 } from '../services/nextSemesterService';
@@ -134,9 +135,20 @@ export function NextSemester() {
     setShuffleIndex(-1);
   }, [plan.requiredNextPoints, plan.next.credits, plan.status, showWhatIf, comboId]);
 
+  // The smart set of distinct valid plans (credit-focused, small-course
+  // focused, balanced, uniform, cushion). Reshuffle cycles through the
+  // unused ones, then falls back to fresh random-but-valid mixes.
+  const smartSet = useMemo(
+    () => smartReshuffles(plan.next.courses, grading, plan.requiredNextPoints ?? 0),
+    [plan.next.courses, grading, plan.requiredNextPoints]
+  );
+
   function doReshuffle() {
     if (plan.requiredNextPoints === null) return;
-    const combo = reshufflePlan(plan.next.courses, grading, plan.requiredNextPoints);
+    const used = new Set(shuffleHistory.map((h) => h.assignments.map((a) => a.grade).join('|')));
+    const combo =
+      smartSet.find((c) => !used.has(c.assignments.map((a) => a.grade).join('|'))) ??
+      reshufflePlan(plan.next.courses, grading, plan.requiredNextPoints);
     if (!combo) return;
     const keep = shuffleHistory.slice(0, shuffleIndex + 1); // drop any redo tail
     setShuffleHistory([...keep, combo]);

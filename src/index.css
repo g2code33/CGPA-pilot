@@ -239,3 +239,35 @@ body {
   0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
   100% { opacity: 0; transform: translate(-50%, -170%) scale(1.25); }
 }
+
+/* ── Very visible scrollbars ─────────────────────────────────────────────
+   Any area that scrolls (the app frame, tables, side panes) gets a thick,
+   high-contrast scrollbar so users can always find it and drag it. */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: #4f46e5 #e2e8f0; /* Firefox: thumb / track */
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+::-webkit-scrollbar-thumb {
+  background: #4f46e5;
+  border: 3px solid #e2e8f0;
+  border-radius: 999px;
+  min-height: 40px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4338ca;
+}
+::-webkit-scrollbar-corner {
+  background: #e2e8f0;
+}
+/* Dark sections (hero/print sheets, Sky Dash) — keep the bar readable. */
+.bg-gradient-to-br ::-webkit-scrollbar-track,
+.bg-slate-900 ::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.25);
+}

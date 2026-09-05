@@ -377,6 +377,13 @@ export function Target() {
             <p className="mt-1 text-[11px] font-semibold text-brand-700">credits remaining</p>
           </div>
         </div>
+        {!creditEditingAllowed && (
+          <p className="mt-2.5 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600 ring-1 ring-slate-200">
+            🔒 Only the curriculum’s credit counts are locked. Still free to
+            change: your CGPA values, your target, and the What-If scenario
+            numbers (simulations only — they never touch your confirmed math).
+          </p>
+        )}
         {creditEditingAllowed && (
           <>
             <button
