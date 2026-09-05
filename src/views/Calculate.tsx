@@ -222,7 +222,7 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
           {helpOpen ? '✕' : '💡'}
         </button>
         <p className="text-[11px] font-bold text-slate-500">
-          {state.inputMode === 'quick' ? '⚡ Quick mode' : '📚 CGPA History'}
+          {state.inputMode === 'quick' ? 'Quick mode' : '📚 CGPA History'}
         </p>
         <button
           onClick={() => dispatch({ type: 'setInputMode', inputMode: state.inputMode === 'quick' ? 'history' : 'quick' })}
@@ -305,7 +305,7 @@ function StandingEditor({
   onChanged,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   info?: ReactNode;
   status: StandingStatus;
   onStatus: (s: StandingStatus) => void;
@@ -321,7 +321,7 @@ function StandingEditor({
 
   return (
     <Card>
-      <SectionTitle icon="📍" title={title} subtitle={subtitle} info={info} />
+      <SectionTitle title={title} subtitle={subtitle} info={info} />
       <div className="rounded-2xl bg-slate-50/70 p-3 ring-1 ring-slate-200">
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
@@ -446,7 +446,6 @@ function CurrentStanding() {
     <div className="space-y-3">
       <StandingEditor
         title="Your standing"
-        subtitle="Pick the semester you’re in now."
         status={status}
         onStatus={applyStanding}
         onChanged={() => setTagged(new Set())}
@@ -455,7 +454,6 @@ function CurrentStanding() {
 
       <Card>
         <SectionTitle
-          icon="🎓"
           title="Your current CGPA"
           subtitle={
             status === 'released'

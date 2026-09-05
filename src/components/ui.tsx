@@ -21,7 +21,7 @@ export function SectionTitle({
   info,
   infoLabel,
 }: {
-  icon: string;
+  icon?: string;
   title: string;
   subtitle?: ReactNode;
   /** Longer "how to use / what does this mean" help, shown behind the info icon. */
@@ -33,7 +33,7 @@ export function SectionTitle({
     <div className="mb-3">
       <div className="flex items-center gap-2">
         <h2 className="flex min-w-0 flex-1 items-center gap-2 text-sm font-extrabold text-slate-800">
-          <span className="text-base">{icon}</span>
+          {icon && <span className="text-base">{icon}</span>}
           <span className="truncate">{title}</span>
         </h2>
         {info && (

@@ -264,15 +264,6 @@ export function NextSemester() {
                   Required GPA <strong className="text-brand-700">{fmt2(plan.requiredNextGpa)}</strong> · Target {plan.targetClassLabel}
                 </p>
               </div>
-              <Info className="shrink-0" label="About these targets">
-                The <strong>target grades</strong> below are mathematically derived from
-                your configured grading scale and each course’s credits — the easiest
-                realistic combination that lands your required semester GPA.
-                <br />
-                <br />
-                They are <strong>planning targets, not predicted grades</strong>.
-                Nothing is saved.
-              </Info>
             </div>
 
             {plan.combos.length > 0 && (
