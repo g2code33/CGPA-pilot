@@ -393,8 +393,31 @@ export function validateAdminCatalogForPublish(input: unknown): ValidationResult
   if (st !== undefined && st !== null) {
     if (!isPlainObject(st)) {
       issues.push('settings must be an object when present.');
-    } else if (st.allowCreditEditing !== undefined && typeof st.allowCreditEditing !== 'boolean') {
-      issues.push('settings.allowCreditEditing must be a boolean when present.');
+    } else {
+      if (st.allowCreditEditing !== undefined && typeof st.allowCreditEditing !== 'boolean') {
+        issues.push('settings.allowCreditEditing must be a boolean when present.');
+      }
+      const it = st.ideaTips;
+      if (it !== undefined && it !== null) {
+        if (!isPlainObject(it)) {
+          issues.push('settings.ideaTips must be an object when present.');
+        } else {
+          if (it.enabled !== undefined && typeof it.enabled !== 'boolean') {
+            issues.push('settings.ideaTips.enabled must be a boolean when present.');
+          }
+          if (it.texts !== undefined && it.texts !== null) {
+            if (!isPlainObject(it.texts)) {
+              issues.push('settings.ideaTips.texts must be an object when present.');
+            } else {
+              for (const [k, v] of Object.entries(it.texts)) {
+                if (typeof v !== 'string') {
+                  issues.push(`settings.ideaTips.texts.${k} must be a string.`);
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
   return { ok: issues.length === 0, issues };

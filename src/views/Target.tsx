@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useDerived } from '../state/derived';
 import { getRuntimeCatalog } from '../config/runtime';
-import { Card, Info, SectionTitle } from '../components/ui';
+import { ideaTip } from '../infoTips';
+import { Card, Info, SectionTitle, TipIcon } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { analyzeTarget, type TargetAnalysis } from '../services/targetService';
 import { fmt2 } from '../util/format';
@@ -350,9 +351,7 @@ export function Target() {
             )}
             <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-500">
               credits completed
-              <Info compact label="What is credits completed">
-                Credits you have finished and that count in your CGPA right now.
-              </Info>
+              <TipIcon tip={ideaTip('target.creditsCompleted')} label="What is credits completed" />
             </p>
             {creditEditingAllowed ? (
               curriculumCompleted !== null && completed === null && (
@@ -381,9 +380,7 @@ export function Target() {
             )}
             <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-brand-700">
               credits remaining
-              <Info compact label="What is credits remaining">
-                Credits still to go before you graduate.
-              </Info>
+              <TipIcon tip={ideaTip('target.creditsRemaining')} label="What is credits remaining" />
             </p>
           </div>
         </div>
@@ -443,14 +440,14 @@ export function Target() {
               label="Current CGPA"
               value={fmt2(analysis.currentCgpa)}
               tone="slate"
-              info="Your confirmed CGPA so far. It is the starting point of everything here."
+              info={ideaTip('target.currentCgpa')}
             />
             <Metric
               label="Target"
               value={fmt2(analysis.targetCgpa)}
               sub={clsLabel ?? undefined}
               tone="brand"
-              info="The CGPA you want to finish with. It is a goal you set, not a prediction."
+              info={ideaTip('target.target')}
             />
             <Metric
               label="What you need"
@@ -463,14 +460,14 @@ export function Target() {
                     ? 'slate'
                     : 'amber'
               }
-              info="The average you must keep from now until graduation to reach your target."
+              info={ideaTip('target.whatYouNeed')}
             />
             <Metric
               label="Best possible final CGPA"
               value={analysis.status === 'impossible' ? fmt3(analysis.maxFinalCgpa) : fmt2(analysis.maxFinalCgpa)}
               sub={analysis.status === 'impossible' ? 'even with perfect grades' : undefined}
               tone="slate"
-              info="The highest CGPA you can still get — top grade in every credit you still have."
+              info={ideaTip('target.bestPossible')}
             />
           </div>
         )}

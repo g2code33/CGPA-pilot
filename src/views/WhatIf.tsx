@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Info } from '../components/ui';
+import { Card, SectionTitle, Note, Info, TipIcon } from '../components/ui';
+import { ideaTip } from '../infoTips';
 import {
   collectPending,
   runWhatIf,
@@ -230,9 +231,10 @@ export function WhatIf() {
             <label className="block">
               <span className="label flex items-center gap-1">
                 {role === 'upon-release' ? 'Pending credits' : period.period + ' credits'}
-                <Info compact label="What do these credits mean?">
-                  The credits this “what-if” average applies to.
-                </Info>
+                <TipIcon
+                  tip={ideaTip('whatif.credits')}
+                  label="What do these credits mean?"
+                />
               </span>
               <input
                 type="number"
@@ -250,9 +252,10 @@ export function WhatIf() {
             <label className="block">
               <span className="label flex items-center gap-1">
                 Remaining to graduation
-                <Info compact label="What does remaining mean?">
-                  All credits still ahead, including this one. Your projected final CGPA is divided by this number.
-                </Info>
+                <TipIcon
+                  tip={ideaTip('whatif.remaining')}
+                  label="What does remaining mean?"
+                />
               </span>
               <input
                 type="number"

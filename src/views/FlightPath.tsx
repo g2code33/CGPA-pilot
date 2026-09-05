@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Badge, Info } from '../components/ui';
+import { ideaTip } from '../infoTips';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
 import { progressThrough } from '../services/structureService';
@@ -239,27 +240,27 @@ export function FlightPathView() {
           label="Current CGPA"
           value={fmt2(record.cgpa)}
           tone={COLORS.current}
-          info="Where you are right now — your confirmed CGPA."
+          info={ideaTip('flight.current')}
         />
         <Stat
           label="Target CGPA"
           value={fmt2(target)}
           tone={COLORS.target}
-          info="The CGPA you aim to finish with (your goal)."
+          info={ideaTip('flight.target')}
         />
         <Stat
           label="Required future GPA"
           value={model.requiredFutureGpa === null ? '—' : fmt2(model.requiredFutureGpa)}
           tone={COLORS.required}
           sub={model.targetReachable ? 'reachable' : 'above ceiling'}
-          info="The steady average you must keep from now to hit your target."
+          info={ideaTip('flight.required')}
         />
         <Stat
           label="Projected at graduation"
           value={fmt2(grad?.projectedCgpa ?? null)}
           tone={COLORS.projected}
           sub={gradClass?.label ?? ''}
-          info="The CGPA you land on if you keep your current average. The line under it is the class you would get."
+          info={ideaTip('flight.projected')}
         />
       </div>
 

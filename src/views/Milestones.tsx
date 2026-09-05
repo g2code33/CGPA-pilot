@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge, Info } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info, TipIcon } from '../components/ui';
+import { ideaTip } from '../infoTips';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
 import { progressThrough } from '../services/structureService';
 import { printFileName, printSection } from '../services/scopedPrint';
@@ -201,22 +202,22 @@ export function Milestones() {
             <Mini
               label="Projected CGPA after"
               value={fmt2(verdict.projectedCgpaAfter)}
-              info="Your CGPA after this stage, if you keep the scenario average."
+              info={ideaTip('milestones.projectedAfter')}
             />
             <Mini
               label="Required future GPA"
               value={verdict.requiredFutureGpaAfter === null ? '—' : fmt2(verdict.requiredFutureGpaAfter)}
-              info="The average you must keep after this stage to still reach your target."
+              info={ideaTip('milestones.requiredAfter')}
             />
             <Mini
               label="Best possible after"
               value={fmt2(verdict.maxPossibleFinal)}
-              info="The highest CGPA still possible after this stage — top grades in everything left."
+              info={ideaTip('milestones.bestAfter')}
             />
             <Mini
               label="Credits still ahead"
               value={String(verdict.remainingCreditsAfter)}
-              info="Credits left after this stage."
+              info={ideaTip('milestones.creditsAhead')}
             />
           </div>
         </Card>
@@ -344,13 +345,10 @@ export function Milestones() {
               <div key={id} className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
                 <p className="flex items-center gap-1 text-xs font-black uppercase tracking-wide" style={{ color: COLORS[id] }}>
                   {id === 'best' ? 'Best case' : id === 'target' ? 'Target case' : 'User scenario'}
-                  <Info compact label={`About: ${id === 'best' ? 'best case' : id === 'target' ? 'target case' : 'user scenario'}`}>
-                    {id === 'best'
-                      ? 'You get the top grade in every credit you still have.'
-                      : id === 'target'
-                        ? 'You keep the steady average needed to hit your target.'
-                        : 'The GPA you set on the slider — a possible dip, for planning only.'}
-                  </Info>
+                  <TipIcon
+                    tip={ideaTip(id === 'best' ? 'milestones.best' : id === 'target' ? 'milestones.target' : 'milestones.user')}
+                    label="About this scenario"
+                  />
                 </p>
                 <p className="mt-1 text-lg font-black tabular-nums text-slate-800">{analysis.scenarios[id].futureGpa.toFixed(2)}</p>
                 <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{analysis.scenarios[id].description}</p>

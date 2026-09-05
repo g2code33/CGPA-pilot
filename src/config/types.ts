@@ -163,6 +163,18 @@ export interface StudentSettings {
    * published curriculum (the default).
    */
   allowCreditEditing?: boolean;
+  /**
+   * 💡 Idea icons — the small hint icons next to each calculated result
+   * box (keys defined in src/infoTips.ts). Absent = ON, with the built-in
+   * sentences.
+   *  • `enabled: false` hides EVERY idea icon in the student app.
+   *  • `texts[key]` rewords one sentence; an empty string hides just that
+   *    icon.
+   */
+  ideaTips?: {
+    enabled?: boolean;
+    texts?: Record<string, string>;
+  };
 }
 
 /** A replaceable app icon: an emoji OR an uploaded image (data URL). */

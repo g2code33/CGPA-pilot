@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Info } from '../components/ui';
+import { ideaTip } from '../infoTips';
 import {
   nextSemesterAfter,
   planNextSemester,
@@ -285,19 +286,19 @@ export function NextSemester() {
                   label="Confirmed credits"
                   value={record.creditHours}
                   note="in your CGPA now"
-                  info="Credits already inside your confirmed CGPA."
+                  info={ideaTip('next.confirmed')}
                 />
                 <Audit
                   label={role === 'finish-current' ? 'This semester' : 'Next semester'}
                   value={plan.next.credits}
                   note={role === 'finish-current' ? 'you are finishing it now' : 'to be written'}
-                  info="The credits in the semester this plan works on."
+                  info={ideaTip('next.semester')}
                 />
                 <Audit
                   label="After that"
                   value={Math.max(0, remainingCredits - plan.next.credits)}
                   note="semesters still to come"
-                  info="Credits in the semesters that come after this one."
+                  info={ideaTip('next.after')}
                 />
               </div>
               <p className="mt-2 text-center text-[10px] font-semibold text-emerald-700">

@@ -112,6 +112,16 @@ export function Info({
   );
 }
 
+/**
+ * 💡 Idea icon for a calculated result. Renders NOTHING when `tip` is
+ * empty/undefined — the admin can switch all idea icons off or clear a
+ * single sentence, and the icon simply disappears (no empty popover).
+ */
+export function TipIcon({ tip, label }: { tip?: string | null; label?: string }) {
+  if (!tip) return null;
+  return <Info compact label={label}>{tip}</Info>;
+}
+
 const TONE_CLASSES: Record<string, string> = {
   gold: 'bg-amber-100 text-amber-800 ring-amber-300',
   green: 'bg-green-100 text-green-700 ring-green-300',

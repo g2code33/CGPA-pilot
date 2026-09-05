@@ -9,6 +9,7 @@ import { Curricula } from './views/Curricula';
 import { CurriculumEditor } from './views/CurriculumEditor';
 import { CurriculumPreview } from './views/CurriculumPreview';
 import { Grading } from './views/Grading';
+import { IdeaIcons } from './views/IdeaIcons';
 import { TestLab } from './views/TestLab';
 import { RecycleBin } from './views/RecycleBin';
 import { IconManager } from './views/IconManager';
@@ -19,6 +20,7 @@ type ViewName =
   | 'universities'
   | 'curricula'
   | 'grading'
+  | 'ideatips'
   | 'appearance'
   | 'recycle'
   | 'previewapp'
@@ -32,6 +34,7 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
   { id: 'universities', label: 'Institutions', icon: '🏛️' },
   { id: 'curricula', label: 'Curricula', icon: '📚' },
   { id: 'grading', label: 'Grading & Classes', icon: '🎯' },
+  { id: 'ideatips', label: 'Idea Icons', icon: '💡' },
   { id: 'appearance', label: 'Icons & Branding', icon: '🎨' },
   { id: 'recycle', label: 'Recycle Bin', icon: '🗑️' },
   { id: 'previewapp', label: 'Student Preview', icon: '📱' },
@@ -94,6 +97,7 @@ export function AdminApp() {
             <Curricula onOpen={(id) => setView({ name: 'editor', curriculumId: id })} />
           )}
           {view.name === 'grading' && <Grading />}
+          {view.name === 'ideatips' && <IdeaIcons />}
           {view.name === 'appearance' && <IconManager />}
           {view.name === 'recycle' && <RecycleBin />}
           {view.name === 'previewapp' && <StudentPreview />}
