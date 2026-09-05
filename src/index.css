@@ -112,11 +112,13 @@ body {
     display: none !important;
   }
 
-  /* A4-friendly page setup. The fixed running header lives inside the top
-     margin, so content starts at 14mm and never collides with it. */
+  /* A4 page setup. The fixed running header (~11mm tall) is anchored at the
+     top of the paper; the generous 18mm top margin keeps EVERY page's
+     content at least ~6mm below it, so the header can never overlap the
+     main info (no per-page padding tricks needed). */
   @page {
     size: A4;
-    margin: 14mm;
+    margin: 18mm 14mm 14mm 14mm;
   }
   html,
   body {
@@ -126,18 +128,22 @@ body {
     color: #0f172a;
     font-size: 12px;
     line-height: 1.45;
-    /* Keep page-1 content clear of the fixed running header. */
-    padding-top: 16mm;
   }
   #cgpa-print-root h1,
   #cgpa-print-root h2,
   #cgpa-print-root h3 {
     page-break-after: avoid;
   }
+  /* Typography polish: never strand a single line at a page edge. */
+  #cgpa-print-root p {
+    orphans: 2;
+    widows: 2;
+  }
   #cgpa-print-root table {
     width: 100%;
     border-collapse: collapse;
     page-break-inside: auto;
+    font-size: 10.5px;
   }
   #cgpa-print-root tr {
     page-break-inside: avoid;
@@ -155,6 +161,7 @@ body {
      browser is set to omit background graphics. */
   #cgpa-print-root th {
     white-space: normal !important;
+    font-size: 9px !important;
   }
   #cgpa-print-root thead th {
     border-bottom: 2px solid #0f172a !important;
@@ -182,6 +189,11 @@ body {
   #cgpa-print-root .print-block {
     page-break-inside: avoid;
     margin-bottom: 14px;
+  }
+  /* The disclaimer stays with the document, not stranded alone. */
+  #cgpa-print-root .print-disclaimer {
+    page-break-inside: avoid;
+    margin-top: 12px;
   }
   #cgpa-print-root .print-page-break {
     page-break-before: always;

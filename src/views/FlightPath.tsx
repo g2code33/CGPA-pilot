@@ -73,9 +73,16 @@ export function FlightPathView() {
     ),
   });
 
-  /** Print just the graph sheet. */
-  const printGraph = () =>
-    printSection(graphRef.current, printBranding('Print Flight Path', 'Flight Path'));
+  /** Print ONLY the graph: the chart + its legend — no titles, description,
+      notes or any other content on the sheet. */
+  const printGraph = () => {
+    const el = graphRef.current;
+    const svg = el?.querySelector('svg');
+    if (!el || !svg) return;
+    const legend = el.querySelector('.graph-legend');
+    const html = [svg.outerHTML, legend ? legend.outerHTML : ''].join('');
+    printHtml([{ html }], printBranding('Print Flight Path — Graph', 'Flight Path Graph'));
+  };
 
   /** Print the entire page: summary strip + graph + graduation + milestones. */
   const printPage = () => {
@@ -626,7 +633,7 @@ export function FlightPathView() {
         </div>
 
         {/* Legend */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold text-slate-600">
+        <div className="graph-legend mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold text-slate-600">
           <Legend color={COLORS.current} label="Current" solid />
           <Legend color={COLORS.projected} label="Projected (assumed future GPA)" solid />
           <Legend color={COLORS.required} label="Required to reach target" dashed />

@@ -64,10 +64,10 @@ function brandingHtml(b: PrintBranding): string {
     day: 'numeric',
   });
   const appLogo = b.appLogo
-    ? `<img src="${esc(b.appLogo)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:7px;">`
+    ? `<img src="${esc(b.appLogo)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
     : '';
   const instLogo = b.institutionLogo
-    ? `<img src="${esc(b.institutionLogo)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:7px;">`
+    ? `<img src="${esc(b.institutionLogo)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
     : '';
   const metaLine = [
     b.programmeName ? esc(b.programmeName) : '',
@@ -78,11 +78,12 @@ function brandingHtml(b: PrintBranding): string {
     .join(' · ');
   // RUNNING HEADER: `position: fixed` elements are repeated on EVERY printed
   // page by the browser, so page 2+ also carries the app + institution
-  // identity. The print stylesheet keeps body content below it
-  // (#cgpa-print-root padding-top), and the fixed header sits inside the top
-  // @page margin so it never collides with page-2+ content.
+  // identity. It is height-deterministic (fixed 28px logos, single-line
+  // text, overflow hidden — ~10mm total) and the @page top margin (18mm)
+  // keeps every page's content clear of it, so it can never overlap the
+  // main info.
   return `
-    <div class="print-header" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 2px 7px;border-bottom:2px solid #0f172a;">
+    <div class="print-header" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 2px 6px;border-bottom:2px solid #0f172a;overflow:hidden;">
       <div style="display:flex;align-items:center;gap:8px;min-width:0;">
         ${appLogo}
         <div style="min-width:0;">
@@ -103,7 +104,7 @@ function brandingHtml(b: PrintBranding): string {
 }
 
 function disclaimerHtml(b?: string): string {
-  return `<div style="margin-top:10px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:9.5px;color:#64748b;">${b ?? DEFAULT_DISCLAIMER}</div>`;
+  return `<div class="print-disclaimer" style="margin-top:12px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:9.5px;color:#64748b;">${b ?? DEFAULT_DISCLAIMER}</div>`;
 }
 
 function ensureRoot(): HTMLElement {
