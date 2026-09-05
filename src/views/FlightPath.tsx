@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge, Info, TipIcon } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info, TipIcon, Th, tableStyles } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
@@ -673,15 +673,15 @@ export function FlightPathView() {
         <div ref={tableRef}>
         <Card className="print-sheet">
           <SectionTitle icon="📍" title="Milestones" subtitle="End of each level through graduation." />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className={tableStyles.wrap}>
+            <table className={tableStyles.table}>
               <thead>
-                <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
-                  <th className="py-1.5 pr-2">Milestone</th>
-                  <th className="py-1.5 pr-2 text-right">Credits</th>
-                  <th className="py-1.5 pr-2 text-right">Projected CGPA</th>
-                  <th className="py-1.5 pr-2 text-right">Required CGPA</th>
-                  <th className="py-1.5 pr-2 text-right">Projected class</th>
+                <tr className={tableStyles.headRow}>
+                  <Th label="Milestone" tip={ideaTip('table.fm.milestone')} />
+                  <Th label="Credits" tip={ideaTip('table.fm.credits')} right />
+                  <Th label="Projected CGPA" tip={ideaTip('table.fm.projected')} right />
+                  <Th label="Required CGPA" tip={ideaTip('table.fm.required')} right />
+                  <Th label="Projected class" tip={ideaTip('table.fm.class')} right />
                 </tr>
               </thead>
               <tbody>
@@ -690,19 +690,19 @@ export function FlightPathView() {
                   .map((m, i) => {
                     const cls = classifyCgpa(m.projectedCgpa, classification);
                     return (
-                      <tr key={i} className="border-b border-slate-100">
-                        <td className="py-1.5 pr-2 font-bold text-slate-700">
+                      <tr key={i} className={tableStyles.row}>
+                        <td className={`${tableStyles.cell} font-bold text-slate-700`}>
                           {m.kind === 'current' ? '📍 ' : m.isGraduation ? '🎓 ' : '🏁 '}
                           {m.detail}
                         </td>
-                        <td className="py-1.5 pr-2 text-right tabular-nums">{m.cumulativeCredits}</td>
-                        <td className="py-1.5 pr-2 text-right font-black tabular-nums text-brand-700">
+                        <td className={`${tableStyles.cell} text-right tabular-nums`}>{m.cumulativeCredits}</td>
+                        <td className={`${tableStyles.cell} text-right font-black tabular-nums text-brand-700`}>
                           {fmt2(m.projectedCgpa)}
                         </td>
-                        <td className="py-1.5 pr-2 text-right font-bold tabular-nums text-amber-600">
+                        <td className={`${tableStyles.cell} text-right font-bold tabular-nums text-amber-600`}>
                           {m.requiredCgpa === null ? '—' : fmt2(m.requiredCgpa)}
                         </td>
-                        <td className="py-1.5 pr-2 text-right text-slate-600">{cls?.label ?? '—'}</td>
+                        <td className={`${tableStyles.cell} text-right text-slate-600`}>{cls?.label ?? '—'}</td>
                       </tr>
                     );
                   })}

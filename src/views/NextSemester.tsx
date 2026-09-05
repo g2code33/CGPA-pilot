@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Info } from '../components/ui';
+import { Card, SectionTitle, Note, Info, Th, tableStyles } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { permissionOn } from '../permissions';
 import {
@@ -358,33 +358,33 @@ export function NextSemester() {
               )
             )}
 
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-[380px] text-left text-xs">
+            <div className={tableStyles.wrap}>
+            <table className={`${tableStyles.table} min-w-[380px]`}>
               <thead>
-                <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
-                  <th className="py-1.5 pr-2">Course</th>
-                  <th className="py-1.5 pr-2 text-right">Credits</th>
-                  <th className="py-1.5 pr-2 text-right">Target grade</th>
-                  <th className="no-print py-1.5 pr-2 text-right">Grade points</th>
+                <tr className={tableStyles.headRow}>
+                  <Th label="Course" tip={ideaTip('table.ns.course')} />
+                  <Th label="Credits" tip={ideaTip('table.ns.credits')} right />
+                  <Th label="Target grade" tip={ideaTip('table.ns.grade')} right />
+                  <Th label="Grade points" tip={ideaTip('table.ns.points')} right className="no-print" />
                 </tr>
               </thead>
               <tbody>
                 {rows.map((a) => {
                   const isLocked = showWhatIf && !!locked[a.code];
                   return (
-                    <tr key={a.code + a.name + a.grade} className="border-b border-slate-100">
-                      <td className="py-2 pr-2 font-semibold text-slate-700">
+                    <tr key={a.code + a.name + a.grade} className={tableStyles.row}>
+                      <td className={`${tableStyles.cell} font-semibold text-slate-700`}>
                         {a.code}
                         {a.name && a.name !== 'Curriculum not published' && (
                           <span className="block text-[10px] font-normal text-slate-400">{a.name}</span>
                         )}
                         {isLocked && <span className="ml-1 text-[9px] font-bold text-brand-600">· your pick</span>}
                       </td>
-                      <td className="py-2 pr-2 text-right tabular-nums">{a.creditHours}</td>
-                      <td className={`py-2 pr-2 text-right font-black ${isLocked ? 'text-brand-700' : 'text-slate-900'}`}>
+                      <td className={`${tableStyles.cell} text-right tabular-nums`}>{a.creditHours}</td>
+                      <td className={`${tableStyles.cell} text-right font-black ${isLocked ? 'text-brand-700' : 'text-slate-900'}`}>
                         {a.grade}
                       </td>
-                      <td className="no-print py-2 pr-2 text-right tabular-nums text-slate-500">
+                      <td className={`${tableStyles.cell} no-print text-right tabular-nums text-slate-500`}>
                         {a.points.toFixed(1)}
                       </td>
                     </tr>

@@ -1,4 +1,106 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+
+interface PopPos {
+  top: number;
+  left: number;
+  above: boolean;
+}
+
+/**
+ * Shared idea-popover state: the panel is rendered with `position: fixed`
+ * from the button's viewport rect, so it overlays whatever is on screen
+ * (card, table, scroll container) without being clipped and without ever
+ * extending the layout. It flips above the button when the bottom edge is
+ * close, and closes on scroll/resize so it can never drift.
+ */
+function usePopover(width: number, align: 'center' | 'right' = 'center') {
+  const [pos, setPos] = useState<PopPos | null>(null);
+  const open = pos !== null;
+
+  const toggle = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      setPos((prev) => {
+        if (prev) return null;
+        const r = e.currentTarget.getBoundingClientRect();
+        const margin = 8;
+        const w = Math.min(width, window.innerWidth - margin * 2);
+        let left = align === 'right' ? r.right - w : r.left + r.width / 2 - w / 2;
+        left = Math.min(window.innerWidth - w - margin, Math.max(margin, left));
+        const above = window.innerHeight - r.bottom < 140;
+        return { top: above ? r.top - 6 : r.bottom + 6, left, above };
+      });
+    },
+    [align, width]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setPos(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  return { open, pos, toggle };
+}
+
+function PopoverPanel({
+  pos,
+  width,
+  className = '',
+  children,
+}: {
+  pos: PopPos;
+  width: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`fixed z-[100] rounded-xl bg-slate-900/95 text-slate-100 leading-relaxed shadow-xl ring-1 ring-white/10 ${
+        pos.above ? '-translate-y-full' : ''
+      } ${className}`}
+      style={{ top: pos.top, left: pos.left, width, maxWidth: 'calc(100vw - 16px)' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The round 💡 button shared by every idea popover in the app. */
+function IdeaButton({
+  open,
+  onClick,
+  label,
+  compact = false,
+}: {
+  open: boolean;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+  label: string;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={label}
+      title="How to use / what this means"
+      className={`inline-flex shrink-0 items-center justify-center rounded-full text-sm transition ring-1 ${
+        compact ? 'h-6 w-6 text-xs' : 'h-7 w-7'
+      } ${
+        open
+          ? 'bg-brand-600 text-white ring-brand-600'
+          : 'bg-brand-50 text-brand-700 ring-brand-200'
+      }`}
+    >
+      {open ? '✕' : '💡'}
+    </button>
+  );
+}
 
 export function Card({
   children,
@@ -28,7 +130,7 @@ export function SectionTitle({
   info?: ReactNode;
   infoLabel?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const pop = usePopover(288, 'right');
   return (
     <div className="mb-3">
       <div className="flex items-center gap-2">
@@ -36,31 +138,14 @@ export function SectionTitle({
           {icon && <span className="text-base">{icon}</span>}
           <span className="truncate">{title}</span>
         </h2>
-        {info && (
-          <span className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-expanded={open}
-              aria-label={infoLabel ?? 'How to use this'}
-              title="How to use / what this means"
-              className={`grid h-7 w-7 place-items-center rounded-full text-sm transition ring-1 ${
-                open
-                  ? 'bg-brand-600 text-white ring-brand-600'
-                  : 'bg-brand-50 text-brand-700 ring-brand-200'
-              }`}
-            >
-              {open ? '✕' : '💡'}
-            </button>
-            {open && (
-              <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[80vw] rounded-xl bg-slate-900/95 px-3 py-2.5 text-xs leading-relaxed text-slate-100 shadow-xl ring-1 ring-white/10">
-                {info}
-              </div>
-            )}
-          </span>
-        )}
+        {info && <IdeaButton open={pop.open} onClick={pop.toggle} label={infoLabel ?? 'How to use this'} />}
       </div>
       {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+      {pop.pos && info && (
+        <PopoverPanel pos={pop.pos} width={288} className="px-3 py-2.5 text-xs">
+          {info}
+        </PopoverPanel>
+      )}
     </div>
   );
 }
@@ -82,37 +167,19 @@ export function Info({
   /** Smaller button + tighter popover, for use inside small stat boxes. */
   compact?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const width = compact ? 176 : 256;
+  const pop = usePopover(width, 'center');
   return (
-    <div className={`relative inline-block ${className}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-label={label ?? 'Help'}
-        title="How to use / what this means"
-        className={`inline-flex items-center justify-center rounded-full text-sm transition ring-1 ${
-          compact ? 'h-6 w-6 text-xs' : 'h-7 w-7'
-        } ${
-          open
-            ? 'bg-brand-600 text-white ring-brand-600'
-            : 'bg-brand-50 text-brand-700 ring-brand-200'
-        }`}
-      >
-        {open ? '✕' : '💡'}
-      </button>
-      {/* Overlay popover: floats over the card (never extends it), deep
-          background for visibility. */}
-      {open && (
-        <div
-          className={`absolute z-50 rounded-xl bg-slate-900/95 text-slate-100 leading-relaxed shadow-xl ring-1 ring-white/10 ${
-            compact
-              ? 'left-1/2 top-full mt-1.5 w-44 max-w-[78vw] -translate-x-1/2 px-2.5 py-2 text-[11px]'
-              : 'left-1/2 top-full mt-2 w-64 max-w-[80vw] -translate-x-1/2 px-3 py-2.5 text-xs'
-          }`}
+    <div className={`inline-block ${className}`}>
+      <IdeaButton open={pop.open} onClick={pop.toggle} label={label ?? 'Help'} compact={compact} />
+      {pop.pos && (
+        <PopoverPanel
+          pos={pop.pos}
+          width={width}
+          className={compact ? 'px-2.5 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'}
         >
           {children}
-        </div>
+        </PopoverPanel>
       )}
     </div>
   );
@@ -127,6 +194,46 @@ export function TipIcon({ tip, label }: { tip?: string | null; label?: string })
   if (!tip) return null;
   return <Info compact label={label}>{tip}</Info>;
 }
+
+/**
+ * Standard table header cell: uppercase micro-label + a small 💡 idea icon
+ * (admin-controlled; renders nothing when the tip is off or cleared).
+ * Every table in the app uses this so column meanings are always reachable.
+ */
+export function Th({
+  label,
+  tip,
+  right = false,
+  className = '',
+}: {
+  label: string;
+  tip?: string;
+  right?: boolean;
+  className?: string;
+}) {
+  return (
+    <th
+      scope="col"
+      className={`whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-500 ${
+        right ? 'text-right' : 'text-left'
+      } ${className}`}
+    >
+      <span className={`inline-flex items-center gap-1 ${right ? 'flex-row-reverse' : ''}`}>
+        {label}
+        <TipIcon tip={tip} label={`About: ${label}`} />
+      </span>
+    </th>
+  );
+}
+
+/** Shared look for every data table in the app. */
+export const tableStyles = {
+  wrap: 'overflow-x-auto rounded-xl bg-white ring-1 ring-slate-200',
+  table: 'w-full text-left text-xs',
+  headRow: 'border-b-2 border-slate-200 bg-slate-50/90',
+  row: 'border-b border-slate-100 transition-colors last:border-b-0 hover:bg-brand-50/50',
+  cell: 'px-3 py-2',
+};
 
 const TONE_CLASSES: Record<string, string> = {
   gold: 'bg-amber-100 text-amber-800 ring-amber-300',

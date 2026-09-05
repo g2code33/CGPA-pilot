@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge, Info, TipIcon } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info, TipIcon, Th, tableStyles } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { permissionOn } from '../permissions';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
@@ -275,22 +275,22 @@ export function Milestones() {
       {!noData && (
         <Card className="print-sheet">
           <SectionTitle icon="📍" title="Stage-by-stage milestones" subtitle="End of each remaining level through graduation." />
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-xs">
+          <div className={tableStyles.wrap}>
+            <table className={`${tableStyles.table} min-w-[600px]`}>
               <thead>
-                <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
-                  <th className="py-1.5 pr-2">Stage</th>
-                  <th className="py-1.5 pr-2 text-right">Required GPA</th>
-                  <th className="py-1.5 pr-2 text-right">Projected CGPA</th>
-                  <th className="py-1.5 pr-2 text-right">Your scenario</th>
-                  <th className="py-1.5 pr-2 text-right">Target</th>
-                  <th className="py-1.5 pr-2 text-right">Max possible</th>
-                  <th className="py-1.5 pr-2 text-right">Credits left</th>
+                <tr className={tableStyles.headRow}>
+                  <Th label="Stage" tip={ideaTip('table.ms.stage')} />
+                  <Th label="Required GPA" tip={ideaTip('table.ms.requiredGpa')} right />
+                  <Th label="Projected CGPA" tip={ideaTip('table.ms.projected')} right />
+                  <Th label="Your scenario" tip={ideaTip('table.ms.scenario')} right />
+                  <Th label="Target" tip={ideaTip('table.ms.target')} right />
+                  <Th label="Max possible" tip={ideaTip('table.ms.max')} right />
+                  <Th label="Credits left" tip={ideaTip('table.ms.credits')} right />
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-slate-100 bg-slate-50/60">
-                  <td className="py-2 pr-2 font-bold text-slate-700">
+                <tr className={`${tableStyles.row} bg-slate-100/60 hover:bg-slate-100`}>
+                  <td className={`${tableStyles.cell} font-bold text-slate-700`}>
                     📍 Now · Level {currentLevel * 100}
                     <span className="block text-[10px] font-semibold text-slate-400">
                       {d.semesterRole === 'finish-current'
@@ -300,31 +300,31 @@ export function Milestones() {
                           : 'current position'}
                     </span>
                   </td>
-                  <td className="py-2 pr-2 text-right text-slate-300">—</td>
-                  <td className="py-2 pr-2 text-right font-black tabular-nums text-slate-800">{fmt2(record.cgpa)}</td>
-                  <td className="py-2 pr-2 text-right text-slate-300">—</td>
-                  <td className="py-2 pr-2 text-right font-bold tabular-nums text-red-500">{fmt2(target)}</td>
-                  <td className="py-2 pr-2 text-right text-slate-300">—</td>
-                  <td className="py-2 pr-2 text-right tabular-nums text-slate-500">{stages.length ? totalFutureCredits : '—'}</td>
+                  <td className={`${tableStyles.cell} text-right text-slate-300`}>—</td>
+                  <td className={`${tableStyles.cell} text-right font-black tabular-nums text-slate-800`}>{fmt2(record.cgpa)}</td>
+                  <td className={`${tableStyles.cell} text-right text-slate-300`}>—</td>
+                  <td className={`${tableStyles.cell} text-right font-bold tabular-nums text-red-500`}>{fmt2(target)}</td>
+                  <td className={`${tableStyles.cell} text-right text-slate-300`}>—</td>
+                  <td className={`${tableStyles.cell} text-right tabular-nums text-slate-500`}>{stages.length ? totalFutureCredits : '—'}</td>
                 </tr>
                 {stages.filter((s) => s.isLevelEnd || s.isGraduation).map((s, i) => (
-                  <tr key={i} className="border-b border-slate-100">
-                    <td className="py-2 pr-2 font-bold text-slate-700">
+                  <tr key={i} className={tableStyles.row}>
+                    <td className={`${tableStyles.cell} font-bold text-slate-700`}>
                       {s.isGraduation ? '🎓 ' : '🏁 '}{s.detail}
                     </td>
-                    <td className="py-2 pr-2 text-right font-bold tabular-nums text-amber-600">
+                    <td className={`${tableStyles.cell} text-right font-bold tabular-nums text-amber-600`}>
                       {s.requiredGpaAfter.target === null ? '—' : fmt2(s.requiredGpaAfter.target)}
                     </td>
-                    <td className="py-2 pr-2 text-right font-black tabular-nums text-amber-700">{fmt2(s.projected.target)}</td>
-                    <td className={`py-2 pr-2 text-right font-bold tabular-nums ${s.reachable.user ? 'text-indigo-700' : 'text-red-600'}`}>
+                    <td className={`${tableStyles.cell} text-right font-black tabular-nums text-amber-700`}>{fmt2(s.projected.target)}</td>
+                    <td className={`${tableStyles.cell} text-right font-bold tabular-nums ${s.reachable.user ? 'text-indigo-700' : 'text-red-600'}`}>
                       {fmt2(s.projected.user)}
                       <span className="block text-[9px] font-semibold text-slate-400">
                         {s.requiredGpaAfter.user === null ? (s.reachable.user ? 'target met' : 'short') : `then need ${fmt2(s.requiredGpaAfter.user)}`}
                       </span>
                     </td>
-                    <td className="py-2 pr-2 text-right font-bold tabular-nums text-red-500">{fmt2(target)}</td>
-                    <td className="py-2 pr-2 text-right font-bold tabular-nums text-emerald-600">{fmt2(s.maxPossibleCgpa)}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-500">{s.creditsRemainingAfter}</td>
+                    <td className={`${tableStyles.cell} text-right font-bold tabular-nums text-red-500`}>{fmt2(target)}</td>
+                    <td className={`${tableStyles.cell} text-right font-bold tabular-nums text-emerald-600`}>{fmt2(s.maxPossibleCgpa)}</td>
+                    <td className={`${tableStyles.cell} text-right tabular-nums text-slate-500`}>{s.creditsRemainingAfter}</td>
                   </tr>
                 ))}
               </tbody>

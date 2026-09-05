@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Info, TipIcon } from '../components/ui';
+import { Card, SectionTitle, Note, Info, TipIcon, Th, tableStyles } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { permissionOn } from '../permissions';
 import {
@@ -322,31 +322,35 @@ export function WhatIf() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-xs">
+        <div className={`${tableStyles.wrap} min-w-0`}>
+          <table className={`${tableStyles.table} min-w-[560px]`}>
             <thead>
-              <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
-                <th className="py-2 pr-2">Scenario</th>
-                <th className="py-2 pr-2 text-right">{role === 'upon-release' ? 'Result avg' : 'Period GPA'}</th>
-                <th className="py-2 pr-2 text-right">Projected CGPA</th>
-                <th className="py-2 pr-2 text-right">Δ vs now</th>
-                <th className="py-2 pr-2 text-right">Δ vs target</th>
-                <th className="py-2 pr-2 text-right">Final if held</th>
-                <th className="py-2 pr-2 text-right">Target feasibility</th>
-                <th className="py-2 pr-2 text-right">Print</th>
+              <tr className={tableStyles.headRow}>
+                <Th label="Scenario" tip={ideaTip('table.wi.scenario')} />
+                <Th
+                  label={role === 'upon-release' ? 'Result avg' : 'Period GPA'}
+                  tip={ideaTip('table.wi.avg')}
+                  right
+                />
+                <Th label="Projected CGPA" tip={ideaTip('table.wi.projected')} right />
+                <Th label="Δ vs now" tip={ideaTip('table.wi.vsNow')} right />
+                <Th label="Δ vs target" tip={ideaTip('table.wi.vsTarget')} right />
+                <Th label="Final if held" tip={ideaTip('table.wi.final')} right />
+                <Th label="Target feasibility" tip={ideaTip('table.wi.feasibility')} right />
+                <Th label="Print" right />
               </tr>
             </thead>
             <tbody>
               {scenarios.map((s) => (
-                <tr key={s.label} className="border-b border-slate-100">
-                  <td className="py-2 pr-2 font-bold text-slate-700">
+                <tr key={s.label} className={tableStyles.row}>
+                  <td className={`${tableStyles.cell} font-bold text-slate-700`}>
                     {s.label}
                     <span className="block text-[10px] font-medium text-slate-400">
                       {s.futureCredits} cr {role === 'upon-release' ? 'pending' : role === 'finish-current' ? 'this semester' : 'next period'}
                     </span>
                   </td>
-                  <td className="py-2 pr-2 text-right font-black tabular-nums">{fmt2(s.projectedSemesterGpa)}</td>
-                  <td className="py-2 pr-2 text-right font-black tabular-nums text-brand-700">
+                  <td className={`${tableStyles.cell} text-right font-black tabular-nums`}>{fmt2(s.projectedSemesterGpa)}</td>
+                  <td className={`${tableStyles.cell} text-right font-black tabular-nums text-brand-700`}>
                     {fmt2(s.projectedCgpa)}
                     {s.classification && (
                       <span className="block text-[9px] font-semibold text-slate-400">
@@ -354,16 +358,16 @@ export function WhatIf() {
                       </span>
                     )}
                   </td>
-                  <td className={`py-2 pr-2 text-right font-bold tabular-nums ${s.differenceFromCurrent !== null && s.differenceFromCurrent < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <td className={`${tableStyles.cell} text-right font-bold tabular-nums ${s.differenceFromCurrent !== null && s.differenceFromCurrent < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {s.differenceFromCurrent === null ? '—' : `${s.differenceFromCurrent >= 0 ? '+' : ''}${fmt2(s.differenceFromCurrent)}`}
                   </td>
-                  <td className={`py-2 pr-2 text-right font-bold tabular-nums ${s.differenceFromTarget !== null && s.differenceFromTarget < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <td className={`${tableStyles.cell} text-right font-bold tabular-nums ${s.differenceFromTarget !== null && s.differenceFromTarget < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {s.differenceFromTarget === null ? '—' : `${s.differenceFromTarget >= 0 ? '+' : ''}${fmt2(s.differenceFromTarget)}`}
                   </td>
-                  <td className="py-2 pr-2 text-right font-bold tabular-nums text-slate-700">
+                  <td className={`${tableStyles.cell} text-right font-bold tabular-nums text-slate-700`}>
                     {fmt2(s.trajectoryFinalCgpa)}
                   </td>
-                  <td className={`py-2 pr-2 text-right font-bold ${VERDICT_TONE[s.targetStatus]}`}>
+                  <td className={`${tableStyles.cell} text-right font-bold ${VERDICT_TONE[s.targetStatus]}`}>
                     {s.targetStatusLabel}
                     {s.requiredFutureGpaAfter !== null &&
                       s.targetStatus !== 'meets-target' &&
@@ -373,7 +377,7 @@ export function WhatIf() {
                         </span>
                       )}
                   </td>
-                  <td className="py-2 pr-2 text-right">
+                  <td className={`${tableStyles.cell} text-right`}>
                     {permissionOn('allowPrinting') && (
                       <button
                         onClick={() => printScenario(s)}
