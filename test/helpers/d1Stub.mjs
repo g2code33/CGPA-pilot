@@ -65,6 +65,10 @@ export function createD1Stub() {
       },
       async run() {
         const s = normalize(sql);
+        // DDL (CREATE TABLE IF NOT EXISTS, …) — a no-op, like real D1.
+        if (s.startsWith('CREATE') || s.startsWith('PRAGMA') || s.startsWith('ALTER') || s.startsWith('DROP')) {
+          return { changes: 0, meta: { last_row_id: null, changes: 0 } };
+        }
         // DELETE FROM <t> WHERE id = ?
         if (s.startsWith('DELETE')) {
           const t = tableOf(sql);

@@ -206,26 +206,21 @@ const DELETE_DRAFT = 'DELETE FROM admin_drafts WHERE id = ?';
 const ensuredTables: Promise<void> | null = null;
 export function ensureExtraTables(db: D1Database): Promise<void> {
   // (Module-level cache shared across isolates of the same deployment.)
-  if (!globalThis.__cgpaEnsureExtra) {
-    globalThis.__cgpaEnsureExtra = db
-      .exec(
-        `CREATE TABLE IF NOT EXISTS ai_settings (
-           id INTEGER PRIMARY KEY CHECK (id = 1),
-           settings_json TEXT,
-           updated_at TEXT
-         );
-         CREATE TABLE IF NOT EXISTS admin_drafts (
-           id TEXT PRIMARY KEY,
-           name TEXT,
-           note TEXT,
-           catalog_json TEXT,
-           created_at TEXT
-         );`
-      )
-      .then(() => undefined)
-      .catch(() => undefined); // never let table creation break a request
-  }
-  return globalThis.__cgpaEnsureExtra;
+  if (globalThis.__cgpaEnsureExtra) return globalThis.__cgpaEnsureExtra;
+  const p = db
+    .batch([
+      // One statement per batch entry — D1's exec() is known to fail on
+      // multi-line/multi-statement scripts (workers-sdk #9133), which would
+      // have silently left these tables missing in production.
+      db.prepare('CREATE TABLE IF NOT EXISTS ai_settings (id INTEGER PRIMARY KEY CHECK (id = 1), settings_json TEXT, updated_at TEXT)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS admin_drafts (id TEXT PRIMARY KEY, name TEXT, note TEXT, catalog_json TEXT, created_at TEXT)'),
+    ])
+    .then(() => undefined);
+  globalThis.__cgpaEnsureExtra = p.catch(() => {
+    // Never cache a failure — retry table creation on the next request.
+    globalThis.__cgpaEnsureExtra = undefined;
+  });
+  return p;
 }
 
 declare global {
