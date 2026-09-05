@@ -53,7 +53,7 @@ const SCREEN_LABELS: Record<Screen, string> = {
   whatif: 'What-If',
   flight: 'Flight Path',
   milestones: 'Milestones',
-  ai: 'AI Assistant',
+  ai: 'CGPA Pilot AI',
   privacy: 'Privacy',
 };
 
