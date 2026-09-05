@@ -59,6 +59,14 @@ export function WhatIf() {
   const target = state.targetCgpa ?? 3.6;
   const role = d.semesterRole;
   const period = PERIOD[role] ?? PERIOD['next-semester'];
+  // Sentence-variant suffix for the role-based registry keys (each role has
+  // its own admin-editable intro/results sentence).
+  const roleKey =
+    role === 'finish-current'
+      ? 'finish'
+      : role === 'upon-release'
+        ? 'release'
+        : 'next';
   // Credit counts are admin-controlled: when the permission is off, only the
   // GPA simulation knobs stay free — every credit field below is locked.
   const creditEditingAllowed = permissionOn('allowCreditEditing');
@@ -213,6 +221,8 @@ export function WhatIf() {
   }
 
   const noData = record.cgpa === null;
+  // Scenario-results explanation — registry-driven (admin can reword or hide).
+  const resultsTip = ideaTip(`whatif.results.${roleKey}`);
 
   return (
     <div className="space-y-4">
@@ -221,18 +231,7 @@ export function WhatIf() {
           icon="🔀"
           title="What-If Simulator"
           subtitle={`Try a GPA — “${period.ask} 3.0 / 3.5 / 4.0?”`}
-          info={
-            <>
-              Ask “{period.ask} 3.0 / 3.5 / 4.0?” and see how your CGPA
-              would move.
-              <br />
-              <br />
-              This <strong>never changes your confirmed calculation</strong>, is{' '}
-              <strong>never saved</strong>, and <strong>never invents individual
-              grades</strong> — it only blends a hypothetical average with your real
-              record.
-            </>
-          }
+          info={ideaTip(`whatif.intro.${roleKey}`)}
         />
 
         {noData && (
@@ -436,20 +435,14 @@ export function WhatIf() {
           <p className="flex-1 text-[10px] leading-relaxed text-slate-500">
             Scenarios are projections over results not yet earned — not guaranteed.
           </p>
-          <Info
-            label="What do the scenario results mean?"
-            className="shrink-0"
-          >
-            <strong>Projected CGPA</strong> is your confirmed CGPA blended
-            (credit-weighted) with the hypothetical average for {period.noun}.
-            <br />
-            <strong>“Final if held”</strong> extrapolates that same average over all{' '}
-            {rem} remaining credits.
-            <br />
-            <br />
-            None of these are guaranteed outcomes, and no individual course grades are
-            inferred.
-          </Info>
+          {resultsTip && (
+            <Info
+              label="What do the scenario results mean?"
+              className="shrink-0"
+            >
+              {resultsTip}
+            </Info>
+          )}
         </div>
       </Card>
       </div>

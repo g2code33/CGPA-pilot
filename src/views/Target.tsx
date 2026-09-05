@@ -232,14 +232,7 @@ export function Target() {
               ? 'Tap a degree class, or set a custom CGPA.'
               : 'Tap a degree class.'
           }
-          info={
-            <>
-              A target is shown as <strong>🔴 out of reach</strong> only when even a
-              perfect run — your top grade in every remaining credit — would finish
-              below it. Every other status is still mathematically possible; the
-              colours show how hard you’d have to push. Nothing is saved.
-            </>
-          }
+          info={ideaTip('target.intro')}
         />
 
         <div className="flex flex-wrap gap-2">
@@ -323,25 +316,9 @@ export function Target() {
               ? 'Auto-filled from the admin curriculum — tap to edit for your own scenario.'
               : 'From your institution’s published curriculum — locked.'
           }
-          info={
-            creditEditingAllowed ? (
-              <>
-                Completed and remaining credits are <strong>filled in automatically</strong>{' '}
-                from your institution’s published curriculum.
-                <br />
-                <br />
-                You can <strong>edit either number</strong> for a custom scenario (e.g. a
-                different course load). Use the reset button below to snap back to the
-                curriculum values at any time.
-              </>
-            ) : (
-              <>
-                These numbers are <strong>locked to your institution’s published
-                curriculum</strong> — every calculation uses exactly those credits. Your
-                administrator controls this setting.
-              </>
-            )
-          }
+          info={ideaTip(
+            creditEditingAllowed ? 'target.credits.editable' : 'target.credits.locked'
+          )}
         />
         <div className="grid grid-cols-2 gap-3 text-center">
           <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">

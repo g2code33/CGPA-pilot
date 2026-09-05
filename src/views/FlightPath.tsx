@@ -230,16 +230,7 @@ export function FlightPathView() {
           icon="🛩️"
           title="The CGPA Flight Path"
           subtitle="Your trajectory from today to graduation."
-          info={
-            <>
-              This plots where your CGPA is heading, term by term, to graduation.
-              <br />
-              <br />
-              <strong>Projected</strong> and <strong>required</strong> lines are{' '}
-              <strong>scenarios, not promises</strong> — your actual route changes with
-              each real result. Nothing is saved.
-            </>
-          }
+          info={ideaTip('flight.intro')}
         />
 
         {noData && (

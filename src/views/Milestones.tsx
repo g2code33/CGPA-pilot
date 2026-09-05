@@ -124,18 +124,7 @@ export function Milestones() {
           icon="🏁"
           title="Milestones & affordable drop"
           subtitle="Stage-by-stage targets to graduation."
-          info={
-            <>
-              Shows the milestones you need to hit each level to reach your target — and
-              how far you can let a future result <strong>slip</strong> before the goal
-              gets out of reach.
-              <br />
-              <br />
-              Move the <strong>“if I get”</strong> slider to test a possible dip in your
-              next GPA. All three scenarios are computed locally and temporarily — nothing
-              is saved or sent.
-            </>
-          }
+          info={ideaTip('milestones.intro')}
         />
 
         {noData && (

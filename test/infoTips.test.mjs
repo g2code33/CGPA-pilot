@@ -31,7 +31,7 @@ test('registry: pages are listed in first-appearance order', () => {
   assert.deepEqual(IDEA_TIP_PAGES, [...new Set(IDEA_TIPS.map((t) => t.page))]);
 });
 
-test('expected icons exist (Target / NextSemester / WhatIf / FlightPath / Milestones)', () => {
+test('expected icons exist (every screen icon + every table column)', () => {
   for (const key of [
     'target.currentCgpa',
     'target.target',
@@ -57,6 +57,28 @@ test('expected icons exist (Target / NextSemester / WhatIf / FlightPath / Milest
     'milestones.best',
     'milestones.target',
     'milestones.user',
+    // old icons brought into the registry (admin-editable, hide-when-cleared)
+    'home.howItWorks',
+    'calc.standing.released',
+    'calc.standing.notReleased',
+    'calc.standing.justStarted',
+    'calc.currentCgpa.released',
+    'calc.currentCgpa.past',
+    'calc.history',
+    'flight.intro',
+    'milestones.intro',
+    'target.intro',
+    'target.credits.editable',
+    'target.credits.locked',
+    'whatif.intro.finish',
+    'whatif.intro.release',
+    'whatif.intro.next',
+    'whatif.results.finish',
+    'whatif.results.release',
+    'whatif.results.next',
+    'next.mission.finish',
+    'next.mission.release',
+    'next.mission.next',
     // every table column in the app carries a tip
     'table.fm.milestone',
     'table.fm.credits',

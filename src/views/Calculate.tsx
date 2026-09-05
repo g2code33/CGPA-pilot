@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle } from '../components/ui';
 import { permissionOn } from '../permissions';
+import { ideaTip } from '../infoTips';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { validateGpa } from '../services/gradingService';
 import { curriculumSemesterCourses } from '../services/structureService';
@@ -417,31 +418,15 @@ function CurrentStanding() {
     });
   }
 
-  const infoText =
-    status === 'released' ? (
-      <>
-        <strong>Released</strong> — all your results up to now are out and confirmed.
-        <br />
-        <strong>Advanced</strong> is for when a few courses from your current standing
-        aren’t out yet — pick exactly which ones and their credits are handled for you.
-      </>
-    ) : status === 'notReleased' ? (
-      <>
-        <strong>Not released</strong> — you’ve written the current semester but none of
-        its results are out. Your CGPA and everything below are based on the{' '}
-        <strong>immediate past semester</strong>. The tools therefore plan what your
-        results will be <strong>on release</strong> of the semester you just wrote —
-        not a semester after it.
-      </>
-    ) : (
-      <>
-        <strong>Just started</strong> — you’ve just begun this semester and have no
-        results. Your CGPA and everything below are based on the{' '}
-        <strong>immediate past semester</strong>. The tools therefore plan how to{' '}
-        <strong>finish the current semester</strong> (its exams are still ahead) —
-        not a semester after it.
-      </>
-    );
+  // Standing explanation — registry-driven (admin can reword or hide each
+  // variant); the right variant is picked by the current standing.
+  const infoText = ideaTip(
+    status === 'released'
+      ? 'calc.standing.released'
+      : status === 'notReleased'
+        ? 'calc.standing.notReleased'
+        : 'calc.standing.justStarted'
+  );
 
   return (
     <div className="space-y-3">
@@ -461,18 +446,7 @@ function CurrentStanding() {
               ? 'Over your released results so far.'
               : 'From your immediate past semester.'
           }
-          info={
-            <>
-              This is your confirmed CGPA over results that are <strong>out</strong>.
-              {status === 'released' && (
-                <>
-                  <br />
-                  Courses you mark as <strong>not released</strong> in Advanced are
-                  pulled out of this number and shown as a best / worst projection below.
-                </>
-              )}
-            </>
-          }
+          info={ideaTip(status === 'released' ? 'calc.currentCgpa.released' : 'calc.currentCgpa.past')}
         />
         <label className="block">
           <span className="label">Current CGPA</span>
@@ -741,18 +715,7 @@ function HistoryMode() {
         subtitle="Which level are you in now, and how does it stand?"
         status={status}
         onStatus={applyStanding}
-        info={
-          <>
-            <strong>CGPA History</strong> records your confirmed CGPA for each completed
-            level so you can plan ahead.
-            <br />
-            <br />
-            Pick the level you’re in now. If it’s <strong>Not released</strong> or{' '}
-            <strong>Just started</strong>, planning is based on the immediate past
-            semester. When <strong>Released</strong>, use <strong>Advanced</strong> to mark
-            any of that level’s courses whose results aren’t out yet.
-          </>
-        }
+        info={ideaTip('calc.history')}
       />
 
       <Card>

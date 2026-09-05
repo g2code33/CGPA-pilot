@@ -208,6 +208,14 @@ export function NextSemester() {
   }
 
   const noData = record.cgpa === null;
+  // Hero explanation — registry-driven (admin can reword or hide per role).
+  const heroTip = ideaTip(
+    isFinishCurrent
+      ? 'next.mission.finish'
+      : isUponRelease
+        ? 'next.mission.release'
+        : 'next.mission.next'
+  );
 
   return (
     <div className="space-y-4">
@@ -244,39 +252,11 @@ export function NextSemester() {
           </div>
         </div>
         <div className="mt-3 flex justify-end">
-          <Info label="How is this worked out?" className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25">
-            <span>
-              {isFinishCurrent && (
-                <>
-                  You’re in this semester now, so this is the average you need to{' '}
-                  <strong>finish it</strong> to stay on course for your {fmt2(target)}{' '}
-                  target. It counts this semester’s credits together with everything
-                  still ahead, so the numbers add up exactly.
-                </>
-              )}
-              {isUponRelease && (
-                <>
-                  You’ve already <strong>written</strong> this semester but its results
-                  aren’t out. This is the steady average you need across these pending
-                  credits and the semesters still ahead (what this semester needed to
-                  earn), and the CGPA you’ll land on once results are{' '}
-                  <strong>released</strong>.
-                </>
-              )}
-              {!isFinishCurrent && !isUponRelease && (
-                <>
-                  The <strong>Required GPA</strong> is the semester average you’d need
-                  to stay on course for your {fmt2(target)} target over the credits
-                  that remain.
-                </>
-              )}
-              <br />
-              <br />
-              It is a <strong>steady average to hold from this semester to
-              graduation</strong> — not a target for the end of this semester alone.
-              Everything is computed locally and works offline.
-            </span>
-          </Info>
+          {heroTip && (
+            <Info label="How is this worked out?" className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25">
+              {heroTip}
+            </Info>
+          )}
         </div>
       </Card>
 

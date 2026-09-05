@@ -29,6 +29,7 @@ import { Milestones } from './views/Milestones';
 import { Privacy } from './views/Privacy';
 import { InstitutionSelector } from './components/InstitutionSelector';
 import { Info } from './components/ui';
+import { ideaTip } from './infoTips';
 import { SkySplash } from './components/SkySplash';
 import { AppGlyph } from './components/AppGlyph';
 import { fmt2 } from './util/format';
@@ -356,6 +357,8 @@ export default function App() {
       : d.state.mode === 'history'
         ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)
         : d.state.baseline.cgpa;
+  // Home help sentence — registry-driven so the admin can reword or hide it.
+  const homeHowItWorks = ideaTip('home.howItWorks');
   return (
     <div className="h-[100dvh] flex flex-col bg-gradient-to-b from-brand-50 to-white">
       <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
@@ -440,14 +443,14 @@ export default function App() {
           )}
           {/* Help tip — same guidance as the onboarding line, always reachable */}
           <div className="mt-2.5 flex justify-end">
-            <Info
-              label="How does this work?"
-              className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25 [&>p]:bg-white/15 [&>p]:text-white [&>p]:ring-white/25"
-            >
-              Start in <strong>My results</strong> and enter your current level +
-              CGPA. Every tool below then works from that one number — nothing is
-              saved or shared.
-            </Info>
+            {homeHowItWorks && (
+              <Info
+                label="How does this work?"
+                className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25"
+              >
+                {homeHowItWorks}
+              </Info>
+            )}
           </div>
         </section>
 
