@@ -32,6 +32,11 @@ const TOOL_META: Record<string, ToolMeta> = {
   milestones: { title: 'Milestones', tagline: 'Stage-by-stage checkpoints', emoji: '🏁', needsData: true },
 };
 const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones'];
+
+// Icon slots in the preview are FIXED-size boxes that mirror the real app
+// (v1.0.18): AppGlyph renders the admin-sized icon centred in its own
+// fixed box, so an enlarged icon alone increases in size and width in
+// place — the tiles, rows and labels never change size or position.
 // The preview is ALWAYS full phone size — a fixed 390×800 device frame
 // (standard smartphone), with the journey content scrolling inside it, at
 // every stage (game, selection, mode, home, tools).
@@ -444,8 +449,9 @@ function HomeScreen(props: {
                     disabled ? 'bg-slate-100 opacity-70 ring-slate-200' : 'bg-white shadow-sm ring-slate-200 active:scale-[0.99]'
                   }`}
                 >
-                  {/* Mirrors the real tile: fixed-size slot, an admin-enlarged
-                      image overflows it without moving the tile. */}
+                  {/* Mirrors the real tile (v1.0.18): FIXED 36 px slot — the
+                      icon alone grows (centred in place), the row never
+                      changes size or position. */}
                   <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
                     <AppGlyph appearance={appearance} slot={id} fallback={m.emoji} size={24} />
                   </span>
@@ -519,11 +525,12 @@ function ToolFrame({
         >
           ←
         </button>
-        <h1 className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-extrabold text-slate-900">
+        <h1 className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-extrabold text-slate-900">
+          {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
           <span className="grid h-5 w-5 shrink-0 place-items-center">
             <AppGlyph appearance={appearance} slot={tool} fallback={m.emoji} size={18} />
           </span>
-          <span className="truncate">{m.title}</span>
+          <span className="min-w-0 truncate">{m.title}</span>
         </h1>
         <div className="flex shrink-0 items-center gap-1.5">
           <Pill label="🔁" title="Refresh (on the real app)" />
@@ -536,7 +543,7 @@ function ToolFrame({
         <div className="mx-auto w-full max-w-md">
           {m.needsData ? (
             <div className="rounded-2xl bg-white p-6 text-center ring-1 ring-slate-200">
-              {/* Fixed slot: an admin-enlarged icon overflows the card's rhythm */}
+              {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
               <span className="mx-auto grid h-10 w-10 place-items-center">
                 <AppGlyph appearance={appearance} slot={tool} fallback={m.emoji} size={40} />
               </span>

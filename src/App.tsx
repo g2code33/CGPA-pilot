@@ -509,10 +509,16 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
               {badge && !disabled && (
                 <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-white" aria-hidden />
               )}
-              {/* Fixed-size, invisible slot: an admin-enlarged image
-                  overflows this box — it never moves the tile. */}
-              <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
-                <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+              {/* FIXED-SLOT ICON GROWTH (v1.0.18): the slot is ALWAYS 36 px,
+                  so the tile and its row never change size. The icon ALONE
+                  grows — the glyph is absolutely centred on the slot, so an
+                  admin-enlarged icon overflows the slot symmetrically (it
+                  truly increases in size and width, in place) without ever
+                  shifting the tile, the row or the label. */}
+              <span className="relative h-9 w-9 shrink-0 text-2xl leading-none">
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                  <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                </span>
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-extrabold leading-tight text-slate-900">
@@ -545,8 +551,11 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
         onClick={() => setScreen('privacy')}
         className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base">
-          <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
+        {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
+        <span className="relative h-5 w-5 shrink-0 text-base">
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
+          </span>
         </span>
         <span className="flex-1 text-[11px] font-bold text-emerald-800">
           No account. Nothing you type is saved or shared — see how.
@@ -604,9 +613,12 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
                         : 'text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  {/* Fixed slot: an admin-enlarged image overflows, the nav row stays */}
-                  <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
-                    <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                  {/* v1.0.18: fixed slot — the row width never changes; the
+                      icon alone grows, centred in place (no shift). */}
+                  <span className="relative h-9 w-9 shrink-0 text-2xl leading-none">
+                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                      <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                    </span>
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-extrabold leading-tight">
@@ -632,8 +644,11 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
                   : 'text-emerald-800 hover:bg-emerald-50'
               }`}
             >
-              <span className="grid h-9 w-9 shrink-0 place-items-center text-xl leading-none">
-                <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-6 w-6" />
+              {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
+              <span className="relative h-9 w-9 shrink-0 text-xl leading-none">
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                  <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-6 w-6" />
+                </span>
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-extrabold leading-tight">Privacy</span>
@@ -671,15 +686,19 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
                   <>
                     <div className="no-print mb-4 flex items-center justify-between gap-3">
                       <h1 className="flex min-w-0 items-center gap-2 text-xl font-black tracking-tight text-slate-900">
-                        <span className="grid h-7 w-7 shrink-0 place-items-center text-lg leading-none">
-                          {SCREEN_TITLES[screen] && (
-                            <SlotGlyph
-                              appearance={appearance}
-                              slot={screen}
-                              fallback={SCREEN_TITLES[screen]!.icon}
-                              imgCls="h-5 w-5 object-contain"
-                            />
-                          )}
+                        {/* v1.0.18: fixed slot — the title never moves; the
+                            icon alone grows, centred in place (no shift). */}
+                        <span className="relative h-7 w-7 shrink-0 text-lg leading-none">
+                          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                            {SCREEN_TITLES[screen] && (
+                              <SlotGlyph
+                                appearance={appearance}
+                                slot={screen}
+                                fallback={SCREEN_TITLES[screen]!.icon}
+                                imgCls="h-5 w-5 object-contain"
+                              />
+                            )}
+                          </span>
                         </span>
                         <span className="truncate">{screenTitle}</span>
                       </h1>
