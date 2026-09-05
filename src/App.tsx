@@ -183,13 +183,29 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   const [aiStatus, setAiStatus] = useState<AiPublicStatus | null>(null);
   useEffect(() => {
     let live = true;
-    void getAiStatusShared().then((s) => {
-      if (live) setAiStatus(s);
-    });
+    const refresh = () => {
+      // force=true: the admin can flip the AI on/off at any time — the
+      // student picks it up within ~30s (and immediately when the tab
+      // becomes visible again) without refreshing the app.
+      void getAiStatusShared(true).then((s) => {
+        if (live) setAiStatus(s);
+      });
+    };
+    refresh();
+    const iv = window.setInterval(refresh, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVis);
     return () => {
       live = false;
+      window.clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, []);
+  // Where the student was when they tapped the 🤖 button — the AI screen's
+  // "‹ Collapse" button returns them exactly there.
+  const [aiReturnScreen, setAiReturnScreen] = useState<Screen>('home');
   const aiVisible = !(aiStatus && aiStatus.enabled === false);
   const visibleTools = TOOLS.filter((t) => t.id !== 'whatif' || whatIfAllowed);
   const visibleOrder = visibleTools.map((t) => t.id) as ToolId[];
@@ -332,6 +348,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
         <AiAssistant
           aiStatus={aiStatus}
           onNavigate={(s) => setScreen(s as Screen)}
+          onCollapse={() => setScreen(aiReturnScreen)}
         />
       )}
       {screen === 'privacy' && <Privacy />}
@@ -344,7 +361,12 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   const aiFab = (pos: string) =>
     aiVisible && screen !== 'ai' ? (
       <button
-        onClick={() => setScreen('ai')}
+        onClick={() => {
+          // Remember where the student was so the AI's "‹ Collapse" returns
+          // them there (home, a tool, …).
+          setAiReturnScreen(screen);
+          setScreen('ai');
+        }}
         aria-label="Open CGPA Pilot AI"
         title="CGPA Pilot AI — ask anything about your academics"
         className={`no-print fixed z-30 ${pos} grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-indigo-700 text-2xl text-white shadow-xl shadow-brand-900/40 ring-2 ring-white/50 transition hover:scale-105 active:scale-95`}
@@ -624,43 +646,50 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
               Offline-ready · works with no connection
             </div>
           </aside>
-          {/* Content area */}
-          <div className="app-frame min-w-0 flex-1 overflow-y-auto overscroll-contain">
-            <div
-              className={`mx-auto w-full px-6 py-5 ${
-                effectiveScreen === 'home' ? 'max-w-5xl' : 'max-w-3xl'
-              }`}
-            >
-              {effectiveScreen === 'home' ? (
-                homeContent(true)
-              ) : (
-                <>
-                  <div className="no-print mb-4 flex items-center justify-between gap-3">
-                    <h1 className="flex min-w-0 items-center gap-2 text-xl font-black tracking-tight text-slate-900">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center text-lg leading-none">
-                        {SCREEN_TITLES[screen] && (
-                          <SlotGlyph
-                            appearance={appearance}
-                            slot={screen}
-                            fallback={SCREEN_TITLES[screen]!.icon}
-                            imgCls="h-5 w-5 object-contain"
-                          />
-                        )}
-                      </span>
-                      <span className="truncate">{screenTitle}</span>
-                    </h1>
-                    <button
-                      onClick={() => setScreen('home')}
-                      className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
-                    >
-                      🏠 Home
-                    </button>
-                  </div>
-                  {toolBody}
-                </>
-              )}
+          {/* Content area — the AI screen is full-height (only its own
+              conversation scrolls; header + typing area stay put). */}
+          {effectiveScreen === 'ai' ? (
+            <div className="app-frame min-w-0 flex-1 overflow-hidden">
+              <div className="mx-auto h-full w-full max-w-3xl px-6 py-4">{toolBody}</div>
             </div>
-          </div>
+          ) : (
+            <div className="app-frame min-w-0 flex-1 overflow-y-auto overscroll-contain">
+              <div
+                className={`mx-auto w-full px-6 py-5 ${
+                  effectiveScreen === 'home' ? 'max-w-5xl' : 'max-w-3xl'
+                }`}
+              >
+                {effectiveScreen === 'home' ? (
+                  homeContent(true)
+                ) : (
+                  <>
+                    <div className="no-print mb-4 flex items-center justify-between gap-3">
+                      <h1 className="flex min-w-0 items-center gap-2 text-xl font-black tracking-tight text-slate-900">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center text-lg leading-none">
+                          {SCREEN_TITLES[screen] && (
+                            <SlotGlyph
+                              appearance={appearance}
+                              slot={screen}
+                              fallback={SCREEN_TITLES[screen]!.icon}
+                              imgCls="h-5 w-5 object-contain"
+                            />
+                          )}
+                        </span>
+                        <span className="truncate">{screenTitle}</span>
+                      </h1>
+                      <button
+                        onClick={() => setScreen('home')}
+                        className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
+                      >
+                        🏠 Home
+                      </button>
+                    </div>
+                    {toolBody}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         {aiFab('bottom-6 right-6')}
       </div>
@@ -703,13 +732,21 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             <ClearButton />
           </div>
         </header>
-        <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-3 py-3">
-          <div className="mx-auto w-full max-w-md">{toolBody}</div>
-        </div>
-        {/* Bottom tool navigation */}
-        <nav className="no-print shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-md items-center gap-2">
-            {isTool(screen) && prev ? (
+        {/* The AI screen is full-height: header + notices + typing area stay
+            put, only the conversation scrolls (and no bottom tool nav). */}
+        {screen === 'ai' ? (
+          <div className="app-frame flex-1 overflow-hidden px-3 py-2">
+            <div className="mx-auto h-full w-full max-w-md">{toolBody}</div>
+          </div>
+        ) : (
+          <>
+            <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+              <div className="mx-auto w-full max-w-md">{toolBody}</div>
+            </div>
+            {/* Bottom tool navigation */}
+            <nav className="no-print shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
+              <div className="mx-auto flex w-full max-w-md items-center gap-2">
+                {isTool(screen) && prev ? (
               <button
                 onClick={() => setScreen(prev.id)}
                 className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl px-2 py-2 text-left text-brand-700 active:scale-95"
@@ -749,8 +786,10 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             ) : (
               <div className="min-w-0 flex-1" />
             )}
-          </div>
-        </nav>
+              </div>
+            </nav>
+          </>
+        )}
         {aiFab('bottom-16 right-3')}
       </div>
     );

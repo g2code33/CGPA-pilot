@@ -14,7 +14,7 @@ function tableOf(sql) {
 }
 
 function isMultiRow(t) {
-  return t === 'admin_drafts';
+  return t === 'admin_drafts' || t === 'ai_errors';
 }
 
 function whereIdArg(sql) {
@@ -28,7 +28,9 @@ export function createD1Stub() {
     admin_auth: new Map(),
     ai_settings: new Map(),
     admin_drafts: new Map(), // multi-row: string id → row
+    ai_errors: new Map(), // multi-row: numeric autoincrement id → row
   };
+  let aiErrorSeq = 0;
 
   function makeStmt(sql) {
     let args = [];
@@ -38,6 +40,16 @@ export function createD1Stub() {
         return bound;
       },
       async first() {
+        // SELECT 1 (health probe)
+        if (/^\s*select\s+1\s*$/i.test(sql)) return { 1: 1 };
+        // SELECT name FROM sqlite_master … → list known tables.
+        if (/sqlite_master/i.test(sql)) {
+          return { name: 'published_config' };
+        }
+        // SELECT COUNT(*) AS n FROM ai_errors
+        if (/count\(\*\)/i.test(sql)) {
+          return { n: tables.ai_errors.size };
+        }
         const t = tableOf(sql);
         if (!t || !tables[t]) throw new Error(`d1Stub: unknown table for: ${sql}`);
         // `WHERE id = ?` (drafts by id) uses the bound key; otherwise id=1.
@@ -46,8 +58,21 @@ export function createD1Stub() {
         return row ? { ...row } : null;
       },
       async all() {
+        // SELECT name FROM sqlite_master WHERE type = "table"
+        if (/sqlite_master/i.test(sql)) {
+          return { results: Object.keys(tables).map((name) => ({ name })) };
+        }
         const t = tableOf(sql);
         if (!t || !tables[t]) throw new Error(`d1Stub: unknown table for: ${sql}`);
+        // ai_errors: ORDER BY id DESC LIMIT ?
+        if (t === 'ai_errors') {
+          const limit = typeof args[0] === 'number' ? args[0] : Infinity;
+          const results = [...tables.ai_errors.values()]
+            .sort((a, b) => b.id - a.id)
+            .slice(0, limit)
+            .map((r) => ({ ...r }));
+          return { results };
+        }
         if (whereIdArg(sql)) {
           const row = tables[t].get(args[0]);
           return { results: row ? [{ ...row }] : [] };
@@ -69,10 +94,15 @@ export function createD1Stub() {
         if (s.startsWith('CREATE') || s.startsWith('PRAGMA') || s.startsWith('ALTER') || s.startsWith('DROP')) {
           return { changes: 0, meta: { last_row_id: null, changes: 0 } };
         }
-        // DELETE FROM <t> WHERE id = ?
+        // DELETE FROM <t> [WHERE id = ?] — a WHERE-less delete clears the table.
         if (s.startsWith('DELETE')) {
           const t = tableOf(sql);
           if (!t || !tables[t]) throw new Error(`d1Stub: unknown table for: ${sql}`);
+          if (!/where/i.test(s)) {
+            const n = tables[t].size;
+            tables[t].clear();
+            return { changes: n };
+          }
           const had = tables[t].delete(args[0]);
           return { changes: had ? 1 : 0 };
         }
@@ -110,6 +140,21 @@ export function createD1Stub() {
         }
         if (s.includes('settings_json')) {
           tables[t].set(1, { id: 1, settings_json: args[0], updated_at: args[1] });
+          return { changes: 1 };
+        }
+        if (t === 'ai_errors') {
+          aiErrorSeq += 1;
+          tables[t].set(aiErrorSeq, {
+            id: aiErrorSeq,
+            ts: args[0],
+            kind: args[1],
+            code: args[2],
+            status: args[3],
+            provider: args[4],
+            model: args[5],
+            key_label: args[6],
+            detail: args[7],
+          });
           return { changes: 1 };
         }
         if (s.includes('admin_drafts')) {

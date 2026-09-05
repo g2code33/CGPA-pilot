@@ -19,7 +19,7 @@
 // Keys never leave the Worker (except authenticated admin GET).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { AiKey, AiProvider, AiSettings } from '../../src/admin/aiSettings';
+import type { AiContentPart, AiKey, AiProvider, AiSettings } from '../../src/admin/aiSettings';
 import {
   defaultAiSettings,
   publicAiStatus,
@@ -152,19 +152,29 @@ export function formatAiContext(ctx: AiStudentContext): string {
     );
   }
   if (Array.isArray(ctx.semesters) && ctx.semesters.length) {
-    lines.push('SEMESTERS:');
+    lines.push('SEMESTERS (full course-level data — quote these tables when useful):');
     for (const s of ctx.semesters) {
       const bits = [s.label, s.gpa != null ? `GPA ${s.gpa.toFixed(2)}` : 'GPA —', `${s.credits} credits`];
       if (s.pending) bits.push('results not released yet');
-      lines.push(`- ${bits.join(', ')}`);
-      for (const c of s.courses ?? []) {
-        if (c.pending) lines.push(`  · ${c.code}: pending (${c.credits}cr)`);
+      lines.push(`  ▸ ${bits.join(', ')}`);
+      const courses = (s.courses ?? []).filter((c) => c.code || c.grade != null || c.pending);
+      if (courses.length) {
+        lines.push('    | Course | Credits | Grade | Status |');
+        lines.push('    | --- | --- | --- | --- |');
+        for (const c of courses) {
+          lines.push(
+            `    | ${c.code} | ${c.credits} | ${c.grade ?? '—'} | ${c.pending ? 'pending' : 'graded'} |`
+          );
+        }
       }
     }
   }
   if (ctx.pendingCredits) lines.push(`PENDING CREDITS (awaiting release): ${ctx.pendingCredits}`);
   if (ctx.targetCgpa != null) lines.push(`TARGET CGPA: ${ctx.targetCgpa.toFixed(2)}`);
   if (ctx.plannedNextCredits) lines.push(`PLANNED NEXT-SEMESTER CREDITS: ${ctx.plannedNextCredits}`);
+  lines.push(
+    'You may reference or reproduce the tables above in your answer (Markdown tables are rendered for the student).'
+  );
   return `STUDENT CONTEXT (live data from the student's tools):\n${lines.join('\n')}`;
 }
 
@@ -196,9 +206,44 @@ export type AiChatResult =
         | 'use-direct';
       message: string;
       retryAfterSec?: number;
+      // Admin-log context (never sent to the student):
+      detail?: string;
+      provider?: string;
+      model?: string;
+      keyLabel?: string;
+      httpStatus?: number;
     };
 
 const AI_TIMEOUT_MS = 90_000;
+
+/** Parse `data:(mime);base64,(data)` into mime + raw base64. */
+export function parseDataUrl(dataUrl: string): { mime: string; b64: string } | null {
+  const m = dataUrl.match(/^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,(.*)$/is);
+  if (!m) return null;
+  return { mime: m[1], b64: m[2] };
+}
+
+function sanitizeContent(content: unknown): AiChatMessage['content'] | null {
+  if (typeof content === 'string') {
+    const t = content.trim();
+    return t ? t.slice(0, 8000) : null;
+  }
+  if (Array.isArray(content)) {
+    const parts: AiContentPart[] = [];
+    for (const p of content) {
+      if (!p || typeof p !== 'object') continue;
+      const po = p as { type?: unknown; text?: unknown; dataUrl?: unknown };
+      if (po.type === 'text' && typeof po.text === 'string' && po.text.trim()) {
+        parts.push({ type: 'text', text: po.text.trim().slice(0, 4000) });
+      } else if (po.type === 'image' && typeof po.dataUrl === 'string') {
+        if (parseDataUrl(po.dataUrl) && po.dataUrl.length < 8_000_000) parts.push({ type: 'image', dataUrl: po.dataUrl });
+      }
+    }
+    if (!parts.some((p) => (p.type === 'text' ? p.text.trim() : true))) return null;
+    return parts.slice(0, 6);
+  }
+  return null;
+}
 
 function sanitizeMessages(messages: unknown): AiChatMessage[] | null {
   if (!Array.isArray(messages) || messages.length === 0) return null;
@@ -206,12 +251,12 @@ function sanitizeMessages(messages: unknown): AiChatMessage[] | null {
   for (const m of messages) {
     if (!m || typeof m !== 'object') return null;
     const role = (m as { role?: unknown }).role;
-    const content = (m as { content?: unknown }).content;
     if (role !== 'user' && role !== 'assistant') return null;
-    if (typeof content !== 'string' || !content.trim()) return null;
-    out.push({ role, content: content.slice(0, 8000) });
+    const content = sanitizeContent((m as { content?: unknown }).content);
+    if (content === null) continue;
+    out.push({ role, content });
   }
-  return out.slice(-20);
+  return out.length ? out.slice(-20) : null;
 }
 
 function buildSystemPrompt(s: AiSettings, context: AiChatInput['context']): string {
@@ -267,17 +312,22 @@ export async function runAiChat(input: AiChatInput, ip: string): Promise<AiChatR
   const system = buildSystemPrompt(s, input.context);
   const f = input.fetchImpl ?? fetch;
   let lastError = 'The AI provider did not respond.';
+  let lastStatus = 0;
+  let lastKeyLabel = '';
 
   // Try keys in rotation order; a failing key cools down for 5 minutes and
   // the next key is used — so one dead key never blocks the pool.
   for (let attempt = 0; attempt < provider.keys.length; attempt++) {
     const key = pickKey(provider, input.now ?? Date.now());
     if (!key) break;
+    lastKeyLabel = key.label || key.id;
     const res = await callProvider(f, provider, key, system, messages, s.maxTokens, s.temperature);
     if (res.ok) {
       return { ok: true, text: res.text, provider: provider.label, model: provider.model, keyLabel: key.label || key.id, ms: res.ms };
     }
     lastError = res.error;
+    const m = res.error.match(/^HTTP (\d{3}):/);
+    if (m) lastStatus = Number(m[1]);
     if (res.retryable) {
       markKeyFailed(provider.id, key.id);
       advanceKey(provider);
@@ -286,7 +336,16 @@ export async function runAiChat(input: AiChatInput, ip: string): Promise<AiChatR
     break;
   }
 
-  return { ok: false, code: 'provider-error', message: friendlyProviderError(lastError) };
+  return {
+    ok: false,
+    code: 'provider-error',
+    message: friendlyProviderError(lastError),
+    detail: lastError.slice(0, 500),
+    provider: provider.label,
+    model: provider.model,
+    keyLabel: lastKeyLabel,
+    httpStatus: lastStatus,
+  };
 }
 
 function friendlyProviderError(msg: string): string {
@@ -306,12 +365,42 @@ function friendlyProviderError(msg: string): string {
   if (m.includes('404')) {
     return 'The AI provider endpoint or model was not found. Check the base URL and model in AI Settings.';
   }
-  return `The AI provider returned an error: ${msg.slice(0, 200)}`;
+  // Unknown provider error → a calm, generic student message. The RAW error
+  // is preserved in `detail` (admin log) — students never see provider JSON.
+  return 'The AI service hit an unexpected snag. Please try again in a moment.';
 }
 
 interface CallParams {
   maxTokens: number;
   temperature: number;
+}
+
+/** Content parts → OpenAI wire format (string stays a string). */
+function contentToOpenAi(m: AiChatMessage): { role: string; content: string | unknown[] } {
+  if (typeof m.content === 'string') return { role: m.role, content: m.content };
+  return {
+    role: m.role,
+    content: m.content.map((p) =>
+      p.type === 'text' ? { type: 'text', text: p.text } : { type: 'image_url', image_url: { url: p.dataUrl } }
+    ),
+  };
+}
+
+/** Content parts → Anthropic wire format (string stays a string). */
+function contentToAnthropic(m: AiChatMessage): { role: string; content: string | unknown[] } {
+  if (typeof m.content === 'string') return { role: m.role, content: m.content };
+  const hasImage = m.content.some((p) => p.type === 'image');
+  if (!hasImage) {
+    return { role: m.role, content: m.content.map((p) => (p.type === 'text' ? p.text : '')).join('') };
+  }
+  return {
+    role: m.role,
+    content: m.content.flatMap((p): unknown[] => {
+      if (p.type === 'text') return [{ type: 'text', text: p.text }];
+      const d = parseDataUrl(p.dataUrl);
+      return d ? [{ type: 'image', source: { type: 'base64', media_type: d.mime, data: d.b64 } }] : [];
+    }),
+  };
 }
 
 async function callProvider(
@@ -342,7 +431,7 @@ async function callProvider(
           max_tokens: params.maxTokens,
           temperature: params.temperature,
           system,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          messages: messages.map(contentToAnthropic),
         }),
       });
       const text = await res.text();
@@ -373,7 +462,7 @@ async function callProvider(
         model: provider.model,
         temperature: params.temperature,
         max_tokens: params.maxTokens,
-        messages: [{ role: 'system', content: system }, ...messages],
+        messages: [{ role: 'system', content: system }, ...messages.map(contentToOpenAi)],
       }),
     });
     const text = await res.text();
@@ -394,6 +483,215 @@ async function callProvider(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ── Streaming chat (tokens appear as they are generated → feels fast) ─────
+
+export type AiStreamResult =
+  | { ok: true; response: Response; provider: string; model: string; keyLabel: string }
+  | {
+      ok: false;
+      code: 'ai-unavailable' | 'no-provider' | 'no-keys' | 'rate-limited' | 'bad-request' | 'provider-error' | 'use-direct';
+      message: string;
+      retryAfterSec?: number;
+      /** Raw upstream error — for the admin error log, never shown to students. */
+      detail?: string;
+      provider?: string;
+      model?: string;
+      keyLabel?: string;
+      httpStatus?: number;
+    };
+
+const STREAM_CONNECT_TIMEOUT_MS = 30_000;
+
+/**
+ * Call the provider with `stream: true`. Resolves when the RESPONSE HEADERS
+ * arrive (the connect timeout does not limit stream lifetime — generation
+ * can run long). Non-2xx → structured error (same retryable rules as the
+ * buffered path, so key rotation keeps working).
+ */
+async function callProviderStream(
+  f: typeof fetch,
+  provider: AiProvider,
+  key: AiKey,
+  system: string,
+  messages: AiChatMessage[],
+  maxTokens: number,
+  temperature: number
+): Promise<{ ok: true; body: ReadableStream<Uint8Array> } | { ok: false; error: string; status: number; retryable: boolean }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), STREAM_CONNECT_TIMEOUT_MS);
+  try {
+    let res: Response;
+    if (provider.type === 'anthropic') {
+      res = await f(`${provider.baseUrl.replace(/\/+$/, '')}/v1/messages`, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'content-type': 'application/json', 'x-api-key': key.value, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: provider.model,
+          max_tokens: maxTokens,
+          temperature,
+          stream: true,
+          system,
+          messages: messages.map(contentToAnthropic),
+        }),
+      });
+    } else {
+      res = await f(`${provider.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${key.value}` },
+        body: JSON.stringify({
+          model: provider.model,
+          temperature,
+          max_tokens: maxTokens,
+          stream: true,
+          messages: [{ role: 'system', content: system }, ...messages.map(contentToOpenAi)],
+        }),
+      });
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 300)}`, status: res.status, retryable: res.status === 401 || res.status === 403 || res.status === 429 };
+    }
+    if (!res.body) return { ok: false, error: 'The provider returned no stream body.', status: 0, retryable: false };
+    return { ok: true, body: res.body };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg, status: 0, retryable: /aborted|timeout|timed out/i.test(msg) };
+  } finally {
+    // Headers arrived (or failed) — the stream, if any, now has its own
+    // lifetime and must not be aborted by the connect timeout.
+    clearTimeout(timer);
+  }
+}
+
+/** Prepend our `meta` event (stream format + provider/model) to the raw SSE. */
+function wrapStream(body: ReadableStream<Uint8Array>, provider: AiProvider, label: string, model: string): Response {
+  const enc = new TextEncoder();
+  const meta = `event: meta\ndata: ${JSON.stringify({
+    format: 'cgpa-ai-stream-meta',
+    streamFormat: provider.type === 'anthropic' ? 'anthropic' : 'openai',
+    provider: label,
+    model,
+  })}\n\n`;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      try {
+        controller.enqueue(enc.encode(meta));
+      } catch {
+        return;
+      }
+      const reader = body.getReader();
+      const pump = async () => {
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          controller.close();
+        } catch {
+          // Mid-stream failure: tell the client it was interrupted, then end.
+          try {
+            controller.enqueue(enc.encode(`event: error\ndata: ${JSON.stringify({ message: 'stream-interrupted' })}\n\n`));
+            controller.close();
+          } catch {
+            /* stream already closed */
+          }
+        }
+      };
+      void pump();
+    },
+    cancel() {
+      body.cancel().catch(() => {});
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-accel-buffering': 'no' },
+  });
+}
+
+/** Streaming twin of runAiChat: same guards + key rotation, SSE out. */
+export async function streamAiChat(input: AiChatInput, ip: string): Promise<AiStreamResult> {
+  const s = input.settings;
+  if (!s || !s.enabled) {
+    return { ok: false, code: 'ai-unavailable', message: 'The AI assistant is currently turned off.' };
+  }
+  const messages = sanitizeMessages(input.messages);
+  if (!messages) {
+    return { ok: false, code: 'bad-request', message: 'Provide a non-empty messages array of { role: user|assistant, content }.' };
+  }
+  const rl = rateLimitAllow(ip, s.maxMessagesPerHour, input.now ?? Date.now());
+  if (!rl.ok) {
+    return {
+      ok: false,
+      code: 'rate-limited',
+      message: `Hourly limit reached (${s.maxMessagesPerHour} messages). Try again later.`,
+      retryAfterSec: rl.retryAfterSec,
+    };
+  }
+  const enabledProviders = s.providers.filter((p) => p.enabled);
+  if (!enabledProviders.length) {
+    return { ok: false, code: 'no-provider', message: 'No AI provider is enabled yet — your administrator is still setting it up.' };
+  }
+  const requested = input.providerId ? enabledProviders.find((p) => p.id === input.providerId) : undefined;
+  const provider =
+    requested ??
+    (s.defaultProviderId ? enabledProviders.find((p) => p.id === s.defaultProviderId) : undefined) ??
+    enabledProviders[0];
+  if (provider.mode === 'direct') {
+    return { ok: false, code: 'use-direct', message: 'use-direct' };
+  }
+  if (!provider.keys.length) {
+    return {
+      ok: false,
+      code: 'no-keys',
+      message: `No API keys are configured for ${provider.label} yet.`,
+      provider: provider.label,
+      model: provider.model,
+    };
+  }
+  const system = buildSystemPrompt(s, input.context);
+  const f = input.fetchImpl ?? fetch;
+  let lastError = 'The AI provider did not respond.';
+  let lastStatus = 0;
+  let lastKeyLabel = '';
+  for (let attempt = 0; attempt < provider.keys.length; attempt++) {
+    const key = pickKey(provider, input.now ?? Date.now());
+    if (!key) break;
+    lastKeyLabel = key.label || key.id;
+    const up = await callProviderStream(f, provider, key, system, messages, s.maxTokens, s.temperature);
+    if (up.ok) {
+      return {
+        ok: true,
+        response: wrapStream(up.body, provider, provider.label, provider.model),
+        provider: provider.label,
+        model: provider.model,
+        keyLabel: lastKeyLabel,
+      };
+    }
+    lastError = up.error;
+    lastStatus = up.status;
+    if (up.retryable) {
+      markKeyFailed(provider.id, key.id);
+      advanceKey(provider);
+      continue;
+    }
+    break;
+  }
+  return {
+    ok: false,
+    code: 'provider-error',
+    message: friendlyProviderError(lastError),
+    detail: lastError.slice(0, 500),
+    provider: provider.label,
+    model: provider.model,
+    keyLabel: lastKeyLabel,
+    httpStatus: lastStatus,
+  };
 }
 
 // ── Test endpoint (admin “Test this key”) ─────────────────────────────────

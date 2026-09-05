@@ -34,8 +34,8 @@ test('ensureExtraTables uses db.batch with a SINGLE statement per entry', async 
   try {
     await ensureExtraTables(fakeDb);
     assert.equal(calls.length, 1, 'must create via batch()');
-    assert.equal(calls[0].length, 2);
-    assert.equal(preparedSql.length, 2);
+    assert.equal(calls[0].length, 3);
+    assert.equal(preparedSql.length, 3);
     for (const sql of preparedSql) {
       const body = sql.trim().replace(/;\s*$/, '');
       assert.ok(!body.includes(';'), `each prepared statement must be single (D1 exec multi-statement bug): ${sql}`);
@@ -44,6 +44,7 @@ test('ensureExtraTables uses db.batch with a SINGLE statement per entry', async 
     }
     assert.match(preparedSql[0], /ai_settings/);
     assert.match(preparedSql[1], /admin_drafts/);
+    assert.match(preparedSql[2], /ai_errors/);
 
     // Success is cached — no repeated DDL on the next request.
     await ensureExtraTables(fakeDb);

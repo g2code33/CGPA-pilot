@@ -39,8 +39,11 @@ import {
   verifyPasscode,
 } from '../../src/admin/passcodeCrypto';
 import {
+  clearAiErrors,
+  countAiErrors,
   createAdminCredential,
   ensureExtraTables,
+  listAiErrors,
   listDrafts,
   readAdminCatalogDoc,
   readAdminCredential,
@@ -49,6 +52,7 @@ import {
   readPublished,
   readPublishedMeta,
   publishAll,
+  recordAiError,
   rotateAdminCredential,
   writeAiSettingsJson,
   writeDraft,
@@ -59,7 +63,9 @@ import {
   aiSettingsForServing,
   maskKey,
   parseAiSettings,
+  publicAiStatus,
   runAiChat,
+  streamAiChat,
   testAiKey,
   __resetAiRuntime,
 } from './ai';
@@ -498,23 +504,65 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     const body = await parseJsonBody(req);
     if (!body.ok) return body.response;
     const ip = req.headers.get('cf-connecting-ip') ?? 'local';
-    const result = await runAiChat(
-      {
-        settings: aiSettingsForServing(parsed),
-        providerId:
-          typeof body.value.providerId === 'string' && body.value.providerId
-            ? body.value.providerId
-            : null,
-        messages: body.value.messages,
-        context:
-          body.value.context && typeof body.value.context === 'object' && !Array.isArray(body.value.context)
-            ? (body.value.context as Record<string, unknown>)
-            : null,
-      },
-      ip
-    );
+    const input = {
+      settings: aiSettingsForServing(parsed),
+      providerId: typeof body.value.providerId === 'string' && body.value.providerId ? body.value.providerId : null,
+      messages: body.value.messages,
+      context:
+        body.value.context && typeof body.value.context === 'object' && !Array.isArray(body.value.context)
+          ? (body.value.context as Record<string, unknown>)
+          : null,
+    };
+
+    // ── STREAMING (the app's default): tokens arrive live → feels fast ────
+    if (body.value.stream === true) {
+      const result = await streamAiChat(input, ip);
+      if (!result.ok) {
+        // Log real provider failures so the admin can diagnose them.
+        // PRIVACY: only technical fields — never the student's question.
+        if (result.code === 'provider-error') {
+          await recordAiError(env.CONFIG_DB, {
+            kind: 'stream',
+            code: 'provider-error',
+            status: result.httpStatus ?? 0,
+            provider: result.provider ?? null,
+            model: result.model ?? null,
+            keyLabel: result.keyLabel ?? null,
+            detail: result.detail ?? result.message,
+          }).catch(() => {});
+        }
+        const status =
+          result.code === 'bad-request'
+            ? 400
+            : result.code === 'rate-limited'
+              ? 429
+              : result.code === 'ai-unavailable'
+                ? 404
+                : 502;
+        // SSE error frame — the client's stream reader understands both
+        // this and a plain JSON error.
+        return new Response(
+          `event: error\ndata: ${JSON.stringify({ ok: false, error: result.code, message: result.message, retryAfterSec: result.retryAfterSec })}\n\n`,
+          { status, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' } }
+        );
+      }
+      return result.response;
+    }
+
+    const result = await runAiChat(input, ip);
     if (result.ok) {
       return json({ ok: true, text: result.text, provider: result.provider, model: result.model, ms: result.ms });
+    }
+    if (result.code === 'provider-error') {
+      await recordAiError(env.CONFIG_DB, {
+        kind: 'chat',
+        code: 'provider-error',
+        status: result.httpStatus ?? 0,
+        provider: result.provider ?? null,
+        model: result.model ?? null,
+        keyLabel: result.keyLabel ?? null,
+        detail: result.detail ?? result.message,
+      }).catch(() => {});
     }
     const status =
       result.code === 'bad-request'
@@ -663,6 +711,106 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     }
 
     return json({ ok: false, error: 'method-not-allowed' }, 405);
+  }
+
+  // ── Admin: student-facing AI error log + system diagnostics ─────────────
+  const errMatch = path.match(/^\/api\/admin\/errors(\/clear)?$/);
+  if (errMatch) {
+    const guarded = await guardAdmin(req, env);
+    if (guarded !== true) return guarded;
+    if (!env.CONFIG_DB) {
+      return json({ ok: false, error: 'not-configured', message: 'D1 database is not configured on this Worker.' }, 503);
+    }
+    await ensureExtraTables(env.CONFIG_DB);
+    if (errMatch[1] === '/clear') {
+      if (method !== 'POST') return json({ ok: false, error: 'method-not-allowed' }, 405);
+      await clearAiErrors(env.CONFIG_DB);
+      return json({ ok: true });
+    }
+    if (method !== 'GET') return json({ ok: false, error: 'method-not-allowed' }, 405);
+    const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 500));
+    const [errors, total] = await Promise.all([listAiErrors(env.CONFIG_DB, limit), countAiErrors(env.CONFIG_DB)]);
+    return json({ format: 'cgpa-pilot-admin-errors', total, errors });
+  }
+
+  if (path === '/api/admin/diagnostics') {
+    if (method !== 'GET') return json({ ok: false, error: 'method-not-allowed' }, 405);
+    const guarded = await guardAdmin(req, env);
+    if (guarded !== true) return guarded;
+    const checks: { id: string; label: string; ok: boolean; detail: string }[] = [];
+    checks.push({ id: 'worker', label: 'API Worker reachable', ok: true, detail: 'You are reading its answer right now.' });
+    if (!env.CONFIG_DB) {
+      checks.push({ id: 'd1', label: 'D1 database attached', ok: false, detail: 'The CONFIG_DB binding is missing on this deployment.' });
+      return json({ format: 'cgpa-pilot-admin-diagnostics', at: new Date().toISOString(), checks });
+    }
+    checks.push({ id: 'd1', label: 'D1 database attached', ok: true, detail: 'Binding present.' });
+    let tablesOk = false;
+    let tablesDetail = '';
+    try {
+      await ensureExtraTables(env.CONFIG_DB);
+      await listAiErrors(env.CONFIG_DB, 1);
+      tablesOk = true;
+      tablesDetail = 'ai_settings, admin_drafts and ai_errors tables are reachable.';
+    } catch (e) {
+      tablesDetail = `Table check failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    checks.push({ id: 'tables', label: 'Configuration tables', ok: tablesOk, detail: tablesDetail });
+    let adminCat: { version: number } | null = null;
+    let published: { version: number } | null = null;
+    try {
+      const adminDoc = await readAdminCatalogDoc(env.CONFIG_DB);
+      adminCat = adminDoc ? { version: adminDoc.version } : null;
+      const pubMeta = await readPublishedMeta(env.CONFIG_DB);
+      published = pubMeta ? { version: pubMeta.version } : null;
+    } catch {
+      /* reported below */
+    }
+    checks.push({
+      id: 'catalog',
+      label: 'Admin catalog stored',
+      ok: adminCat !== null,
+      detail: adminCat ? `Version ${adminCat.version} on the server.` : 'No admin catalog saved yet — Save & Publish once from the console.',
+    });
+    checks.push({
+      id: 'published',
+      label: 'Student config published',
+      ok: published !== null,
+      detail: published ? `Published version ${published.version} is live for students.` : 'Nothing published yet — students run on the bundled seed.',
+    });
+    let ai: { enabled: boolean; ready: boolean; version: number; keys: number; providers: number } | null = null;
+    try {
+      const row = await readAiSettingsJson(env.CONFIG_DB);
+      const parsed = parseAiSettings(row?.settingsJson ?? null);
+      const s = aiSettingsForServing(parsed);
+      const keys = s.providers.reduce((n, p) => n + (p.enabled ? p.keys.length : 0), 0);
+      ai = {
+        enabled: s.enabled,
+        ready: parsed.status === 'ok' ? publicAiStatus(s).ready : false,
+        version: s.version,
+        keys,
+        providers: s.providers.filter((p) => p.enabled).length,
+      };
+    } catch {
+      /* below */
+    }
+    if (ai) {
+      const ok = ai.enabled && ai.ready && ai.keys > 0;
+      checks.push({
+        id: 'ai',
+        label: 'AI assistant',
+        ok,
+        detail: !ai.enabled
+          ? 'OFF — students cannot see the assistant. Turn the Feature switch on.'
+          : ai.keys === 0
+            ? 'ON but no usable API keys in any enabled provider.'
+            : ai.ready
+              ? `ON · settings v${ai.version} · ${ai.providers} enabled provider(s) · ${ai.keys} key(s) in the rotation pool.`
+              : 'ON but not ready — check the providers/keys.',
+      });
+    } else {
+      checks.push({ id: 'ai', label: 'AI assistant', ok: false, detail: 'AI settings could not be read.' });
+    }
+    return json({ format: 'cgpa-pilot-admin-diagnostics', at: new Date().toISOString(), checks });
   }
 
   // Latest app version — powers the in-app "new version available" check for

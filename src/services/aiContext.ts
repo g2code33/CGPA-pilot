@@ -54,13 +54,15 @@ export function buildAiContext(
             s.creditHoursOverride ??
             s.courses.reduce((sum, c) => sum + (Number.isFinite(c.creditHours) ? c.creditHours : 0), 0),
           pending: s.pending,
+          // FULL course list (graded AND pending) — the model needs the real
+          // grades/credits to quote or reproduce the student's tables.
           courses: s.courses
-            .filter((c) => c.pending)
+            .filter((c) => c.code || c.grade !== null || c.score !== null || c.pending)
             .map((c) => ({
               code: c.code || '—',
               grade: c.grade,
               credits: c.creditHours,
-              pending: true,
+              pending: c.pending,
             })),
         }))
       : [];

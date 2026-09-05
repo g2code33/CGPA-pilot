@@ -105,7 +105,12 @@ test('history mode → semesters with GPAs, credits and pending courses', () => 
   assert.match(block, /GPA 3\.60/);
   assert.match(block, /30 credits/);
   assert.match(block, /results not released yet/);
-  assert.match(block, /TST12: pending \(3cr\)/);
+  // Rich context: per-semester course TABLE (Markdown) the model can quote —
+  // graded AND pending courses (not just the unreleased ones).
+  assert.match(block, /\| Course \| Credits \| Grade \| Status \|/);
+  assert.match(block, /\| TST11 \| 3 \| A \| graded \|/);
+  assert.match(block, /\| TST12 \| 3 \| — \| pending \|/);
+  assert.match(block, /Markdown tables are rendered for the student/);
   assert.match(block, /PENDING CREDITS \(awaiting release\): 32/);
 });
 

@@ -378,9 +378,41 @@ export function clearCachedConfig(): void {
  * was slow. Nothing is cleared here anymore; all storage touches in the app
  * still live in this module.
  */
+// ── AI conversation history (the ONE student-owned persistent store) ───────
+// The AI assistant keeps the student's conversations on THIS device so they
+// can always come back to them (the admin can't see them; nothing is
+// uploaded). This key is the exception to the "no student storage" rule, and
+// it is wiped by the explicit 🔄 Clear button (see wipeDeviceStorage) — the
+// only other storage in the student app is the non-personal curriculum cache.
+const AI_HISTORY_KEY = 'cgpa-pilot-ai-history-v1';
+
+/** Read the raw AI history JSON (null = none / unreadable). */
+export function readAiHistoryRaw(): string | null {
+  try {
+    return localStorage.getItem(AI_HISTORY_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the AI history JSON. Returns false when storage is full/unavailable. */
+export function saveAiHistoryRaw(json: string): boolean {
+  try {
+    localStorage.setItem(AI_HISTORY_KEY, json);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function wipeDeviceStorage(): void {
-  // Intentionally a no-op: there is no student-owned persistent storage to
-  // reset (student state is in-memory and the caller's reload drops it), and
-  // the config cache / app shell / admin data must survive a clear so the app
-  // can never fall back to a stale bundled seed.
+  // Student-owned persistent storage that a 🔄 Clear must remove:
+  //   • the AI conversation history (device-only, the student's own words)
+  // The offline curriculum config / app shell / admin data are NOT touched —
+  // they contain no personal data and clearing them breaks the offline shell.
+  try {
+    localStorage.removeItem(AI_HISTORY_KEY);
+  } catch {
+    /* storage unavailable — nothing to wipe */
+  }
 }

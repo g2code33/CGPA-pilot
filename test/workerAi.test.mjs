@@ -8,6 +8,10 @@
 //   Chat:         disabled → 404 · valid → provider text (mocked fetch)
 //                 key rotation: first key 401 → second key succeeds
 //                 rate limit: N/hour → 429 + retryAfterSec
+//                 context: full per-semester course tables in the system prompt
+//   Streaming:    SSE meta event + raw provider deltas · failure before the
+//                 first token → SSE error frame + admin error-log row
+//   Admin tools:  error log (list newest-first / clear / 401) + diagnostics
 //   Drafts:       save → list → fetch → delete (text ids, newest first)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -71,6 +75,31 @@ function aiSettingsDoc(over = {}) {
     updatedAt: null,
     ...over,
   };
+}
+
+/** OpenAI-compatible streaming mock provider (SSE out). */
+function mockStreamProvider(script) {
+  const calls = [];
+  const enc = new TextEncoder();
+  const f = async (url, opts) => {
+    const u = String(url);
+    calls.push({ url: u, headers: opts?.headers, body: JSON.parse(opts?.body ?? '{}') });
+    const next = script(calls.length - 1);
+    if (next.errorStatus) {
+      return new Response(JSON.stringify({ error: { message: next.errorMessage ?? 'err' } }), {
+        status: next.errorStatus,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    const body = new ReadableStream({
+      start(controller) {
+        for (const frame of next.frames ?? []) controller.enqueue(enc.encode(frame));
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  return { f, calls };
 }
 
 /** OpenAI-compatible mock provider. */
@@ -225,6 +254,69 @@ test('chat: worker proxy returns the provider answer (mocked fetch)', async () =
     assert.equal(sys.role, 'system');
     assert.match(sys.content, /CONFIRMED CGPA: 3\.42/);
     assert.equal(calls[0].headers.authorization, 'Bearer nvapi-11112222');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('chat: system prompt carries full per-semester course tables (rich context)', async () => {
+  const e = env();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const { f, calls } = mockProvider([{ text: 'ok' }]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', {
+        method: 'POST',
+        body: {
+          messages: [{ role: 'user', content: 'Which course dragged my GPA down?' }],
+          context: {
+            hasAnyData: true,
+            mode: 'history',
+            institution: { university: 'KNUST', school: 'Engineering', programme: 'CSE' },
+            confirmedCgpa: 3.21,
+            gradedCredits: 96,
+            classification: 'Second Class Upper',
+            semesters: [
+              {
+                label: 'Semester 1',
+                gpa: 3.5,
+                credits: 24,
+                pending: false,
+                courses: [
+                  { code: 'MATH151', grade: 'A', credits: 4, pending: false },
+                  { code: 'CSE101', grade: 'B', credits: 3, pending: false },
+                ],
+              },
+              {
+                label: 'Semester 2',
+                gpa: 2.9,
+                credits: 20,
+                pending: true,
+                courses: [{ code: 'CSE202', grade: null, credits: 4, pending: true }],
+              },
+            ],
+            targetCgpa: 3.6,
+          },
+        },
+      }),
+      e
+    );
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    const sys = calls[0].body.messages[0];
+    assert.equal(sys.role, 'system');
+    // Institution + confirmed numbers
+    assert.match(sys.content, /INSTITUTION: KNUST/);
+    assert.match(sys.content, /CONFIRMED CGPA: 3\.21/);
+    // Per-semester course TABLE (Markdown) with each course code present.
+    assert.match(sys.content, /Course \| Credits \| Grade \| Status/);
+    assert.match(sys.content, /\| MATH151 \| 4 \| A \| graded \|/);
+    assert.match(sys.content, /\| CSE101 \| 3 \| B \| graded \|/);
+    assert.match(sys.content, /\| CSE202 \| 4 \| — \| pending \|/);
+    assert.match(sys.content, /TARGET CGPA: 3\.60/);
+    // It tells the model it may reproduce the tables.
+    assert.match(sys.content, /Markdown tables are rendered for the student/);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -502,4 +594,146 @@ test('test endpoint: rejected key → 200 with ok:false + the provider raw error
     globalThis.fetch = realFetch;
     __resetAi();
   }
+});
+
+// ── Streaming (SSE) ─────────────────────────────────────────────────────────
+
+test('stream: returns SSE with meta event + provider deltas', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const { f } = mockStreamProvider(() => ({
+    frames: [
+      'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":" there"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ],
+  }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', {
+        method: 'POST',
+        body: { messages: [{ role: 'user', content: 'hi' }], stream: true },
+      }),
+      e
+    );
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/);
+    const text = await res.text();
+    // First event is our meta frame.
+    assert.match(text, /event: meta/);
+    assert.match(text, /"format":"cgpa-ai-stream-meta"/);
+    assert.match(text, /"streamFormat":"openai"/);
+    // Then the provider's raw deltas pass through.
+    assert.match(text, /"content":"Hi"/);
+    assert.match(text, /"content":" there"/);
+    assert.match(text, /\[DONE\]/);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('stream: provider failure before first token → SSE error frame + logged for admin', async () => {
+  const e = env();
+  __resetAi();
+  const doc = aiSettingsDoc();
+  doc.providers[0].keys = [{ id: 'key-1', label: 'k1', value: 'nvapi-11112222' }]; // single key
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: doc }), e);
+  const { f } = mockStreamProvider(() => ({ errorStatus: 401, errorMessage: 'invalid api key' }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }], stream: true } }),
+      e
+    );
+    assert.equal(res.status, 502, JSON.stringify(await res.clone().text()));
+    assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/);
+    const text = await res.text();
+    // A friendly, non-raw message for the student …
+    assert.match(text, /event: error/);
+    assert.match(text, /"error":"provider-error"/);
+    // … and the technical detail is recorded for the admin.
+    const log = await worker.fetch(req('/api/admin/errors?limit=10', { token: TOKEN }), e);
+    const ldoc = await j(log);
+    assert.equal(ldoc.format, 'cgpa-pilot-admin-errors');
+    assert.equal(ldoc.total, 1);
+    assert.equal(ldoc.errors[0].kind, 'stream');
+    assert.equal(ldoc.errors[0].code, 'provider-error');
+    assert.equal(ldoc.errors[0].status, 401);
+    assert.match(ldoc.errors[0].detail, /invalid api key/);
+    assert.equal(ldoc.errors[0].provider, 'NVIDIA NIM (free)');
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('admin errors: list (newest first) → clear empties it', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const { f } = mockStreamProvider(() => ({ errorStatus: 401, errorMessage: 'boom' }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    // two failures → two log rows
+    for (let i = 0; i < 2; i++) {
+      await worker.fetch(
+        req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }], stream: true } }),
+        e
+      );
+    }
+    let res = await worker.fetch(req('/api/admin/errors', { token: TOKEN }), e);
+    let doc = await j(res);
+    assert.equal(doc.total, 2);
+    assert.equal(doc.errors.length, 2);
+    assert.ok(doc.errors[0].id > doc.errors[1].id, 'newest first');
+
+    // unauthorized → 401
+    res = await worker.fetch(req('/api/admin/errors'), e);
+    assert.equal(res.status, 401);
+
+    // clear → empty
+    res = await worker.fetch(req('/api/admin/errors/clear', { method: 'POST', token: TOKEN }), e);
+    doc = await j(res);
+    assert.equal(doc.ok, true);
+    res = await worker.fetch(req('/api/admin/errors', { token: TOKEN }), e);
+    doc = await j(res);
+    assert.equal(doc.total, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('admin diagnostics: reports worker/d1/tables/catalog/published/ai', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  let res = await worker.fetch(req('/api/admin/diagnostics'), e);
+  assert.equal(res.status, 401); // unauthorized
+
+  res = await worker.fetch(req('/api/admin/diagnostics', { token: TOKEN }), e);
+  assert.equal(res.status, 200);
+  const doc = await j(res);
+  assert.equal(doc.format, 'cgpa-pilot-admin-diagnostics');
+  assert.ok(doc.at);
+  const ids = doc.checks.map((c) => c.id);
+  for (const want of ['worker', 'd1', 'tables', 'catalog', 'published', 'ai']) {
+    assert.ok(ids.includes(want), `missing check ${want}`);
+  }
+  const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+  assert.equal(byId.worker.ok, true);
+  assert.equal(byId.d1.ok, true);
+  assert.equal(byId.tables.ok, true);
+  // No catalog / published config saved in this test env → those report not-ok.
+  assert.equal(byId.catalog.ok, false);
+  assert.equal(byId.published.ok, false);
+  // AI is enabled + has keys → ok.
+  assert.equal(byId.ai.ok, true);
+  __resetAi();
 });

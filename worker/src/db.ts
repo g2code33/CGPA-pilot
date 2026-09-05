@@ -214,6 +214,9 @@ export function ensureExtraTables(db: D1Database): Promise<void> {
       // have silently left these tables missing in production.
       db.prepare('CREATE TABLE IF NOT EXISTS ai_settings (id INTEGER PRIMARY KEY CHECK (id = 1), settings_json TEXT, updated_at TEXT)'),
       db.prepare('CREATE TABLE IF NOT EXISTS admin_drafts (id TEXT PRIMARY KEY, name TEXT, note TEXT, catalog_json TEXT, created_at TEXT)'),
+      db.prepare(
+        'CREATE TABLE IF NOT EXISTS ai_errors (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT NOT NULL, code TEXT, status INTEGER, provider TEXT, model TEXT, key_label TEXT, detail TEXT)'
+      ),
     ])
     .then(() => undefined);
   globalThis.__cgpaEnsureExtra = p.catch(() => {
@@ -231,6 +234,84 @@ declare global {
 export interface AiSettingsRow {
   settingsJson: string;
   updatedAt: string;
+}
+
+// ── Student-facing AI errors (technical log for the admin) ─────────────────
+// Every error a student would have seen (provider failure, timeout, …) is
+// recorded here so the admin can diagnose it. PRIVACY: only technical fields
+// are stored — never the student's question, tool data, or raw IP address.
+export interface AiErrorRow {
+  id: number;
+  ts: string;
+  /** Which surface: 'chat' | 'stream' | 'status'. */
+  kind: string;
+  /** Stable code: 'provider-error' | 'timeout' | 'no-provider' | 'no-keys' | … */
+  code: string | null;
+  /** The upstream HTTP status (0 = none, e.g. network failure). */
+  status: number | null;
+  provider: string | null;
+  model: string | null;
+  keyLabel: string | null;
+  /** The provider's raw error text (truncated) — technical detail only. */
+  detail: string | null;
+}
+
+const SELECT_AI_ERRORS = 'SELECT id, ts, kind, code, status, provider, model, key_label, detail FROM ai_errors ORDER BY id DESC LIMIT ?';
+const COUNT_AI_ERRORS = 'SELECT COUNT(*) AS n FROM ai_errors';
+const INSERT_AI_ERROR =
+  'INSERT INTO ai_errors (ts, kind, code, status, provider, model, key_label, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+
+export async function recordAiError(
+  db: D1Database,
+  e: { kind: string; code?: string | null; status?: number | null; provider?: string | null; model?: string | null; keyLabel?: string | null; detail?: string | null }
+): Promise<void> {
+  await db
+    .prepare(INSERT_AI_ERROR)
+    .bind(
+      new Date().toISOString(),
+      e.kind,
+      e.code ?? null,
+      e.status ?? 0,
+      e.provider ?? null,
+      e.model ?? null,
+      e.keyLabel ?? null,
+      (e.detail ?? '').slice(0, 500) || null
+    )
+    .run();
+}
+
+export async function listAiErrors(db: D1Database, limit = 100): Promise<AiErrorRow[]> {
+  const rows = (await db.prepare(SELECT_AI_ERRORS).bind(Math.max(1, Math.min(limit, 500))).all()).results as {
+    id: number;
+    ts: string;
+    kind: string;
+    code: string | null;
+    status: number | null;
+    provider: string | null;
+    model: string | null;
+    key_label: string | null;
+    detail: string | null;
+  }[];
+  return rows.map((r) => ({
+    id: r.id,
+    ts: r.ts,
+    kind: r.kind,
+    code: r.code,
+    status: r.status,
+    provider: r.provider,
+    model: r.model,
+    keyLabel: r.key_label,
+    detail: r.detail,
+  }));
+}
+
+export async function countAiErrors(db: D1Database): Promise<number> {
+  const row = (await db.prepare(COUNT_AI_ERRORS).first()) as { n: number } | null;
+  return row?.n ?? 0;
+}
+
+export async function clearAiErrors(db: D1Database): Promise<void> {
+  await db.prepare('DELETE FROM ai_errors').run();
 }
 
 export async function readAiSettingsJson(db: D1Database): Promise<AiSettingsRow | null> {

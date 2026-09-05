@@ -349,9 +349,23 @@ export function sanitizeProvider(p: unknown): AiProvider | null {
 
 // ── Chat contract (shared by the student client + the Worker) ─────────────
 
+/**
+ * Message content. Plain string for text; content parts when the student
+ * attaches an image (vision-capable providers render the parts, others get a
+ * friendly "cannot read images" answer).
+ */
+export type AiContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; dataUrl: string };
+
 export interface AiChatMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | AiContentPart[];
+}
+
+/** True when a message carries at least one image part. */
+export function messageHasImage(m: AiChatMessage): boolean {
+  return Array.isArray(m.content) && m.content.some((p) => p.type === 'image');
 }
 
 /**

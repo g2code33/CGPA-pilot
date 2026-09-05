@@ -633,6 +633,100 @@ export async function saveAiSettings(settings: AiSettings, deps: AdminApiDeps = 
   }
 }
 
+// ── Student-facing AI errors + system diagnostics ─────────────────────────
+
+export interface AiErrorEntry {
+  id: number;
+  ts: string;
+  kind: string;
+  code: string | null;
+  status: number | null;
+  provider: string | null;
+  model: string | null;
+  keyLabel: string | null;
+  detail: string | null;
+}
+
+export interface AiErrorDoc {
+  ok: true;
+  format: 'cgpa-pilot-admin-errors';
+  total: number;
+  errors: AiErrorEntry[];
+}
+
+/** The technical error log of what students hit (never their content). */
+export async function getAiErrors(deps: AdminApiDeps = {}): Promise<AiErrorDoc | { ok: false; message: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, message: 'Sign in first.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/errors?limit=200'), {
+      method: 'GET',
+      cache: 'no-store',
+      headers: headers(deps),
+    });
+    if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
+    const doc = (await safeJson(res)) as AiErrorDoc | null;
+    if (!res.ok || !doc || doc.format !== 'cgpa-pilot-admin-errors') {
+      return { ok: false, message: `Error log unavailable (HTTP ${res.status}).` };
+    }
+    return doc;
+  } catch {
+    return { ok: false, message: 'Backend unreachable.' };
+  }
+}
+
+export async function clearAiErrors(deps: AdminApiDeps = {}): Promise<{ ok: boolean; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, message: 'Sign in first.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/errors/clear'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: '{}',
+    });
+    if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
+    const doc = (await safeJson(res)) as { ok?: boolean } | null;
+    if (!res.ok || !doc?.ok) return { ok: false, message: `Could not clear (HTTP ${res.status}).` };
+    return { ok: true };
+  } catch {
+    return { ok: false, message: 'Backend unreachable.' };
+  }
+}
+
+export interface DiagnosticCheck {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export async function getDiagnostics(deps: AdminApiDeps = {}): Promise<{ ok: true; at: string; checks: DiagnosticCheck[] } | { ok: false; message: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, message: 'Sign in first.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/diagnostics'), {
+      method: 'GET',
+      cache: 'no-store',
+      headers: headers(deps),
+    });
+    if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
+    const doc = (await safeJson(res)) as { format?: string; at?: string; checks?: DiagnosticCheck[] } | null;
+    if (!res.ok || !doc || doc.format !== 'cgpa-pilot-admin-diagnostics' || !Array.isArray(doc.checks)) {
+      return { ok: false, message: `Diagnostics unavailable (HTTP ${res.status}).` };
+    }
+    return { ok: true, at: doc.at ?? '', checks: doc.checks };
+  } catch {
+    return { ok: false, message: 'Backend unreachable.' };
+  }
+}
+
 /** Test one key of one provider (a real, minimal request to the provider). */
 export async function testAiKey(
   provider: AiProvider,

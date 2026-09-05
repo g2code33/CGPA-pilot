@@ -24,7 +24,16 @@ import {
   type AiProvider,
   type AiSettings,
 } from '../aiSettings';
-import { getAiSettings, saveAiSettings, testAiKey } from '../adminApi';
+import {
+  clearAiErrors,
+  getAiErrors,
+  getAiSettings,
+  getDiagnostics,
+  saveAiSettings,
+  testAiKey,
+  type AiErrorEntry,
+  type DiagnosticCheck,
+} from '../adminApi';
 
 type Toast = (m: string) => void;
 
@@ -36,7 +45,13 @@ export function AiSettings({ toast }: { toast: Toast }) {
   const [settings, setSettings] = useState<AiSettings>(defaultAiSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [switchSaving, setSwitchSaving] = useState(false);
   const [hasStored, setHasStored] = useState(false);
+  // The technical error log of what students hit + one-tap diagnostics.
+  const [errors, setErrors] = useState<AiErrorEntry[] | null>(null);
+  const [errorsTotal, setErrorsTotal] = useState(0);
+  const [diagnostics, setDiagnostics] = useState<{ at: string; checks: DiagnosticCheck[] } | null>(null);
+  const [diagRunning, setDiagRunning] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -53,6 +68,53 @@ export function AiSettings({ toast }: { toast: Toast }) {
       live = false;
     };
   }, []);
+
+  async function refreshErrors() {
+    const r = await getAiErrors();
+    if (r.ok) {
+      setErrors(r.errors);
+      setErrorsTotal(r.total);
+    }
+  }
+
+  // Keep the error log fresh while the admin is on this page.
+  useEffect(() => {
+    let live = true;
+    let timer = 0;
+    (async () => {
+      await refreshErrors();
+      if (!live) return;
+      timer = window.setInterval(() => void refreshErrors(), 20_000);
+    })();
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function clearErrorsNow() {
+    if (!window.confirm('Clear the whole AI error log?')) return;
+    const r = await clearAiErrors();
+    if (r.ok) {
+      toast('🧹 Error log cleared.');
+      await refreshErrors();
+    } else {
+      toast(`⛔ ${r.message ?? 'Could not clear the log.'}`);
+    }
+  }
+
+  async function runDiagnostics() {
+    setDiagRunning(true);
+    const r = await getDiagnostics();
+    setDiagRunning(false);
+    if (r.ok) {
+      setDiagnostics(r);
+      toast(r.checks.every((c) => c.ok) ? '🩺 All systems healthy.' : '🩺 Diagnostics found problems — see the section below.');
+    } else {
+      toast(`⛔ ${r.message ?? 'Diagnostics failed.'}`);
+    }
+  }
 
   const issues = useMemo(() => (loading ? [] : validateAiSettings(settings).issues), [loading, settings]);
 
@@ -105,6 +167,29 @@ export function AiSettings({ toast }: { toast: Toast }) {
     }
   }
 
+  // The master switch saves ITSELF the moment you flip it — no “Save”
+  // button needed, and students pick the change up within ~30 seconds.
+  async function toggleEnabled(v: boolean) {
+    const next = { ...settings, enabled: v };
+    setSettings(next);
+    const sv = validateAiSettings(next);
+    if (!sv.ok) {
+      toast(`⛔ ${sv.issues[0]}`);
+      setSettings((s) => ({ ...s, enabled: !v }));
+      return;
+    }
+    setSwitchSaving(true);
+    const r = await saveAiSettings(sv.normalized);
+    setSwitchSaving(false);
+    if (r.ok) {
+      setSettings((s) => ({ ...s, version: r.version ?? s.version, updatedAt: r.updatedAt ?? null, enabled: v }));
+      setHasStored(true);
+      toast(v ? '🟢 AI switched ON for students (saved).' : '🔕 AI switched OFF for students (saved).');
+    } else {
+      toast(`⛔ ${r.issues?.[0] ?? r.message ?? 'Could not save the switch.'}`);
+    }
+  }
+
   if (loading) {
     return <div className="py-10 text-center text-xs font-semibold text-slate-400">Loading AI settings…</div>;
   }
@@ -142,10 +227,14 @@ export function AiSettings({ toast }: { toast: Toast }) {
       <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-black text-slate-800">Feature switch</h2>
-            <p className="text-[11px] font-semibold text-slate-500">Off = the AI section is hidden from every student.</p>
+            <h2 className="text-sm font-black text-slate-800">
+              Feature switch {switchSaving && <span className="font-bold text-brand-500">saving…</span>}
+            </h2>
+            <p className="text-[11px] font-semibold text-slate-500">
+              Saves itself the moment you flip it — students pick it up within ~30 s.
+            </p>
           </div>
-          <Toggle on={settings.enabled} onChange={(v) => patch({ enabled: v })} />
+          <Toggle on={settings.enabled} onChange={(v) => void toggleEnabled(v)} />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="block">
@@ -309,6 +398,101 @@ export function AiSettings({ toast }: { toast: Toast }) {
           </div>
         )}
       </section>
+
+      {/* ── Student errors (technical log) ─────────────────────────────── */}
+      <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-black text-slate-800">🚨 Student errors (AI)</h2>
+            <p className="text-[11px] font-semibold text-slate-500">
+              Every AI failure a student would have hit — with the provider’s raw detail for you. Students only see a friendly note; no student content is ever stored. Refreshes every 20 s.
+            </p>
+          </div>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => void refreshErrors()}
+              className="rounded-xl bg-white px-3 py-2 text-[11px] font-black text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+            >
+              ↻ Refresh
+            </button>
+            <button
+              onClick={() => void clearErrorsNow()}
+              disabled={errorsTotal === 0}
+              className="rounded-xl bg-red-50 px-3 py-2 text-[11px] font-black text-red-600 ring-1 ring-red-200 hover:bg-red-100 disabled:opacity-40"
+            >
+              🧹 Clear log
+            </button>
+          </div>
+        </div>
+        {errors === null ? (
+          <p className="mt-3 rounded-xl bg-slate-50 p-3 text-center text-[11px] font-semibold text-slate-400 ring-1 ring-slate-200">Loading error log…</p>
+        ) : errors.length > 0 ? (
+          <>
+            <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto pr-1">
+              {errors.map((e) => (
+                <div key={e.id} className="rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className={`rounded-full px-2 py-0.5 font-black ring-1 ${e.status ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+                      {e.status ? `HTTP ${e.status}` : 'network / timeout'}
+                    </span>
+                    <span className="font-black text-slate-700">{e.provider ?? '—'}</span>
+                    {e.model && <code className="font-mono text-[10px] text-slate-400">{e.model}</code>}
+                    {e.keyLabel && <span className="rounded bg-slate-200 px-1.5 text-[10px] font-bold text-slate-600">key: {e.keyLabel}</span>}
+                    <span className="ml-auto shrink-0 text-[10px] font-semibold text-slate-400">{new Date(e.ts).toLocaleString()}</span>
+                  </div>
+                  {e.detail && (
+                    <p className="mt-1.5 max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-2 font-mono text-[10px] leading-relaxed text-emerald-300">
+                      {e.detail}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {errorsTotal > errors.length && (
+              <p className="mt-1 text-center text-[10px] font-semibold text-slate-400">
+                showing the latest {errors.length} of {errorsTotal}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+            ✅ No student errors recorded — the AI is running clean.
+          </p>
+        )}
+      </section>
+
+      {/* ── System diagnostics ─────────────────────────────────────────── */}
+      <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-black text-slate-800">🩺 System diagnostics</h2>
+            <p className="text-[11px] font-semibold text-slate-500">
+              One tap checks every section: Worker, database, tables, course catalog, published student config and the AI settings.
+            </p>
+          </div>
+          <button
+            onClick={() => void runDiagnostics()}
+            disabled={diagRunning}
+            className="rounded-xl bg-slate-900 px-3 py-2 text-[11px] font-black text-white hover:bg-slate-700 disabled:opacity-60"
+          >
+            {diagRunning ? '… running' : '▶ Run checks'}
+          </button>
+        </div>
+        {diagnostics && (
+          <div className="mt-3 space-y-1.5">
+            {diagnostics.checks.map((c) => (
+              <div key={c.id} className={`flex items-start gap-2 rounded-xl p-2.5 ring-1 ${c.ok ? 'bg-emerald-50/60 ring-emerald-200' : 'bg-red-50 ring-red-200'}`}>
+                <span className="text-sm leading-none">{c.ok ? '✅' : '⛔'}</span>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black text-slate-800">{c.label}</p>
+                  <p className={`break-words text-[11px] font-semibold ${c.ok ? 'text-slate-500' : 'text-red-600'}`}>{c.detail}</p>
+                </div>
+              </div>
+            ))}
+            <p className="text-center text-[10px] font-semibold text-slate-400">checked {new Date(diagnostics.at).toLocaleString()}</p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -345,7 +529,23 @@ function ProviderCard({
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [newKey, setNewKey] = useState({ label: '', value: '' });
   const [testing, setTesting] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ label: '', value: '' });
   const preset = AI_PRESETS.find((p) => p.id === provider.preset);
+
+  function startEdit(k: AiProvider['keys'][number]) {
+    setEditing(k.id);
+    setEditDraft({ label: k.label, value: k.value });
+  }
+
+  function saveKeyEdit(k: AiProvider['keys'][number]) {
+    const value = editDraft.value.trim();
+    if (!value) return;
+    onChange({
+      keys: provider.keys.map((x) => (x.id === k.id ? { ...x, label: editDraft.label.trim() || x.label, value } : x)),
+    });
+    setEditing(null);
+  }
 
   function applyPreset(id: AiPresetId) {
     const def = AI_PRESETS.find((p) => p.id === id) ?? AI_PRESETS[0];
@@ -428,17 +628,51 @@ function ProviderCard({
       <div className="mt-2">
         <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Key pool ({provider.keys.length})</p>
         <div className="mt-1 space-y-1.5">
-          {provider.keys.map((k) => (
-            <div key={k.id} className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-1.5 ring-1 ring-slate-200">
-              <span className="w-24 shrink-0 truncate text-[11px] font-black text-slate-600" title={k.label}>
-                {k.label || 'key'}
-              </span>
-              <code className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-slate-500">
-                {revealed[k.id] ? k.value : maskForDisplay(k.value)}
-              </code>
-              <button onClick={() => setRevealed((r) => ({ ...r, [k.id]: !r[k.id] }))} className="shrink-0 rounded px-1.5 py-1 text-[11px] font-black text-slate-400 hover:bg-slate-100" title="Show/hide key">
-                {revealed[k.id] ? '🙈' : '👁'}
-              </button>
+          {provider.keys.map((k) =>
+            editing === k.id ? (
+              <div key={k.id} className="rounded-lg bg-brand-50 p-2 ring-1 ring-brand-300">
+                <p className="text-[10px] font-black uppercase tracking-wide text-brand-600">Editing “{k.label || 'key'}”</p>
+                <div className="mt-1 flex gap-1.5">
+                  <input
+                    value={editDraft.label}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, label: e.target.value }))}
+                    placeholder="Label"
+                    className="w-24 shrink-0 rounded-lg border-0 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  />
+                  <input
+                    value={editDraft.value}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, value: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveKeyEdit(k);
+                    }}
+                    placeholder="New API key value"
+                    className="min-w-0 flex-1 rounded-lg border-0 bg-white px-2 py-1.5 font-mono text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  />
+                  <button onClick={() => saveKeyEdit(k)} disabled={!editDraft.value.trim()} className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-black text-white hover:bg-emerald-700 disabled:opacity-40" title="Save new key">
+                    💾
+                  </button>
+                  <button onClick={() => setEditing(null)} className="shrink-0 rounded-lg px-1.5 py-1.5 text-[11px] font-black text-slate-400 hover:bg-white" title="Cancel">
+                    ✕
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                  Replace this key’s value (and label if you like) — then hit 💾 and Save AI settings.
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-1.5 ring-1 ring-slate-200">
+                <span className="w-24 shrink-0 truncate text-[11px] font-black text-slate-600" title={k.label}>
+                  {k.label || 'key'}
+                </span>
+                <code className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-slate-500">
+                  {revealed[k.id] ? k.value : maskForDisplay(k.value)}
+                </code>
+                <button onClick={() => setRevealed((r) => ({ ...r, [k.id]: !r[k.id] }))} className="shrink-0 rounded px-1.5 py-1 text-[11px] font-black text-slate-400 hover:bg-slate-100" title="Show/hide key">
+                  {revealed[k.id] ? '🙈' : '👁'}
+                </button>
+                <button onClick={() => startEdit(k)} className="shrink-0 rounded px-1.5 py-1 text-[11px] font-black text-slate-400 hover:bg-slate-100" title="Edit key (replace value / label)">
+                  ✎
+                </button>
               <button
                 onClick={() => {
                   setTesting(k.id);
@@ -449,15 +683,16 @@ function ProviderCard({
               >
                 {testing === k.id ? '…' : 'Test'}
               </button>
-              <button
-                onClick={() => onChange({ keys: provider.keys.filter((x) => x.id !== k.id) })}
-                className="shrink-0 rounded px-1.5 py-1 text-[11px] font-black text-red-400 hover:bg-red-50"
-                title="Remove key"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+                <button
+                  onClick={() => onChange({ keys: provider.keys.filter((x) => x.id !== k.id) })}
+                  className="shrink-0 rounded px-1.5 py-1 text-[11px] font-black text-red-400 hover:bg-red-50"
+                  title="Remove key"
+                >
+                  ✕
+                </button>
+              </div>
+            )
+          )}
         </div>
         <div className="mt-1.5 flex gap-1.5">
           <input
