@@ -420,7 +420,18 @@ export function SkySplash({
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-brand-900/40 backdrop-blur-sm">
           <div className="text-center">
             {hasLandingImg ? (
-              <img src={landingOverride?.image} alt="" className="mx-auto h-16 w-16 object-contain drop-shadow" />
+              // Admin-set size honoured (default 64 px); the image is centred
+              // (mx-auto) so it grows in place about the overlay's centre.
+              <img
+                src={landingOverride?.image}
+                alt=""
+                className="mx-auto object-contain drop-shadow"
+                style={
+                  landingOverride?.size
+                    ? { width: landingOverride.size, height: landingOverride.size }
+                    : { width: 64, height: 64 }
+                }
+              />
             ) : (
               <p className="text-6xl" style={{ lineHeight: 1 }}>{landingChar}</p>
             )}

@@ -19,7 +19,22 @@ import type { AiChatMessage, AiPublicStatus, AiStudentContext } from '../admin/a
 
 export type AiSendResult =
   | { ok: true; text: string; provider?: string; model?: string; ms?: number }
-  | { ok: false; code: 'offline' | 'ai-unavailable' | 'no-provider' | 'no-keys' | 'rate-limited' | 'bad-request' | 'provider-error' | 'direct-error' | 'interrupted'; message: string; retryAfterSec?: number };
+  | {
+      ok: false;
+      code:
+        | 'offline'
+        | 'service-error'
+        | 'ai-unavailable'
+        | 'no-provider'
+        | 'no-keys'
+        | 'rate-limited'
+        | 'bad-request'
+        | 'provider-error'
+        | 'direct-error'
+        | 'interrupted';
+      message: string;
+      retryAfterSec?: number;
+    };
 
 /** Streaming callbacks: tokens arrive via onDelta as they are generated. */
 export interface AiStreamHandlers {
@@ -90,6 +105,73 @@ export async function fetchAiStatus(): Promise<AiPublicStatus | null> {
   }
 }
 
+// ── Smart failure diagnosis ───────────────────────────────────────────────
+// When the browser REJECTS the chat request (a TypeError), "offline" is an
+// assumption, not a fact — the request can also die on a server-side or
+// CORS problem while the student's internet is perfectly fine. We prove
+// which by probing the public status endpoint:
+//   • probe gets ANY HTTP answer  → connection is fine → 'service-error'
+//     (the AI service is the one that failed; the admin log sees it)
+//   • probe also fails            → genuinely unreachable → 'offline'
+// Either outcome is reported (fire-and-forget, technical-only) to
+// POST /api/ai/report so the admin error log shows student-side failures
+// that never reach the worker.
+
+/** Fire-and-forget technical report of a client-side failure (admin log). */
+function reportClientError(code: string, detail: string): void {
+  try {
+    void fetch(configApiUrl('/api/ai/report'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code, detail: detail.slice(0, 260) }),
+    }).catch(() => {});
+  } catch {
+    /* reporting is best-effort — never let it break the error path */
+  }
+}
+
+/** Probe the API with a short timeout: true = the worker answered at all. */
+async function probeServiceAlive(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(configApiUrl('/api/ai/status'), {
+      method: 'GET',
+      cache: 'no-store',
+      signal: ctrl.signal,
+      headers: { accept: 'application/json' },
+    });
+    clearTimeout(timer);
+    return true; // any status code means the network + worker are reachable
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Classify a rejected chat request and build the student-facing error.
+ * This is what keeps an online student from ever being told "no internet"
+ * when the real problem is the AI service.
+ */
+export async function classifyWorkerFailure(failure: string): Promise<AiSendResult> {
+  const alive = await probeServiceAlive();
+  const code = alive ? 'service-error' : 'offline';
+  reportClientError(code, failure);
+  return alive
+    ? {
+        ok: false,
+        code: 'service-error',
+        message:
+          'Your internet connection is fine — the AI service itself is currently failing (a server-side problem, not your device). It has been reported to the administrator; please try again in a moment.',
+      }
+    : {
+        ok: false,
+        code: 'offline',
+        message: 'You appear to be offline — the AI needs an internet connection. Check your network and try again.',
+      };
+}
+
 export interface AiSendInput {
   status: AiPublicStatus;
   messages: AiChatMessage[];
@@ -133,8 +215,9 @@ export async function sendAiMessage(input: AiSendInput): Promise<AiSendResult> {
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({ messages, context: context ?? null }),
     });
-  } catch {
-    return { ok: false, code: 'offline', message: 'You appear to be offline — the AI needs a connection.' };
+  } catch (e) {
+    // Browser rejected the request — prove offline vs service failure.
+    return classifyWorkerFailure(e instanceof Error ? e.message : String(e));
   }
   let doc: { ok?: boolean; text?: string; provider?: string; model?: string; ms?: number; error?: string; message?: string; retryAfterSec?: number } | null = null;
   try {
@@ -194,7 +277,7 @@ type AiSendError = Extract<AiSendResult, { ok: false }>;
 
 function mapStreamError(code: string, message: string, retryAfterSec?: number): AiSendResult {
   // Students always get a calm, actionable message — never provider JSON.
-  const known = ['ai-unavailable', 'no-provider', 'no-keys', 'rate-limited', 'bad-request'] as const;
+  const known = ['ai-unavailable', 'no-provider', 'no-keys', 'rate-limited', 'bad-request', 'service-error'] as const;
   const isKnown = (known as readonly string[]).includes(code);
   const out: AiSendError = {
     ok: false,
@@ -257,10 +340,10 @@ export async function streamAiMessage(input: AiSendInput, h: AiStreamHandlers): 
         headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
         body: JSON.stringify(body),
       });
-    } catch {
-      return h.signal?.aborted
-        ? { ok: false, code: 'interrupted', message: 'Cancelled.' }
-        : { ok: false, code: 'offline', message: 'You appear to be offline — the AI needs a connection.' };
+    } catch (e) {
+      if (h.signal?.aborted) return { ok: false, code: 'interrupted', message: 'Cancelled.' };
+      // Browser rejected the request — prove offline vs service failure.
+      return classifyWorkerFailure(e instanceof Error ? e.message : String(e));
     }
   }
 

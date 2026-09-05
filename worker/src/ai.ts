@@ -30,6 +30,20 @@ import {
   type AiValidation,
 } from '../../src/admin/aiSettings';
 
+/**
+ * CORS headers for EVERY /api response — including the SSE chat stream.
+ * The student app is served from a different origin (Cloudflare Pages) than
+ * the API (this Worker); a stream Response without these headers is blocked
+ * by the browser as a CORS failure, which the student then sees as a bogus
+ * "no internet" error. Single source of truth: index.ts imports this.
+ */
+export const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'content-type, authorization, x-admin-token',
+  'access-control-max-age': '86400',
+} as const;
+
 export type ParsedAi =
   | { status: 'absent' }
   | { status: 'unreadable' }
@@ -634,7 +648,12 @@ function wrapStream(body: ReadableStream<Uint8Array>, provider: AiProvider, labe
   });
   return new Response(stream, {
     status: 200,
-    headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-accel-buffering': 'no' },
+    headers: {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      'x-accel-buffering': 'no',
+      ...CORS_HEADERS, // cross-origin student app — without these the stream is CORS-blocked
+    },
   });
 }
 

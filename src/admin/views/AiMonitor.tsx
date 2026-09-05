@@ -50,6 +50,10 @@ export function AiMonitor({ toast }: { toast: Toast }) {
   const [errors, setErrors] = useState<AiErrorEntry[] | null>(null);
   const [errorsTotal, setErrorsTotal] = useState(0);
   const [errorFilter, setErrorFilter] = useState<'24h' | '7d' | 'all'>('24h');
+  // A failed load must be VISIBLE (message + retry) — never an eternal
+  // "Loading error log…" spinner with no explanation.
+  const [errorsFailed, setErrorsFailed] = useState<string | null>(null);
+  const [errorsWarning, setErrorsWarning] = useState<string | null>(null);
 
   // Diagnostics.
   const [checks, setChecks] = useState<DiagnosticCheck[] | null>(null);
@@ -80,6 +84,11 @@ export function AiMonitor({ toast }: { toast: Toast }) {
     if (r.ok) {
       setErrors(r.errors);
       setErrorsTotal(r.total);
+      setErrorsFailed(null);
+      setErrorsWarning(r.warning ?? null);
+    } else {
+      // Never swallow: surface the real reason with a Retry button.
+      setErrorsFailed(r.message ?? 'Could not load the error log.');
     }
   }, []);
 
@@ -332,7 +341,21 @@ export function AiMonitor({ toast }: { toast: Toast }) {
             </button>
           </div>
         </div>
-        {visibleErrors === null ? (
+        {errorsFailed ? (
+          <div className="mt-3 rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
+            <p className="text-[11px] font-black text-red-700">⛔ The error log could not be loaded.</p>
+            <p className="mt-1 break-words text-[11px] font-semibold text-red-600">{errorsFailed}</p>
+            <button
+              onClick={() => void refreshErrors()}
+              className="mt-2 rounded-lg bg-red-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-red-500"
+            >
+              ↻ Retry now
+            </button>
+            <p className="mt-1.5 text-[10px] font-semibold text-red-400">
+              Auto-retrying every 20 s — this usually fixes itself once the backend is reachable again.
+            </p>
+          </div>
+        ) : visibleErrors === null ? (
           <p className="mt-3 rounded-xl bg-slate-50 p-3 text-center text-[11px] font-semibold text-slate-400 ring-1 ring-slate-200">
             Loading error log…
           </p>
@@ -382,6 +405,11 @@ export function AiMonitor({ toast }: { toast: Toast }) {
         ) : (
           <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
             {errors?.length ? `✅ No errors in the selected period (${errorFilter === '24h' ? 'last 24 h' : 'last 7 days'}).` : '✅ No student errors recorded — the AI is running clean.'}
+          </p>
+        )}
+        {errorsWarning && (
+          <p className="mt-2 break-words rounded-xl bg-amber-50 p-2.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200">
+            ⚠️ {errorsWarning}
           </p>
         )}
       </section>

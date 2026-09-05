@@ -723,14 +723,17 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             ←
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-1 truncate text-[13px] font-extrabold text-slate-900">
+            {/* The h1 itself must NOT clip (no `truncate` here — that used
+                to cut off admin-enlarged icons). Only the TITLE text
+                truncates, and the icon chip GROWS with the admin's size
+                (min 16 px) so a bigger icon is visibly bigger, in place. */}
+            <h1 className="flex min-w-0 items-center gap-1 text-[13px] font-extrabold text-slate-900">
               {meta && (
-                // Fixed box: an admin-enlarged icon overflows, the header row stays.
-                <span className="grid h-4 w-4 shrink-0 place-items-center">
+                <span className="grid min-h-4 min-w-4 shrink-0 place-items-center rounded bg-white/80 ring-1 ring-slate-200">
                   <SlotGlyph appearance={appearance} slot={screen} fallback={meta.icon} imgCls="h-4 w-4 object-contain" />
                 </span>
               )}
-              <span className="truncate">{screenTitle}</span>
+              <span className="min-w-0 truncate">{screenTitle}</span>
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -841,14 +844,23 @@ function SlotGlyph({
   const el = iconElement(appearance?.icons?.[slot], fallback);
   if (el.type === 'img') {
     // Admin-adjusted display size wins over the per-site default classes.
+    // The admin size renders in a SELF-CONTAINED centred box: exactly the
+    // admin's pixels, never clipped, never shrunk. Surrounding caller slots
+    // keep their own layout — the box simply overflows them symmetrically
+    // about its centre, so the icon INCREASES IN PLACE instead of shifting.
     if (el.sizePx) {
       return (
-        <img
-          src={el.src}
-          alt={el.alt ?? ''}
-          className="object-contain"
+        <span
+          className="grid shrink-0 overflow-visible place-items-center"
           style={{ width: el.sizePx, height: el.sizePx }}
-        />
+        >
+          <img
+            src={el.src}
+            alt={el.alt ?? ''}
+            className="max-w-none object-contain"
+            style={{ width: el.sizePx, height: el.sizePx }}
+          />
+        </span>
       );
     }
     return <img src={el.src} alt={el.alt ?? ''} className={`object-contain ${imgCls ?? 'h-6 w-6'}`} />;

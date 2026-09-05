@@ -834,6 +834,133 @@ test('admin diagnostics deep: a REAL request proves which key works (and which d
   }
 });
 
+// ── CORS on the SSE stream (the "you appear to be offline" false alarm) ──
+// The student app is cross-origin to this Worker. If the SSE Response (either
+// the success stream or the error frame) lacks CORS headers, the browser
+// rejects it and the client mis-reads that as "offline". Both MUST carry
+// access-control-allow-origin.
+
+test('stream: the SUCCESS SSE stream carries CORS headers (cross-origin app)', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const { f } = mockStreamProvider(() => ({
+    frames: ['data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n', 'data: [DONE]\n\n'],
+  }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }], stream: true } }),
+      e
+    );
+    assert.equal(res.status, 200);
+    // The fix: CORS on the stream itself, not just the JSON paths.
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    assert.match(res.headers.get('access-control-allow-headers') ?? '', /content-type/);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('stream: the ERROR SSE frame ALSO carries CORS headers', async () => {
+  const e = env();
+  __resetAi();
+  const doc = aiSettingsDoc();
+  doc.providers[0].keys = [{ id: 'key-1', label: 'k1', value: 'nvapi-11112222' }];
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: doc }), e);
+  const { f } = mockStreamProvider(() => ({ errorStatus: 401, errorMessage: 'invalid api key' }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }], stream: true } }),
+      e
+    );
+    assert.equal(res.status, 502);
+    // Even the error frame must be CORS-permitted, or the client sees
+    // "offline" instead of the real provider error.
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+// ── Client-side error reporting (what students hit that never reaches the
+//    Worker, e.g. a CORS/network drop before the request lands) ───────────
+
+test('POST /api/ai/report: a client-side failure is logged for the admin (technical-only)', async () => {
+  const e = env();
+  // A student-side "service-error" (connection fine, AI service failed).
+  let res = await worker.fetch(
+    req('/api/ai/report', { method: 'POST', body: { code: 'service-error', detail: 'chat fetch rejected; status probe ok' } }),
+    e
+  );
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).ok, true);
+
+  res = await worker.fetch(req('/api/admin/errors?limit=10', { token: TOKEN }), e);
+  const ldoc = await j(res);
+  assert.equal(ldoc.total, 1);
+  assert.equal(ldoc.errors[0].kind, 'client');
+  assert.equal(ldoc.errors[0].code, 'service-error');
+  assert.match(ldoc.errors[0].detail, /client:/);
+  assert.match(ldoc.errors[0].detail, /service-error/);
+  // Student content must never be stored.
+  assert.equal(ldoc.errors[0].provider, null);
+  assert.equal(ldoc.errors[0].model, null);
+});
+
+test('POST /api/ai/report: rejects malformed code + rate-limits a single client', async () => {
+  const e = env();
+  // Malformed / missing code → 400 (never stored).
+  let res = await worker.fetch(req('/api/ai/report', { method: 'POST', body: { code: 'BAD CODE!!' } }), e);
+  assert.equal(res.status, 400);
+  res = await worker.fetch(req('/api/ai/report', { method: 'POST', body: { detail: 'no code' } }), e);
+  assert.equal(res.status, 400);
+
+  // A single client flooding the endpoint is rate-limited (20/hour).
+  let saw429 = false;
+  for (let i = 0; i < 30; i++) {
+    res = await worker.fetch(req('/api/ai/report', { method: 'POST', body: { code: 'offline' } }), e);
+    if (res.status === 429) { saw429 = true; break; }
+  }
+  assert.ok(saw429, 'expected a 429 after exceeding the per-client report limit');
+});
+
+// ── Error log must NEVER 500: it degrades to an empty list + a visible
+//    warning, so the admin screen never sits on "Loading error log…" ───────
+
+test('GET /api/admin/errors degrades to empty + warning when the log is unreadable (never a blank 500)', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  // Simulate an unreadable error table (e.g. missing column / D1 hiccup):
+  // force listAiErrors to throw by pointing the stub at a broken table.
+  const origPrepare = e.CONFIG_DB.prepare;
+  e.CONFIG_DB.prepare = (sql) => {
+    if (/FROM ai_errors/i.test(sql) && /SELECT/i.test(sql)) {
+      return {
+        bind: () => ({
+          all: async () => { throw new Error('d1: no such column: ai_errors.detail (simulated)'); },
+          first: async () => ({ n: 0 }),
+        }),
+      };
+    }
+    return origPrepare(sql);
+  };
+  const res = await worker.fetch(req('/api/admin/errors', { token: TOKEN }), e);
+  // 200 (not 500) with an empty list + an actionable warning.
+  assert.equal(res.status, 200);
+  const doc = await j(res);
+  assert.equal(doc.format, 'cgpa-pilot-admin-errors');
+  assert.equal(doc.total, 0);
+  assert.deepEqual(doc.errors, []);
+  assert.match(doc.warning ?? '', /could not be read/i);
+});
+
 test('admin GET /api/admin/ai answers with ok:true (the console must render stored keys)', async () => {
   const e = env();
   await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);

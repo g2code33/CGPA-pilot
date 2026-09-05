@@ -67,10 +67,12 @@ import {
   runAiChat,
   streamAiChat,
   testAiKey,
+  CORS_HEADERS,
   __resetAiRuntime,
   type ParsedAi,
 } from './ai';
 import { sanitizeProvider, validateAiSettings, type AiKey, type AiProvider, type AiSettings } from '../../src/admin/aiSettings';
+import { buildDistribution } from '../../src/admin/catalogPublish';
 
 export interface Env {
   /** D1 database holding the authoritative configuration. */
@@ -89,18 +91,36 @@ export interface Env {
 
 const MAX_BODY_BYTES = 15 * 1024 * 1024; // generous: full catalogs are < 5 MB
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// D1 hard limit: ~2 MB per bound value. The publish writes TWO values
+// (catalog JSON + derived distribution JSON), so BOTH must stay under it —
+// the usual culprit is large base64 icon/logo images inside the catalog.
+const D1_VALUE_LIMIT_BYTES = 2 * 1024 * 1024;
+const D1_VALUE_SAFE_BYTES = 1_900_000; // small margin under the hard limit
+
+/** Bytes of the JSON form a string will take as a D1 bound value. */
+function jsonByteLength(value: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  } catch {
+    return -1; // not serializable — the write would fail anyway
+  }
+}
+
+// Client error-report flood protection (per client IP, per isolate).
+const reportWindow = new Map<string, number[]>();
+const REPORT_WINDOW_MS = 60 * 60 * 1000;
+const REPORTS_PER_HOUR = 20;
 
 function sessionTtlMs(env: Env): number {
   const v = Number(env.SESSION_TTL_MS);
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_SESSION_TTL_MS;
 }
 
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'content-type, authorization, x-admin-token',
-  'access-control-max-age': '86400',
-} as const;
+// CORS: single source of truth is CORS_HEADERS in ./ai — EVERY /api
+// response (JSON, SSE stream, SSE error frames) carries identical
+// cross-origin headers. (The SSE stream once shipped WITHOUT them, which
+// browsers surface as a bogus student-side "no internet" error.)
+const CORS = CORS_HEADERS;
 
 type ParsedBody = { ok: true; value: Record<string, unknown> } | { ok: false; response: Response };
 
@@ -447,17 +467,56 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         );
       }
 
+      const catalog = doc.catalog as AdminCatalog;
+
+      // SIZE PRE-CHECK (runs BEFORE validation): D1 rejects bound values
+      // above ~2 MB with a cryptic error that used to surface as a blank
+      // 500. Catch it here and tell the admin exactly what to shrink.
+      const catalogBytes = jsonByteLength(catalog);
+      const distributionBytes = catalogBytes >= 0 ? jsonByteLength(buildDistribution(catalog)) : -1;
+      const biggest = Math.max(catalogBytes, distributionBytes);
+      if (catalogBytes < 0 || distributionBytes < 0) {
+        return json({ ok: false, error: 'not-serializable', message: 'The catalog cannot be converted to JSON — check for broken (non-serializable) fields.' }, 400);
+      }
+      if (biggest > D1_VALUE_SAFE_BYTES) {
+        const mb = (n: number) => (n / 1_000_000).toFixed(1);
+        return json(
+          {
+            ok: false,
+            error: 'payload-too-large',
+            message: `The catalog is ${mb(biggest)} MB as stored JSON — the database limit is ~2 MB per record. The usual cause is large icon or logo images (stored as base64). Use smaller images (e.g. under ~300 KB each, resized PNG/JPEG), then try again.`,
+          },
+          413
+        );
+      }
+
       // Server-side validation (same shared rules as the client).
-      const validation = validateAdminCatalogForPublish(doc.catalog);
+      const validation = validateAdminCatalogForPublish(catalog);
       if (!validation.ok) {
         return json({ ok: false, error: 'validation', issues: validation.issues }, 400);
       }
 
       const note =
         typeof doc.note === 'string' && doc.note.trim() ? doc.note.trim().slice(0, 200) : null;
-      const catalog = doc.catalog as AdminCatalog;
 
-      const result = await publishAll(env.CONFIG_DB, catalog, note);
+      let result;
+      try {
+        result = await publishAll(env.CONFIG_DB, catalog, note);
+      } catch (e) {
+        // Surface the REAL database error (sanitized) instead of the old
+        // blank "Unexpected server error." — this is what let a broken
+        // publish hide while diagnostics reported "all healthy".
+        const detail = e instanceof Error ? e.message : String(e);
+        return json(
+          {
+            ok: false,
+            error: 'database-write-failed',
+            message: 'The database refused the publish.',
+            detail: detail.slice(0, 300),
+          },
+          500
+        );
+      }
 
       // Defense in depth: the derived student document must itself validate
       // before it is allowed to be served (should never trigger on a
@@ -541,10 +600,12 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
                 ? 404
                 : 502;
         // SSE error frame — the client's stream reader understands both
-        // this and a plain JSON error.
+        // this and a plain JSON error. (CORS headers are REQUIRED here too —
+        // without them the browser blocks even the error, and the student
+        // sees a bogus "no internet" instead of the real reason.)
         return new Response(
           `event: error\ndata: ${JSON.stringify({ ok: false, error: result.code, message: result.message, retryAfterSec: result.retryAfterSec })}\n\n`,
-          { status, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' } }
+          { status, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', ...CORS } }
         );
       }
       return result.response;
@@ -574,6 +635,44 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
             ? 404
             : 502;
     return json({ ok: false, error: result.code, message: result.message, retryAfterSec: result.retryAfterSec }, status);
+  }
+
+  // ── AI assistant: CLIENT-SIDE error reports (what students experience) ──
+  // When the student's browser fails BEFORE the worker can see it (CORS
+  // block, network drop mid-stream, DNS failure), the request never arrives
+  // — the admin error log would show nothing while students are blocked.
+  // The client reports these technical-only events here.
+  // PRIVACY: only a machine code + a short technical detail — never the
+  // student's question, data, or identity. Rate-limited per client IP.
+  if (method === 'POST' && path === '/api/ai/report') {
+    if (!env.CONFIG_DB) return json({ ok: false, error: 'not-configured' }, 503);
+    const body = await parseJsonBody(req);
+    if (!body.ok) return body.response;
+    const code = typeof body.value.code === 'string' ? body.value.code.trim() : '';
+    const detail = typeof body.value.detail === 'string' ? body.value.detail.trim() : '';
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/i.test(code)) {
+      return json({ ok: false, error: 'invalid-body', message: 'Expected { code: string, detail?: string }.' }, 400);
+    }
+    const ip = req.headers.get('cf-connecting-ip') ?? 'local';
+    const now = Date.now();
+    if (reportWindow.size > 5000) reportWindow.clear(); // bounded memory
+    const arr = (reportWindow.get(ip) ?? []).filter((t) => now - t < REPORT_WINDOW_MS);
+    if (arr.length >= REPORTS_PER_HOUR) {
+      return json({ ok: false, error: 'rate-limited', message: 'Too many error reports right now.' }, 429);
+    }
+    arr.push(now);
+    reportWindow.set(ip, arr);
+    await ensureExtraTables(env.CONFIG_DB).catch(() => {});
+    await recordAiError(env.CONFIG_DB, {
+      kind: 'client',
+      code,
+      status: 0,
+      provider: null,
+      model: null,
+      keyLabel: null,
+      detail: `client: ${detail ? `${detail.slice(0, 260)} ` : ''}code=${code}`.slice(0, 500),
+    }).catch(() => {});
+    return json({ ok: true });
   }
 
   // ── AI assistant: AUTHORIZED admin management (settings + keys + drafts) ─
@@ -733,8 +832,21 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     }
     if (method !== 'GET') return json({ ok: false, error: 'method-not-allowed' }, 405);
     const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 500));
-    const [errors, total] = await Promise.all([listAiErrors(env.CONFIG_DB, limit), countAiErrors(env.CONFIG_DB)]);
-    return json({ format: 'cgpa-pilot-admin-errors', total, errors });
+    // Never 500 here: a blank failure made the admin screen sit on
+    // "Loading error log…" forever with no explanation. Degrade to an
+    // empty log + a visible warning instead.
+    try {
+      const [errors, total] = await Promise.all([listAiErrors(env.CONFIG_DB, limit), countAiErrors(env.CONFIG_DB)]);
+      return json({ format: 'cgpa-pilot-admin-errors', total, errors });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      return json({
+        format: 'cgpa-pilot-admin-errors',
+        total: 0,
+        errors: [],
+        warning: `The error log could not be read: ${detail.slice(0, 240)}`,
+      });
+    }
   }
 
   if (path === '/api/admin/diagnostics') {
@@ -783,6 +895,57 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
       ok: published !== null,
       detail: published ? `Published version ${published.version} is live for students.` : 'Nothing published yet — students run on the bundled seed.',
     });
+
+    // ── PUBLISH DRY-RUN: simulate the exact writes a "Save & Publish" will
+    // perform, WITHOUT writing — validation + D1 value-size limits. This is
+    // the check that must catch a publish 500 while it is still fixable. ──
+    try {
+      const storedDoc = await readAdminCatalogDoc(env.CONFIG_DB);
+      if (!storedDoc) {
+        checks.push({
+          id: 'publish-path',
+          label: 'Publish path (dry run)',
+          ok: false,
+          detail: 'No catalog stored yet — the first Save & Publish will be the first write; nothing to pre-check.',
+        });
+      } else {
+        const validation = validateAdminCatalogForPublish(storedDoc.catalog as AdminCatalog);
+        const cBytes = jsonByteLength(storedDoc.catalog);
+        const dBytes = jsonByteLength(buildDistribution(storedDoc.catalog as AdminCatalog));
+        const mb = (n: number) => (n / 1_000_000).toFixed(2);
+        if (!validation.ok) {
+          checks.push({
+            id: 'publish-path',
+            label: 'Publish path (dry run)',
+            ok: false,
+            detail: `The stored catalog would be REJECTED: ${validation.issues[0] ?? 'validation failed'}${validation.issues.length > 1 ? ` (+${validation.issues.length - 1} more)` : ''}.`,
+          });
+        } else if (cBytes < 0 || dBytes < 0) {
+          checks.push({ id: 'publish-path', label: 'Publish path (dry run)', ok: false, detail: 'The stored catalog cannot be serialized to JSON — a publish would fail.' });
+        } else if (Math.max(cBytes, dBytes) > D1_VALUE_SAFE_BYTES) {
+          checks.push({
+            id: 'publish-path',
+            label: 'Publish path (dry run)',
+            ok: false,
+            detail: `Publish WOULD FAIL — the stored catalog is ${mb(Math.max(cBytes, dBytes))} MB as JSON (catalog ${mb(cBytes)} MB / derived ${mb(dBytes)} MB) against the ~2 MB database limit. Shrink the largest icon/logo images, then publish.`,
+          });
+        } else {
+          checks.push({
+            id: 'publish-path',
+            label: 'Publish path (dry run)',
+            ok: true,
+            detail: `Stored catalog v${storedDoc.version} validates and fits the database (catalog ${mb(cBytes)} MB / derived ${mb(dBytes)} MB, limit ~2 MB). A publish should succeed.`,
+          });
+        }
+      }
+    } catch (e) {
+      checks.push({
+        id: 'publish-path',
+        label: 'Publish path (dry run)',
+        ok: false,
+        detail: `Dry run could not be completed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
 
     // ── AI settings (read once, reused by the AI / student / provider checks) ──
     let s: AiSettings | null = null;

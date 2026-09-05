@@ -657,6 +657,8 @@ export interface AiErrorDoc {
   format: 'cgpa-pilot-admin-errors';
   total: number;
   errors: AiErrorEntry[];
+  /** Set when the log itself could not be read (server degrades to empty). */
+  warning?: string;
 }
 
 /** The technical error log of what students hit (never their content). */

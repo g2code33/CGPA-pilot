@@ -219,6 +219,77 @@ test('unknown API paths 404; wrong methods 405', async () => {
   assert.equal(deleteStatus.status, 405);
 });
 
+// ── Publish failure visibility (a broken publish must be EXPLAINABLE) ─────
+// In production a catalog with large base64 icon images once exceeded D1's
+// ~2 MB per-value limit and publish died as a blank 500 while diagnostics
+// reported "all healthy". These tests pin the new behaviour:
+//   • over-limit catalog  → 413 with an actionable message (what to shrink)
+//   • database write fail → 500 that carries the real (sanitized) detail
+//   • diagnostics dry run → a publish-path check that CATCHES the over-limit
+//     case BEFORE the admin ever hits the broken publish.
+
+test('publish: a catalog that would exceed the D1 value limit is 413 with an actionable message', async () => {
+  const e = env();
+  const hugeIcon = 'data:image/png;base64,' + 'A'.repeat(2_000_000); // ~2 MB as stored JSON
+  const catalog = { ...makeValidCatalog(), appearance: { appIcon: { emoji: '🧭', image: hugeIcon } } };
+  const res = await publish(e, catalog);
+  assert.equal(res.status, 413);
+  const doc = await res.json();
+  assert.equal(doc.ok, false);
+  assert.equal(doc.error, 'payload-too-large');
+  assert.match(doc.message, /limit/i);
+  assert.match(doc.message, /image/i); // tells the admin WHAT to shrink
+  // Nothing was stored.
+  assert.equal((await worker.fetch(req('/api/config/meta'), e)).status, 404);
+});
+
+test('publish: a database write failure is surfaced with the real detail (not a blank 500)', async () => {
+  const e = env();
+  // Reads (version bumps) succeed; the transactional write blows up.
+  e.CONFIG_DB.batch = async () => {
+    throw new Error('d1: value too large (simulated write failure)');
+  };
+  const res = await publish(e, makeValidCatalog());
+  assert.equal(res.status, 500);
+  const doc = await res.json();
+  assert.equal(doc.ok, false);
+  assert.equal(doc.error, 'database-write-failed');
+  assert.match(doc.message, /database/i);
+  assert.match(doc.detail, /value too large \(simulated write failure\)/);
+});
+
+test('diagnostics: the publish dry-run check passes for a healthy stored catalog', async () => {
+  const e = env();
+  assert.equal((await publish(e, makeValidCatalog())).status, 200);
+  const res = await worker.fetch(req('/api/admin/diagnostics', { token: TOKEN }), e);
+  assert.equal(res.status, 200);
+  const doc = await res.json();
+  const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+  assert.equal(byId['publish-path'].ok, true);
+  assert.match(byId['publish-path'].detail, /fits the database/i);
+});
+
+test('diagnostics: the publish dry-run check CATCHES an over-limit stored catalog', async () => {
+  const e = env();
+  const hugeIcon = 'data:image/png;base64,' + 'A'.repeat(2_000_000);
+  const hugeCatalog = { ...makeValidCatalog(), appearance: { appIcon: { emoji: '🧭', image: hugeIcon } } };
+  // Seed the stored catalog directly (bypassing the API's own size gate) —
+  // this is exactly the state the live Worker was in when publish 500'd.
+  e.CONFIG_DB._tables.admin_catalog.set(1, {
+    id: 1,
+    version: 1,
+    updated_at: new Date().toISOString(),
+    catalog_json: JSON.stringify(hugeCatalog),
+    note: null,
+  });
+  const res = await worker.fetch(req('/api/admin/diagnostics', { token: TOKEN }), e);
+  const doc = await res.json();
+  const byId = Object.fromEntries(doc.checks.map((c) => [c.id, c]));
+  assert.equal(byId['publish-path'].ok, false);
+  assert.match(byId['publish-path'].detail, /would fail|limit/i);
+  assert.match(byId['publish-path'].detail, /icon|logo|image/i);
+});
+
 test('no D1 binding → 503 not-configured (reads and admin)', async () => {
   const e = env({ db: false });
   const meta = await worker.fetch(req('/api/config/meta'), e);
