@@ -217,8 +217,8 @@ export function NextSemester() {
           </div>
         </div>
         <div className="mt-3 flex justify-end">
-          <Info label="How is this worked out?" className="text-white ring-white/25 [&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25">
-            <span className="text-slate-700">
+          <Info label="How is this worked out?" className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25">
+            <span>
               {isFinishCurrent && (
                 <>
                   You’re in this semester now, so this is the average you need to{' '}

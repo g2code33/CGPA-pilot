@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { StoreProvider } from './state/store';
 import { InstitutionProvider } from './state/institutionSelection';
+import { ErrorBoundary } from './ErrorBoundary';
 import App from './App';
 import {
   bootStudentConfig,
@@ -47,6 +48,15 @@ async function main() {
     });
   }
 
+  // Log anything the ErrorBoundary can't catch (event handlers, async
+  // callbacks) so failures are diagnosable instead of silent.
+  window.addEventListener('error', (e) =>
+    console.error('[crash] uncaught error:', e.message, e.error ?? '')
+  );
+  window.addEventListener('unhandledrejection', (e) =>
+    console.error('[crash] unhandled rejection:', e.reason)
+  );
+
   const outcome = await bootStudentConfig().catch(() => null);
   // Defensive: boot must never block the app — on any unexpected failure the
   // runtime catalog still holds a valid (cached/seed) configuration.
@@ -54,11 +64,13 @@ async function main() {
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <StoreProvider>
-        <InstitutionProvider>
-          <App />
-        </InstitutionProvider>
-      </StoreProvider>
+      <ErrorBoundary>
+        <StoreProvider>
+          <InstitutionProvider>
+            <App />
+          </InstitutionProvider>
+        </StoreProvider>
+      </ErrorBoundary>
     </React.StrictMode>
   );
 

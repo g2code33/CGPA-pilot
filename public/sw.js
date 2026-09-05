@@ -15,7 +15,7 @@
 //
 // Bump `CACHE` whenever you change this file's caching rules; old caches are
 // deleted on activate so devices pick up the new rules immediately.
-const CACHE = 'cgpa-pilot-v4';
+const CACHE = 'cgpa-pilot-v5';
 
 const SHELL = [
   './',
@@ -73,6 +73,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Everything else (hashed assets) → CACHE-FIRST, falling back to the network.
+  // NOTE: on a failed asset fetch we must NOT substitute index.html — serving
+  // the HTML document in answer to a JS/CSS request makes the browser try to
+  // execute it as a script, which crashes the page into a white screen.
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
@@ -85,7 +88,7 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => caches.match('./index.html'));
+        .catch(() => new Response('Asset unavailable offline', { status: 503, statusText: 'Offline' }));
     })
   );
 });

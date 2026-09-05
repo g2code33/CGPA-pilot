@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type MutableRefObject,
   type ReactNode,
 } from 'react';
 
@@ -21,65 +22,119 @@ interface PopPos {
   btnBottom: number;
 }
 
+/** At most ONE idea popover is open at a time — opening any icon forces
+    every other one closed. */
+let activePopover: { id: number; close: () => void } | null = null;
+let popoverSeq = 0;
+
 /**
  * Shared idea-popover state: the panel is rendered with `position: fixed`
  * from the button's viewport rect, so it overlays whatever is on screen
  * (card, table, scroll container) without being clipped and without ever
  * extending the layout.
  *
- * Positioning guarantees:
- *  • width = min(requested, viewport − 16px), left clamped to [8, vw − w − 8]
- *    → the panel is ALWAYS fully inside the viewport, horizontally too
+ * Behaviour guarantees:
+ *  • opening one popover FORCES any other open popover closed (single-open)
+ *  • tapping/clicking ANYWHERE outside the button + panel closes it
+ *  • width = max(140, min(requested, viewport − 16px)), left clamped to
+ *    [8, vw − w − 8] → the panel is ALWAYS fully inside the viewport
  *  • opens below, flips above when the bottom edge is close — then MEASURED
  *    after render and flipped again if either vertical edge would clip it
  *  • closes on scroll/resize so it can never drift away from its button
+ *
+ * Crash-safety: the button rect is read SYNCHRONOUSLY in the event handler.
+ * The synthetic event's `currentTarget` is nulled out after dispatch, so it
+ * must never be read later (e.g. inside a setState updater / re-render) —
+ * doing so throws mid-render and blanks the whole app (white screen).
  */
 function usePopover(width: number, align: 'center' | 'right' = 'center') {
+  const idRef = useRef(++popoverSeq);
   const [pos, setPos] = useState<PopPos | null>(null);
   const open = pos !== null;
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  const close = useCallback(() => {
+    if (activePopover?.id === idRef.current) activePopover = null;
+    setPos(null);
+  }, []);
 
   const toggle = useCallback(
     (e: MouseEvent<HTMLButtonElement>) => {
-      setPos((prev) => {
-        if (prev) return null;
-        const r = e.currentTarget.getBoundingClientRect();
-        const margin = 8;
-        const w = Math.max(140, Math.min(width, window.innerWidth - margin * 2));
-        const anchor = align === 'right' ? r.right - w : r.left + r.width / 2 - w / 2;
-        const maxLeft = Math.max(margin, window.innerWidth - w - margin);
-        const left = Math.min(maxLeft, Math.max(margin, anchor));
-        const above = window.innerHeight - r.bottom < 140;
-        return { left, above, width: w, btnTop: r.top, btnBottom: r.bottom };
-      });
+      if (open) {
+        close();
+        return;
+      }
+      // Force-close any other open popover before opening this one.
+      if (activePopover && activePopover.id !== idRef.current) activePopover.close();
+      const r = e.currentTarget.getBoundingClientRect();
+      const margin = 8;
+      const w = Math.max(140, Math.min(width, window.innerWidth - margin * 2));
+      const anchor = align === 'right' ? r.right - w : r.left + r.width / 2 - w / 2;
+      const maxLeft = Math.max(margin, window.innerWidth - w - margin);
+      const left = Math.min(maxLeft, Math.max(margin, anchor));
+      const above = window.innerHeight - r.bottom < 140;
+      activePopover = { id: idRef.current, close };
+      setPos({ left, above, width: w, btnTop: r.top, btnBottom: r.bottom });
     },
-    [align, width]
+    [align, close, open, width]
   );
 
+  // Scroll/resize: the panel is viewport-anchored, so any movement of the
+  // page would leave it floating — just close it.
   useEffect(() => {
     if (!open) return;
-    const close = () => setPos(null);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
-  }, [open]);
+  }, [open, close]);
 
-  return { open, pos, toggle };
+  // Tapping/clicking anywhere else on the screen closes the popover.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (ev: PointerEvent) => {
+      const t = ev.target;
+      if (!(t instanceof Node)) return;
+      if (buttonRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      close();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open, close]);
+
+  // Unmount while open: clear the global slot so a later toggle can't
+  // dispatch into a dead instance.
+  useEffect(
+    () => () => {
+      if (activePopover?.id === idRef.current) activePopover = null;
+    },
+    []
+  );
+
+  return { open, pos, toggle, close, buttonRef, panelRef };
 }
 
 function PopoverPanel({
   pos,
   className = '',
+  panelRef,
   children,
 }: {
   pos: PopPos;
   className?: string;
+  panelRef?: MutableRefObject<HTMLDivElement | null>;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   const [flipped, setFlipped] = useState(false);
+
+  const attach = (el: HTMLDivElement | null) => {
+    ref.current = el;
+    if (panelRef) panelRef.current = el;
+  };
 
   // Measure once rendered: if the panel would overflow the viewport in its
   // current direction, flip it the other way (the flip is idempotent).
@@ -94,8 +149,8 @@ function PopoverPanel({
   const above = pos.above !== flipped;
   return (
     <div
-      ref={ref}
-      className={`fixed z-[100] rounded-xl bg-slate-900/95 text-slate-100 leading-relaxed shadow-xl ring-1 ring-white/10 ${
+      ref={attach}
+      className={`fixed z-[100] rounded-xl bg-slate-900/95 text-white leading-relaxed shadow-xl ring-1 ring-white/10 ${
         above ? '-translate-y-full' : ''
       } ${className}`}
       style={{
@@ -117,14 +172,17 @@ function IdeaButton({
   onClick,
   label,
   compact = false,
+  buttonRef,
 }: {
   open: boolean;
   onClick: (e: MouseEvent<HTMLButtonElement>) => void;
   label: string;
   compact?: boolean;
+  buttonRef?: MutableRefObject<HTMLButtonElement | null>;
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       aria-expanded={open}
@@ -179,11 +237,13 @@ export function SectionTitle({
           {icon && <span className="text-base">{icon}</span>}
           <span className="truncate">{title}</span>
         </h2>
-        {info && <IdeaButton open={pop.open} onClick={pop.toggle} label={infoLabel ?? 'How to use this'} />}
+        {info && (
+          <IdeaButton open={pop.open} onClick={pop.toggle} label={infoLabel ?? 'How to use this'} buttonRef={pop.buttonRef} />
+        )}
       </div>
       {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
       {pop.pos && info && (
-        <PopoverPanel pos={pop.pos} className="px-3 py-2.5 text-xs">
+        <PopoverPanel pos={pop.pos} panelRef={pop.panelRef} className="px-3 py-2.5 text-xs">
           {info}
         </PopoverPanel>
       )}
@@ -212,9 +272,9 @@ export function Info({
   const pop = usePopover(width, 'center');
   return (
     <div className={`inline-block ${className}`}>
-      <IdeaButton open={pop.open} onClick={pop.toggle} label={label ?? 'Help'} compact={compact} />
+      <IdeaButton open={pop.open} onClick={pop.toggle} label={label ?? 'Help'} compact={compact} buttonRef={pop.buttonRef} />
       {pop.pos && (
-        <PopoverPanel pos={pop.pos} className={compact ? 'px-2.5 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'}>
+        <PopoverPanel pos={pop.pos} panelRef={pop.panelRef} className={compact ? 'px-2.5 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'}>
           {children}
         </PopoverPanel>
       )}
