@@ -21,6 +21,8 @@
 import type { CachedConfig } from '../config/runtime';
 import { getRuntimeCatalog, setRuntimeCatalog } from '../config/runtime';
 import { configApiBase } from '../config/apiBase';
+import { applyBrandFavicon } from '../config/branding';
+import type { AppAppearance } from '../config/types';
 import { readCachedConfigAsync, writeCachedConfig } from './configCache';
 import { validateDistributionDocument } from '../admin/catalogValidation';
 
@@ -223,6 +225,9 @@ export async function checkAndSync(
       source: 'backend',
     });
     markPendingUpdate(null); // we're current now
+    // Keep the browser tab icon in step with a mid-session branding change
+    // (the boot path in main.tsx already applies it before first paint).
+    applyBrandFavicon(payload.appearance as AppAppearance | undefined);
     return done({
       status: 'synced',
       localVersion: latest.version ?? serverVersion,

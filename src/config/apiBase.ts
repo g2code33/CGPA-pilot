@@ -54,6 +54,16 @@ export function configApiBase(): string {
   } catch {
     /* non-Vite context (tests / bundlers) */
   }
+  // Electron desktop app: same-origin would be file://, which can never
+  // reach the API — point at the production Worker so desktops receive
+  // published configuration updates (logos, curricula, …) exactly like the web.
+  try {
+    if (typeof window !== 'undefined' && !!(window as { cgpaPilot?: unknown }).cgpaPilot) {
+      return PRODUCTION_API_BASE;
+    }
+  } catch {
+    /* non-browser context (tests / bundlers) */
+  }
   // Split-hosting production: Pages site → API-only Worker.
   try {
     if (typeof window !== 'undefined' && window.location?.hostname === PAGES_HOST) {

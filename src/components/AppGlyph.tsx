@@ -34,14 +34,21 @@ export function AppGlyph({
   const el = iconElement(icon, fallback);
   if (el.type === 'img') {
     const px = el.sizePx ?? size;
+    // Fixed slot: the box is always exactly `size × size` (so the caller's
+    // layout never reflows). The admin-sized image is centred in the box and
+    // simply overflows it when enlarged — it grows in place, never shifts.
     return (
-      <img
-        src={el.src}
-        alt={el.alt ?? 'icon'}
-        width={px}
-        height={px}
-        className={`object-contain ${imgClassName ?? ''} ${className}`}
-      />
+      <span
+        className={`relative inline-flex items-center justify-center overflow-visible ${className}`}
+        style={{ width: size, height: size }}
+      >
+        <img
+          src={el.src}
+          alt={el.alt ?? 'icon'}
+          className={`relative max-w-none shrink-0 object-contain ${imgClassName ?? ''}`}
+          style={{ width: px, height: px }}
+        />
+      </span>
     );
   }
   return (
