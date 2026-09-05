@@ -9,8 +9,40 @@
 // every device after Save & Publish, and the app keeps working offline.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { useLayoutEffect, useRef } from 'react';
 import { useAdmin } from '../adminStore';
 import { IDEA_TIPS, IDEA_TIP_PAGES } from '../../infoTips';
+
+/**
+ * Single-line input where the sentence GROWS vertically as it wraps, so the
+ * whole sentence is always on screen — never a horizontal scroll to read it.
+ */
+function AutoGrowInput({
+  value,
+  onChange,
+  className = '',
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`w-full resize-none overflow-hidden rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs leading-relaxed text-slate-800 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200 ${className}`}
+    />
+  );
+}
 
 export function IdeaIcons() {
   const { catalog, apply } = useAdmin();
@@ -111,21 +143,20 @@ export function IdeaIcons() {
                   return (
                     <div
                       key={t.key}
-                      className="flex flex-col gap-1 rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200 sm:flex-row sm:items-center"
+                      className="flex flex-col gap-1 rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200 sm:flex-row sm:items-start"
                     >
                       <span
-                        className={`shrink-0 text-[11px] font-bold sm:w-44 ${
+                        className={`shrink-0 pt-1.5 text-[11px] font-bold sm:w-44 ${
                           cleared ? 'text-slate-400 line-through' : 'text-slate-700'
                         }`}
                       >
                         {t.subject}
                         {cleared && ' · hidden'}
                       </span>
-                      <input
-                        type="text"
+                      <AutoGrowInput
                         value={custom ?? t.text}
-                        onChange={(e) => setText(t.key, e.target.value)}
-                        className="input w-full flex-1 py-1.5 text-xs"
+                        onChange={(v) => setText(t.key, v)}
+                        className="flex-1"
                       />
                       {(overridden || cleared) && (
                         <button

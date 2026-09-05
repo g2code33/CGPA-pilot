@@ -1,17 +1,38 @@
-import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
 interface PopPos {
-  top: number;
+  /** Final clamped left — always ≥ 8px and leaves the full width on screen. */
   left: number;
+  /** Initial vertical direction (measured once mounted and flipped if the
+      panel would overflow the top/bottom edge). */
   above: boolean;
+  /** Actual panel width — already clamped so the panel NEVER extends past
+      the viewport (nothing to scroll left/right to see). */
+  width: number;
+  btnTop: number;
+  btnBottom: number;
 }
 
 /**
  * Shared idea-popover state: the panel is rendered with `position: fixed`
  * from the button's viewport rect, so it overlays whatever is on screen
  * (card, table, scroll container) without being clipped and without ever
- * extending the layout. It flips above the button when the bottom edge is
- * close, and closes on scroll/resize so it can never drift.
+ * extending the layout.
+ *
+ * Positioning guarantees:
+ *  • width = min(requested, viewport − 16px), left clamped to [8, vw − w − 8]
+ *    → the panel is ALWAYS fully inside the viewport, horizontally too
+ *  • opens below, flips above when the bottom edge is close — then MEASURED
+ *    after render and flipped again if either vertical edge would clip it
+ *  • closes on scroll/resize so it can never drift away from its button
  */
 function usePopover(width: number, align: 'center' | 'right' = 'center') {
   const [pos, setPos] = useState<PopPos | null>(null);
@@ -23,11 +44,12 @@ function usePopover(width: number, align: 'center' | 'right' = 'center') {
         if (prev) return null;
         const r = e.currentTarget.getBoundingClientRect();
         const margin = 8;
-        const w = Math.min(width, window.innerWidth - margin * 2);
-        let left = align === 'right' ? r.right - w : r.left + r.width / 2 - w / 2;
-        left = Math.min(window.innerWidth - w - margin, Math.max(margin, left));
+        const w = Math.max(140, Math.min(width, window.innerWidth - margin * 2));
+        const anchor = align === 'right' ? r.right - w : r.left + r.width / 2 - w / 2;
+        const maxLeft = Math.max(margin, window.innerWidth - w - margin);
+        const left = Math.min(maxLeft, Math.max(margin, anchor));
         const above = window.innerHeight - r.bottom < 140;
-        return { top: above ? r.top - 6 : r.bottom + 6, left, above };
+        return { left, above, width: w, btnTop: r.top, btnBottom: r.bottom };
       });
     },
     [align, width]
@@ -49,21 +71,40 @@ function usePopover(width: number, align: 'center' | 'right' = 'center') {
 
 function PopoverPanel({
   pos,
-  width,
   className = '',
   children,
 }: {
   pos: PopPos;
-  width: number;
   className?: string;
   children: ReactNode;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [flipped, setFlipped] = useState(false);
+
+  // Measure once rendered: if the panel would overflow the viewport in its
+  // current direction, flip it the other way (the flip is idempotent).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const h = el.offsetHeight;
+    if (pos.above && pos.btnTop - 6 - h < 4) setFlipped(true);
+    else if (!pos.above && pos.btnBottom + 6 + h > window.innerHeight - 4) setFlipped(false);
+  }, [pos]);
+
+  const above = pos.above !== flipped;
   return (
     <div
+      ref={ref}
       className={`fixed z-[100] rounded-xl bg-slate-900/95 text-slate-100 leading-relaxed shadow-xl ring-1 ring-white/10 ${
-        pos.above ? '-translate-y-full' : ''
+        above ? '-translate-y-full' : ''
       } ${className}`}
-      style={{ top: pos.top, left: pos.left, width, maxWidth: 'calc(100vw - 16px)' }}
+      style={{
+        top: above ? pos.btnTop - 6 : pos.btnBottom + 6,
+        left: pos.left,
+        width: pos.width,
+        maxWidth: 'calc(100vw - 16px)',
+        overflowWrap: 'anywhere',
+      }}
     >
       {children}
     </div>
@@ -142,7 +183,7 @@ export function SectionTitle({
       </div>
       {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
       {pop.pos && info && (
-        <PopoverPanel pos={pop.pos} width={288} className="px-3 py-2.5 text-xs">
+        <PopoverPanel pos={pop.pos} className="px-3 py-2.5 text-xs">
           {info}
         </PopoverPanel>
       )}
@@ -173,11 +214,7 @@ export function Info({
     <div className={`inline-block ${className}`}>
       <IdeaButton open={pop.open} onClick={pop.toggle} label={label ?? 'Help'} compact={compact} />
       {pop.pos && (
-        <PopoverPanel
-          pos={pop.pos}
-          width={width}
-          className={compact ? 'px-2.5 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'}
-        >
+        <PopoverPanel pos={pop.pos} className={compact ? 'px-2.5 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'}>
           {children}
         </PopoverPanel>
       )}

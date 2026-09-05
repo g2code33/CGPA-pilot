@@ -21,6 +21,11 @@ import './index.css';
 //   3. Render. Student academic data is never involved in any of this.
 // ─────────────────────────────────────────────────────────────────────────
 async function main() {
+  // Keep pinch-zoom out of the PWA/website (pairs with
+  // maximum-scale=1, user-scalable=no in index.html — the standard
+  // best-effort combo; a few browsers keep an accessibility zoom).
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+
   // Register the PWA service worker (production builds / http(s) only).
   // It caches the app shell so the web/PWA version works fully offline.
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
