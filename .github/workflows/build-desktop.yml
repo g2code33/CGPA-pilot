@@ -205,3 +205,37 @@ jobs:
           gh release upload "$TAG" "cgpa-pilot-$VERSION.apk" --clobber 2>/dev/null \
             || gh release create "$TAG" "cgpa-pilot-$VERSION.apk" --title "CGPA Pilot $VERSION" --notes "Android APK for $VERSION" \
             || echo "Upload failed (release busy) — retries on next push."
+
+  ios:
+    name: Build iOS
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build:web
+      - run: |
+          if [ ! -d ios ]; then npm run mobile:add:ios; fi
+          npx cap sync ios
+      - name: Build iOS app (unsigned)
+        run: |
+          cd ios
+          xcodebuild -project App/App.xcodeproj -target App -configuration Release \
+            -destination 'generic/platform=iOS' \
+            SYMROOT="$PWD/build" OBJROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package iOS app
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          zip -qr "cgpa-pilot-$VERSION.ios.app.zip" ios/build/Release-iphoneos/App.app
+      - name: Upload iOS app to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release upload "v$VERSION" "cgpa-pilot-$VERSION.ios.app.zip" --clobber 2>/dev/null \
+            || gh release create "v$VERSION" "cgpa-pilot-$VERSION.ios.app.zip" --title "CGPA Pilot $VERSION" \
+            || echo "Upload failed (release busy) — retries on next push."
