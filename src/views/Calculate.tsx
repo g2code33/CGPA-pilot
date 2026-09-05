@@ -181,10 +181,12 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
   // Screen help sentence — registry-driven (admin can reword or hide it).
   const modeHelp = ideaTip('calc.modeHelp');
   // A CGPA is "entered" when the user has typed one (Quick/planning = current
-  // standing CGPA; History = at least one completed level's CGPA).
+  // standing CGPA; History = at least one CONFIRMED level's CGPA — the chosen
+  // level's entry only counts when its semester actually has released
+  // results, per the journey's effective entries).
   const hasCgpa =
     state.mode === 'history'
-      ? state.semesters.some((s) => s.gpa !== null)
+      ? !!d.historyJourney?.hasAny
       : state.baseline.cgpa !== null;
 
   // GPA-History completeness: the record only counts when EVERY level below
@@ -725,13 +727,41 @@ function HistoryMode() {
         <div className="space-y-2">
           {levels.map((lv) => {
             const semester = state.semesters.find((s) => s.levelIndex === lv);
+            const isCurrent = lv === state.baseline.levelIndex;
+
+            // Chosen level whose semester has NO released results yet
+            // (Not-released + First, or Just-started + First): nothing can
+            // be entered for it, so hide the box entirely and say why.
+            if (isCurrent && d.historyEntryKind === 'none') {
+              return (
+                <div
+                  key={lv}
+                  className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3"
+                >
+                  <span className="label">Level {lv * 100} — nothing to enter yet</span>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    {status === 'justStarted'
+                      ? 'This level has only just started — no results have been graded yet, so there is nothing to enter. Come back and enter your CGPA as soon as the First semester results are released.'
+                      : 'The First semester results for this level are not released yet, so there is nothing to enter. Come back and enter your CGPA as soon as they come out.'}
+                  </p>
+                </div>
+              );
+            }
+
             const shown = manualCgpa[lv] ?? semester?.gpa?.toString() ?? '';
+            // Chosen level where only the FIRST semester is released: the
+            // entry is relabelled and weighted by first-semester credits only.
+            const firstSem = isCurrent && d.historyEntryKind === 'first-semester';
             return (
               <label
                 key={lv}
                 className="block rounded-xl bg-white p-3 ring-1 ring-slate-200 shadow-sm"
               >
-                <span className="label">Level {lv * 100} CGPA</span>
+                <span className="label">
+                  {firstSem
+                    ? `Level ${lv * 100} · First semester CGPA`
+                    : `Level ${lv * 100} CGPA`}
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -742,6 +772,15 @@ function HistoryMode() {
                   value={shown}
                   onChange={(e) => setLevelGpa(lv, e.target.value)}
                 />
+                {firstSem && (
+                  <span className="mt-1 block text-[11px] leading-relaxed text-slate-500">
+                    {status === 'released'
+                      ? 'Only the First semester of this level is released, so this CGPA counts with that semester’s credits only.'
+                      : status === 'notReleased'
+                        ? 'The Second semester results are not out yet — until they are, only the First semester counts, with its own credits.'
+                        : 'The Second semester has not started yet — only the First semester counts, with its own credits.'}
+                  </span>
+                )}
               </label>
             );
           })}

@@ -10,7 +10,11 @@
 
 import type { AiStudentContext } from '../admin/aiSettings';
 import type { AcademicState } from '../state/studentState';
-import type { HistoryJourney } from './historyProgress';
+import {
+  currentLevelEntryKind,
+  effectiveHistorySemesters,
+  type HistoryJourney,
+} from './historyProgress';
 
 export interface AiRecord {
   creditHours: number;
@@ -29,10 +33,23 @@ export interface AiInstitution {
  * True when the student has entered anything the tools can work with — the
  * AI uses this to decide between "answer with your real numbers" and
  * "refer them to fill in the tools first".
+ *
+ * History mode counts only CONFIRMED entries: if the chosen level's semester
+ * has no released results yet, its entry does not count (same rule as the
+ * engine and the journey).
  */
 export function hasAnyStudentData(state: AcademicState): boolean {
   if (state.mode === 'history') {
-    return state.semesters.some((s) => s.gpa !== null) || state.semesters.some((s) => s.courses.some((c) => c.grade !== null || c.score !== null));
+    const confirmed = effectiveHistorySemesters(
+      state.semesters,
+      state.baseline.levelIndex,
+      state.baseline.standing ?? 'released',
+      state.baseline.semesterIndex
+    );
+    return (
+      confirmed.some((s) => s.gpa !== null) ||
+      confirmed.some((s) => s.courses.some((c) => c.grade !== null || c.score !== null))
+    );
   }
   return state.baseline.cgpa !== null;
 }
@@ -49,10 +66,26 @@ export function buildAiContext(
 ): AiStudentContext {
   const hasAnyData = hasAnyStudentData(state);
 
+  // History mode receives only CONFIRMED entries (the chosen level's entry is
+  // dropped when its semester has no released results yet), and a
+  // first-semester interpretation is labelled as such so the model never
+  // treats it as a whole-level CGPA.
+  const historyKind = currentLevelEntryKind(
+    state.baseline.standing ?? 'released',
+    state.baseline.semesterIndex
+  );
   const semesters =
     state.mode === 'history'
-      ? state.semesters.map((s) => ({
-          label: s.label,
+      ? effectiveHistorySemesters(
+          state.semesters,
+          state.baseline.levelIndex,
+          state.baseline.standing ?? 'released',
+          state.baseline.semesterIndex
+        ).map((s) => ({
+          label:
+            s.levelIndex === state.baseline.levelIndex && historyKind === 'first-semester'
+              ? `Level ${s.levelIndex * 100} · First semester CGPA`
+              : s.label,
           gpa: s.gpa,
           credits:
             s.creditHoursOverride ??

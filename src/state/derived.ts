@@ -25,7 +25,13 @@ import {
   totalProgrammeCredits,
   type SemesterSlot,
 } from '../services/structureService';
-import { historyJourney as computeHistoryJourney } from '../services/historyProgress';
+import {
+  historyJourney as computeHistoryJourney,
+  currentLevelEntryKind,
+  effectiveHistorySemesters,
+  latestHistoryPositionIndex,
+  type CurrentLevelEntryKind,
+} from '../services/historyProgress';
 import type { HistoryJourney } from '../services/historyProgress';
 
 /**
@@ -56,25 +62,69 @@ export function useDerived() {
       slots
         .filter((s) => s.levelIndex === levelIndex)
         .reduce((sum, s) => sum + s.credits, 0);
-    const configuredCreditsFor = (levelIndex: number, semesterIndex: number) =>
-      state.mode === 'history'
-        ? levelCreditsFor(levelIndex)
-        : configuredSemesterCredits(curriculum, levelIndex, semesterIndex);
+    const firstSemesterCreditsFor = (levelIndex: number) =>
+      slots
+        .filter((s) => s.levelIndex === levelIndex && s.semesterIndex === 1)
+        .reduce((sum, s) => sum + s.credits, 0);
+    /** The level's LAST configured semester (whole-level entries confirm through it). */
+    const lastSemesterOf = (levelIndex: number) => {
+      const sems = slots.filter((s) => s.levelIndex === levelIndex).map((s) => s.semesterIndex);
+      return sems.length ? Math.max(...sems) : 2;
+    };
 
     // ── Single source of truth: how to interpret the selected semester ───
-    const historyLast =
-      state.mode === 'history' && state.semesters.length > 0
-        ? {
-            levelIndex: state.semesters[state.semesters.length - 1].levelIndex,
-            semesterIndex: state.semesters[state.semesters.length - 1].semesterIndex,
-          }
-        : null;
     // Standing is user-chosen in BOTH Quick and GPA-History mode (the standing
     // picker reflects "which level/semester are you in now, and how does it
-    // stand?"). It drives the semantic role identically in both modes. In
-    // history mode it selects the role only — the confirmed position is the
-    // last entered level and the history CGPA is untouched.
+    // stand?"). It drives the semantic role identically in both modes.
     const standing: Standing = state.baseline.standing ?? 'released';
+
+    // GPA-History: how the CHOSEN level's CGPA entry is interpreted — which
+    // released results it may represent (whole level / first semester only /
+    // nothing). Drives the input box, that entry's credit weight, the
+    // confirmed position and what the AI context receives.
+    const historyEntryKind: CurrentLevelEntryKind | null =
+      state.mode === 'history'
+        ? currentLevelEntryKind(standing, state.baseline.semesterIndex)
+        : null;
+
+    // The CONFIRMED-only history entries: when the chosen semester has no
+    // released results yet ('none'), the chosen level's entry — if one exists
+    // from an earlier standing — does not count anywhere.
+    const effectiveSemesters =
+      historyEntryKind === 'none'
+        ? effectiveHistorySemesters(
+            state.semesters,
+            state.baseline.levelIndex,
+            standing,
+            state.baseline.semesterIndex
+          )
+        : state.semesters;
+
+    // A first-semester interpretation weights the chosen level's entry by the
+    // FIRST semester's credits only; everything else keeps whole-level weight.
+    const historyCreditsFor = (levelIndex: number) =>
+      levelIndex === state.baseline.levelIndex && historyEntryKind === 'first-semester'
+        ? firstSemesterCreditsFor(levelIndex)
+        : levelCreditsFor(levelIndex);
+
+    const configuredCreditsFor = (levelIndex: number, semesterIndex: number) =>
+      state.mode === 'history'
+        ? historyCreditsFor(levelIndex)
+        : configuredSemesterCredits(curriculum, levelIndex, semesterIndex);
+
+    // The confirmed position in history mode = the most recent CONFIRMED
+    // entry (highest level — independent of the order the boxes were typed).
+    // A whole-level entry confirms the level through its LAST configured
+    // semester; a first-semester entry confirms through semester 1.
+    const historyLast =
+      state.mode === 'history'
+        ? latestHistoryPositionIndex(
+            effectiveSemesters,
+            state.baseline.levelIndex,
+            historyEntryKind!,
+            lastSemesterOf
+          )
+        : null;
 
     const model = resolveSemesterModel({
       mode: state.mode,
@@ -120,7 +170,9 @@ export function useDerived() {
               pendingCreditHours: pendingLoad,
             },
           }
-        : state;
+        : state.mode === 'history'
+          ? { ...state, semesters: effectiveSemesters }
+          : state;
 
     const snapshot = computeSnapshot(snapshotState, grading, {
       configuredCreditsFor,
@@ -175,10 +227,11 @@ export function useDerived() {
     const historyJourney: HistoryJourney | null =
       state.mode === 'history'
         ? computeHistoryJourney({
-            semesters: state.semesters,
+            semesters: effectiveSemesters,
             currentLevelIndex: state.baseline.levelIndex,
             standing,
-            levelCreditsFor,
+            currentEntryKind: historyEntryKind ?? undefined,
+            levelCreditsFor: historyCreditsFor,
             classify: (g) => classifyCgpa(g, classification)?.label ?? null,
           })
         : null;
@@ -235,6 +288,9 @@ export function useDerived() {
       confirmedPosition,
       roleMeta,
       historyLast,
+      // GPA-History: how the chosen level's entry is interpreted (null in
+      // Current mode) — drives the input box label/visibility.
+      historyEntryKind,
       institutionLabel: `${university.shortName} · ${school?.name ?? ''} · ${programme?.shortName ?? ''}`.trim()
         || institutionLabel(context),
       maxPoints: maxGradePoints(grading),

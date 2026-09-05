@@ -59,10 +59,19 @@ export interface HistoryJourney {
 }
 
 export interface HistoryJourneyInput {
+  /** The CONFIRMED-only entries (see effectiveHistorySemesters). */
   semesters: SemesterEntry[];
   currentLevelIndex: number;
   /** 'released' makes the current level's own CGPA a required entry. */
   standing: 'released' | 'notReleased' | 'justStarted';
+  /**
+   * How the current level's entry is interpreted (see
+   * currentLevelEntryKind). Only a 'whole-level' entry makes the current
+   * level "complete"; a 'first-semester' entry is shown (and weighted by
+   * the first-semester credits supplied via levelCreditsFor) but the level
+   * stays in progress.
+   */
+  currentEntryKind?: CurrentLevelEntryKind;
   /** Total configured credits of one level (0 when unpublished). */
   levelCreditsFor: (levelIndex: number) => number;
   /** Optional classification lookup for a cumulative CGPA. */
@@ -70,6 +79,93 @@ export interface HistoryJourneyInput {
 }
 
 const EPS = 0.005;
+
+// ── Current-level entry interpretation (GPA-History standing × semester) ──
+// The CGPA box for the student's CHOSEN level can only represent released
+// results. Which results those are depends on the standing + chosen
+// semester:
+//
+//   released  + Second        → whole level (BOTH semesters are released)
+//   released  + First         → FIRST semester only (the only one released)
+//   notReleased + Second      → FIRST semester only (the immediate past one)
+//   justStarted + Second      → FIRST semester only (the immediate past one)
+//   notReleased + First       → NOTHING (no results for this level yet —
+//   justStarted + First       →   the immediate past semester belongs to the
+//                                 PREVIOUS level, whose whole-level entry
+//                                 already covers it)
+//
+// The entry that IS shown is weighted by the credits it actually covers
+// (whole level vs first semester), and the "none" case's entry is excluded
+// from the record, the journey and the AI context alike.
+
+export type CurrentLevelEntryKind = 'whole-level' | 'first-semester' | 'none';
+
+export function currentLevelEntryKind(
+  standing: 'released' | 'notReleased' | 'justStarted',
+  chosenSemester: number
+): CurrentLevelEntryKind {
+  if (standing === 'released') return chosenSemester === 2 ? 'whole-level' : 'first-semester';
+  return chosenSemester === 2 ? 'first-semester' : 'none';
+}
+
+/**
+ * The history entries that actually represent CONFIRMED (released) results.
+ * When the chosen level/semester has no released results yet (kind 'none'),
+ * that level's entry — if one exists from an earlier state — is excluded, so
+ * the engine, the journey, the confirmed position and the AI context all
+ * agree on the same list.
+ */
+export function effectiveHistorySemesters<T extends { levelIndex: number }>(
+  semesters: T[],
+  baselineLevel: number,
+  standing: 'released' | 'notReleased' | 'justStarted',
+  chosenSemester: number
+): T[] {
+  return currentLevelEntryKind(standing, chosenSemester) === 'none'
+    ? semesters.filter((s) => s.levelIndex !== baselineLevel)
+    : semesters;
+}
+
+/**
+ * The most recent CONFIRMED position from the entered history entries: the
+ * HIGHEST level with an entry — independent of the ORDER the boxes were
+ * typed, so going back to complete an earlier level never moves the
+ * confirmed position backwards.
+ */
+export function latestHistoryPosition(
+  semesters: SemesterEntry[]
+): { levelIndex: number; semesterIndex: number } | null {
+  let best: SemesterEntry | null = null;
+  for (const s of semesters) {
+    // Only a VALID entry (a real, non-pending CGPA) marks a position.
+    if (levelCgpaFor([s], s.levelIndex) === null) continue;
+    if (!best || s.levelIndex > best.levelIndex) best = s;
+  }
+  return best
+    ? { levelIndex: best.levelIndex, semesterIndex: best.semesterIndex }
+    : null;
+}
+
+/**
+ * Map the latest CONFIRMED history entry to a (level, semester) confirmed
+ * position. A whole-level entry confirms its level through that level's
+ * LAST configured semester (the planning tools then see the exact remaining
+ * credits); a first-semester interpretation confirms through semester 1.
+ */
+export function latestHistoryPositionIndex(
+  semesters: SemesterEntry[],
+  currentLevelIndex: number,
+  entryKind: CurrentLevelEntryKind,
+  lastSemesterIndexFor: (levelIndex: number) => number
+): { levelIndex: number; semesterIndex: number } | null {
+  const last = latestHistoryPosition(semesters);
+  if (!last) return null;
+  const whole = last.levelIndex !== currentLevelIndex || entryKind === 'whole-level';
+  return {
+    levelIndex: last.levelIndex,
+    semesterIndex: whole ? lastSemesterIndexFor(last.levelIndex) : 1,
+  };
+}
 
 /** The level CGPA the student has recorded for a level (null = none). */
 export function levelCgpaFor(
@@ -92,6 +188,9 @@ export function levelCgpaFor(
  */
 export function historyJourney(input: HistoryJourneyInput): HistoryJourney {
   const { semesters, currentLevelIndex, standing, levelCreditsFor, classify } = input;
+  // How the current level's entry is interpreted (defaults keep the old
+  // semantics for callers that do not pass it).
+  const kind = input.currentEntryKind ?? (standing === 'released' ? 'whole-level' : 'none');
 
   const levels: LevelJourney[] = [];
   const missingRequired: number[] = [];
@@ -108,13 +207,19 @@ export function historyJourney(input: HistoryJourneyInput): HistoryJourney {
   const to = Math.max(1, currentLevelIndex);
 
   for (let lv = from; lv <= to; lv++) {
-    const cgpa = levelCgpaFor(semesters, lv);
     const isCurrent = lv === currentLevelIndex;
-    const required = isCurrent ? standing === 'released' : true;
+    // Under the 'none' interpretation the chosen level has NO released
+    // results, so any stored entry there does not count (it is ignored even
+    // if one was left over from an earlier standing).
+    const cgpa = isCurrent && kind === 'none' ? null : levelCgpaFor(semesters, lv);
+    // The current level is only REQUIRED (and only ever 'complete') when its
+    // entry covers the WHOLE level; a first-semester entry leaves it in
+    // progress.
+    const required = isCurrent ? kind === 'whole-level' : true;
     const credits = levelCreditsFor(lv);
 
     let status: LevelStatus;
-    if (isCurrent && standing !== 'released') status = 'current';
+    if (isCurrent && kind !== 'whole-level') status = 'current';
     else if (cgpa !== null) status = 'complete';
     else status = required ? 'missing' : 'current';
 
