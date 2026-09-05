@@ -260,12 +260,10 @@ export default function App() {
           <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-1 truncate text-[13px] font-extrabold text-slate-900">
               {meta && (
-                <SlotGlyph
-                  appearance={appearance}
-                  slot={screen}
-                  fallback={meta.icon}
-                  imgCls="h-4 w-4 shrink-0 object-contain"
-                />
+                // Fixed box: an admin-enlarged icon overflows, the header row stays.
+                <span className="grid h-4 w-4 shrink-0 place-items-center">
+                  <SlotGlyph appearance={appearance} slot={screen} fallback={meta.icon} imgCls="h-4 w-4 object-contain" />
+                </span>
               )}
               <span className="truncate">{screenTitle}</span>
             </h1>
@@ -472,7 +470,9 @@ export default function App() {
                       : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
                   }`}
                 >
-                  <span className="grid w-8 shrink-0 place-items-center text-2xl leading-none">
+                  {/* Fixed-size, invisible slot: an admin-enlarged image
+                      overflows this box — it never moves the tile. */}
+                  <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
                     <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
                   </span>
                   <span className="min-w-0 flex-1">

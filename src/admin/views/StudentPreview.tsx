@@ -207,10 +207,10 @@ function SelectionScreen(props: {
 
       <div className="mx-auto mt-8 w-full max-w-sm">
         {logo ? (
-          <img src={logo} alt={appName(appearance)} className="mx-auto h-20 w-20 rounded-3xl bg-white/90 object-contain p-1 shadow-lg ring-2 ring-white/20" />
+          <img src={logo} alt={appName(appearance)} className="mx-auto h-20 w-20 object-contain drop-shadow-xl" />
         ) : (
-          <span className="mx-auto grid h-20 w-20 place-items-center rounded-3xl bg-white/15 text-4xl text-white ring-2 ring-white/20">
-            <AppGlyph appearance={appearance} slot="appIcon" fallback="🧭" size={40} />
+          <span className="mx-auto grid h-20 w-20 place-items-center drop-shadow-xl">
+            <AppGlyph appearance={appearance} slot="appIcon" fallback="🧭" size={48} />
           </span>
         )}
         <h1 className="mt-3 text-3xl font-black tracking-tight text-white drop-shadow">
@@ -427,7 +427,9 @@ function HomeScreen(props: {
                     disabled ? 'bg-slate-100 opacity-70 ring-slate-200' : 'bg-white shadow-sm ring-slate-200 active:scale-[0.99]'
                   }`}
                 >
-                  <span className="grid w-9 shrink-0 place-items-center text-2xl leading-none">
+                  {/* Mirrors the real tile: fixed-size slot, an admin-enlarged
+                      image overflows it without moving the tile. */}
+                  <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
                     <AppGlyph appearance={appearance} slot={id} fallback={m.emoji} size={24} />
                   </span>
                   <span className="min-w-0 flex-1 text-left">
@@ -501,7 +503,9 @@ function ToolFrame({
           ←
         </button>
         <h1 className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-extrabold text-slate-900">
-          <AppGlyph appearance={appearance} slot={tool} fallback={m.emoji} size={18} imgClassName="shrink-0" />
+          <span className="grid h-5 w-5 shrink-0 place-items-center">
+            <AppGlyph appearance={appearance} slot={tool} fallback={m.emoji} size={18} />
+          </span>
           <span className="truncate">{m.title}</span>
         </h1>
         <div className="flex shrink-0 items-center gap-1.5">
