@@ -385,6 +385,44 @@ export function NextSemester() {
               )
             )}
 
+            {shuffleNotice && (
+              <p className="no-print mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                💡 {shuffleNotice}
+              </p>
+            )}
+
+            {/* Reshuffle controls sit right before the table they act on. */}
+            {plan.combos.length > 0 && !showWhatIf && (
+              <div className="no-print mb-2 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={doReshuffle}
+                  className="rounded-lg bg-brand-50 px-3 py-1.5 text-[11px] font-bold text-brand-700 ring-1 ring-brand-200 transition hover:bg-brand-100"
+                >
+                  🔀 Reshuffle
+                </button>
+                {shuffleIndex >= 0 && (
+                  <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold tabular-nums text-slate-500 ring-1 ring-slate-200">
+                    Form {shuffleIndex + 1}
+                    {planSpace.length > 0 ? ` of ${planSpace.length.toLocaleString()}` : ''}
+                  </span>
+                )}
+                <button
+                  onClick={() => setShuffleIndex((i) => Math.max(-1, i - 1))}
+                  disabled={!canUndo}
+                  className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold tabular-nums text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  ↩ Undo · {undoCount}
+                </button>
+                <button
+                  onClick={() => setShuffleIndex((i) => Math.min(shuffleHistory.length - 1, i + 1))}
+                  disabled={!canRedo}
+                  className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold tabular-nums text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  ↪ Redo · {redoCount}
+                </button>
+              </div>
+            )}
+
             <div className={tableStyles.wrap}>
             {/* Fixed layout + narrow numeric columns: the whole table always
                 fits the screen width — no horizontal scroll on this table. */}
@@ -449,43 +487,7 @@ export function NextSemester() {
               </p>
             )}
 
-            {shuffleNotice && (
-              <p className="no-print mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
-                💡 {shuffleNotice}
-              </p>
-            )}
-
             <div className="no-print mt-3 flex flex-wrap gap-2">
-              {plan.combos.length > 0 && !showWhatIf && (
-                <>
-                  <button
-                    onClick={doReshuffle}
-                    className="rounded-lg bg-brand-50 px-3 py-1.5 text-[11px] font-bold text-brand-700 ring-1 ring-brand-200 transition hover:bg-brand-100"
-                  >
-                    🔀 Reshuffle
-                  </button>
-                  {shuffleIndex >= 0 && (
-                    <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold tabular-nums text-slate-500 ring-1 ring-slate-200">
-                      Form {shuffleIndex + 1}
-                      {planSpace.length > 0 ? ` of ${planSpace.length.toLocaleString()}` : ''}
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setShuffleIndex((i) => Math.max(-1, i - 1))}
-                    disabled={!canUndo}
-                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold tabular-nums text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ↩ Undo · {undoCount}
-                  </button>
-                  <button
-                    onClick={() => setShuffleIndex((i) => Math.min(shuffleHistory.length - 1, i + 1))}
-                    disabled={!canRedo}
-                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold tabular-nums text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ↪ Redo · {redoCount}
-                  </button>
-                </>
-              )}
               <button
                 onClick={() => setShowWhatIf((v) => !v)}
                 className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${
