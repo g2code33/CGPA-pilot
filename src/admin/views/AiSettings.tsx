@@ -288,7 +288,14 @@ export function AiSettings({ toast }: { toast: Toast }) {
                 }}
                 onSetDefault={() => patch({ defaultProviderId: p.id })}
                 onTest={async (keyId, keyLabel) => {
-                  const r = await testAiKey(p.id, keyId);
+                  const key = p.keys.find((k) => k.id === keyId);
+                  if (!key) {
+                    toast(`⛔ ${keyLabel}: that key no longer exists.`);
+                    return;
+                  }
+                  // Test the provider + key exactly as they are on screen —
+                  // no need to save first.
+                  const r = await testAiKey(p, key.value);
                   toast(r.ok ? `✅ ${keyLabel}: ${r.message}` : `⛔ ${keyLabel}: ${r.message}`);
                 }}
               />

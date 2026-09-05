@@ -312,7 +312,7 @@ function sanitizeCore(r: Record<string, unknown>): Omit<AiSettings, 'providers'>
   };
 }
 
-function sanitizeProvider(p: unknown): AiProvider | null {
+export function sanitizeProvider(p: unknown): AiProvider | null {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
   const o = p as Record<string, unknown>;
   const preset = AI_PRESETS.some((x) => x.id === o.preset) ? (o.preset as AiPresetId) : 'custom';

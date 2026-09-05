@@ -306,6 +306,105 @@ test('chat: hourly rate limit → 429 with retryAfterSec', async () => {
   }
 });
 
+test('test endpoint: works with a provider/key NOT yet saved (the on-screen edit)', async () => {
+  const e = env();
+  // Nothing saved yet — only the admin's unsaved on-screen state.
+  const provider = {
+    id: 'prov-local',
+    preset: 'nvidia',
+    label: 'NVIDIA NIM (free)',
+    type: 'openai-compatible',
+    mode: 'worker',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: 'meta/llama-3.3-70b-instruct',
+    keys: [{ id: 'key-new', label: 'new key', value: 'nvapi-99990000' }],
+    enabled: true,
+  };
+  const { f, calls } = mockProvider([{ text: 'ready' }]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/admin/ai/test', {
+        method: 'POST',
+        token: TOKEN,
+        body: { provider, keyValue: 'nvapi-99990000' },
+      }),
+      e
+    );
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    const out = await j(res);
+    assert.equal(out.ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].headers.authorization, 'Bearer nvapi-99990000');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('test endpoint: direct/local endpoints cannot be tested from the server', async () => {
+  const e = env();
+  const provider = {
+    id: 'prov-ollama',
+    preset: 'ollama-local',
+    label: 'Ollama (local)',
+    type: 'openai-compatible',
+    mode: 'direct',
+    baseUrl: 'http://localhost:11434/v1',
+    model: 'llama3.1',
+    keys: [{ id: 'k', label: 'local', value: 'ollama' }],
+    enabled: true,
+  };
+  const res = await worker.fetch(
+    req('/api/admin/ai/test', { method: 'POST', token: TOKEN, body: { provider, keyValue: 'ollama' } }),
+    e
+  );
+  assert.equal(res.status, 200);
+  const out = await j(res);
+  assert.equal(out.ok, false);
+  assert.match(out.message, /STUDENT device/i);
+});
+
+test('test endpoint: invalid provider shape → 400 (no fetch attempt)', async () => {
+  const e = env();
+  const { f, calls } = mockProvider([{ text: 'ready' }]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/admin/ai/test', {
+        method: 'POST',
+        token: TOKEN,
+        body: { provider: { id: 'x', baseUrl: 'not-a-url' }, keyValue: 'abc' },
+      }),
+      e
+    );
+    assert.equal(res.status, 400);
+    assert.equal(calls.length, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('test endpoint: legacy saved provider/key ids still work', async () => {
+  const e = env();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const { f, calls } = mockProvider([{ text: 'ready' }]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/admin/ai/test', { method: 'POST', token: TOKEN, body: { providerId: 'prov-1', keyId: 'key-2' } }),
+      e
+    );
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    assert.equal(calls[0].headers.authorization, 'Bearer nvapi-33334444');
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
 test('chat: invalid messages → 400 bad-request', async () => {
   const e = env();
   await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);

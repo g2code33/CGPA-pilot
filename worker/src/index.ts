@@ -63,7 +63,7 @@ import {
   testAiKey,
   __resetAiRuntime,
 } from './ai';
-import { validateAiSettings, type AiSettings } from '../../src/admin/aiSettings';
+import { sanitizeProvider, validateAiSettings, type AiKey, type AiSettings } from '../../src/admin/aiSettings';
 
 export interface Env {
   /** D1 database holding the authoritative configuration. */
@@ -566,8 +566,36 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     if (path === '/api/admin/ai/test' && method === 'POST') {
       const body = await parseJsonBody(req);
       if (!body.ok) return body.response;
-      const providerId = typeof body.value.providerId === 'string' ? body.value.providerId : '';
-      const keyId = typeof body.value.keyId === 'string' ? body.value.keyId : '';
+      const b = body.value as {
+        provider?: unknown;
+        keyValue?: unknown;
+        providerId?: unknown;
+        keyId?: unknown;
+      };
+
+      // Preferred: test the provider + key the admin is CURRENTLY EDITING
+      // (they may not have saved the settings yet). The provider definition
+      // comes from the client and is sanitized with the shared rules.
+      if (b.provider && typeof b.provider === 'object' && typeof b.keyValue === 'string') {
+        const prov = sanitizeProvider(b.provider);
+        if (!prov) {
+          return json({ ok: false, message: 'Invalid provider — check the endpoint URL (must be http/https).' }, 400);
+        }
+        if (prov.mode === 'direct') {
+          return json({
+            ok: false,
+            message: 'Local/direct endpoints live on the STUDENT device — the server cannot reach them. Save the settings and test from a student browser instead.',
+          });
+        }
+        const key: AiKey = { id: 'test', label: 'test', value: b.keyValue.trim() };
+        if (!key.value) return json({ ok: false, message: 'Enter the API key value first, then Test.' });
+        const res = await testAiKey(fetch, { ...prov, keys: [key] }, key, current.systemPrompt);
+        return json(res, res.ok ? 200 : 502);
+      }
+
+      // Legacy: test a SAVED provider/key by id.
+      const providerId = typeof b.providerId === 'string' ? b.providerId : '';
+      const keyId = typeof b.keyId === 'string' ? b.keyId : '';
       const provider = current.providers.find((p) => p.id === providerId);
       if (!provider) {
         return json({ ok: false, error: 'not-found', message: 'Unknown provider.' }, 404);

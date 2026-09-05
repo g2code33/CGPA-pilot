@@ -34,7 +34,7 @@ import {
   type AdminCredentialParams,
 } from './passcodeCrypto';
 import type { AdminCatalog } from './adminStorage';
-import type { AiSettings } from './aiSettings';
+import type { AiProvider, AiSettings } from './aiSettings';
 import { validateAdminCatalogForPublish } from './catalogValidation';
 
 export type BackendState =
@@ -635,10 +635,13 @@ export async function saveAiSettings(settings: AiSettings, deps: AdminApiDeps = 
 
 /** Test one key of one provider (a real, minimal request to the provider). */
 export async function testAiKey(
-  providerId: string,
-  keyId: string,
+  provider: AiProvider,
+  keyValue: string,
   deps: AdminApiDeps = {}
 ): Promise<{ ok: boolean; message: string; model?: string; ms?: number }> {
+  // Sends the provider + key exactly as the admin has them ON SCREEN —
+  // testing works before the settings are saved (the Worker sanitizes the
+  // same way it does on save).
   const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return { ok: false, message: 'No network available.' };
   const credential = currentCredential(deps);
@@ -648,7 +651,7 @@ export async function testAiKey(
       method: 'POST',
       cache: 'no-store',
       headers: { ...headers(deps), 'content-type': 'application/json' },
-      body: JSON.stringify({ providerId, keyId }),
+      body: JSON.stringify({ provider, keyValue }),
     });
     const doc = (await safeJson(res)) as { ok: boolean; message: string; model?: string; ms?: number } | null;
     if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
