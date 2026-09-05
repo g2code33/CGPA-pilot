@@ -6,8 +6,10 @@ import { ErrorBoundary } from './ErrorBoundary';
 import App from './App';
 import {
   bootStudentConfig,
+  onConfigUpdate,
   startBackgroundConfigSync,
 } from './services/configSync';
+import { isStudentDataPresent } from './state/studentState';
 import { applyBrandFavicon } from './config/branding';
 import { getRuntimeCatalog } from './config/runtime';
 import './index.css';
@@ -85,6 +87,16 @@ async function main() {
   // and offers an explicit "reload to apply" when a new version arrives
   // mid-session (never an automatic reload while the student is working).
   startBackgroundConfigSync();
+
+  // When a newer published config LANDS while this session holds NO student
+  // data — fresh open, boot that timed out mid-download, or right after a
+  // Clear — apply it with an immediate reload: nothing has been entered, so
+  // nothing can be lost, and the user sees the current branding without any
+  // manual refreshing. Sessions with entered data keep the explicit
+  // "reload to apply" banner (never an automatic reload while working).
+  onConfigUpdate((p) => {
+    if (p && !isStudentDataPresent()) window.location.reload();
+  });
 }
 
 void main();

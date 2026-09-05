@@ -260,16 +260,20 @@ test('recordBackgroundSync flags a mid-session update for an explicit reload', a
   assert.equal(sync.getPendingConfigUpdate(), null);
 });
 
-test('wipeDeviceStorage clears the payload, meta, and the IDB database', async () => {
+test('wipeDeviceStorage PRESERVES the config cache (Clear must not drop to a stale seed)', async () => {
   freshState();
   const f = makeFakeFetch(serverDocs(2));
   await sync.checkAndSync(seedRuntimeCatalog(), { fetchImpl: f, isOnline: () => true });
   assert.equal(cache.readConfigMetaSync().version, 2);
   cache.wipeDeviceStorage();
   await new Promise((r) => setTimeout(r, 20));
+  // The offline curriculum config survives a Clear: meta + payload stay put,
+  // so the app can never fall back to the bundled (stale) seed after a
+  // refresh. Student work is in-memory and reset by the store + reload.
   const meta = cache.readConfigMetaSync();
-  assert.equal(meta.version, null);
-  assert.equal(meta.source, 'seed');
+  assert.equal(meta.version, 2);
+  assert.equal(meta.source, 'backend');
   const loaded = await cache.readCachedConfigAsync();
-  assert.equal(loaded.source, 'seed');
+  assert.equal(loaded.version, 2);
+  assert.equal(loaded.source, 'backend');
 });

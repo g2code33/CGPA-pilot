@@ -25,3 +25,7 @@ ios/App/Pods/
 keystore.properties
 android/app/release-keystore.p12
 .test-build/
+
+# Build-time live seed (fetched from the published config at build time;
+# the committed admin-catalog.json stays the fallback)
+src/config/seed/.live.admin-catalog.json

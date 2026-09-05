@@ -33,7 +33,10 @@ export function ClearButton() {
   function confirmClear() {
     // 1. Clear all student application state + temporary calculation objects.
     dispatch({ type: 'reset' });
-    // 2. Clear this device's temporary storage and service-worker caches.
+    // 2. Device-storage boundary hook (keeps all storage touches in
+    //    configCache.ts). Non-destructive: student work is in-memory (the
+    //    reset above + reload wipe it), while the offline curriculum config
+    //    and app shell are preserved so no stale seed fallback can appear.
     wipeDeviceStorage();
     // Suppress the beforeunload loss warning for our own intentional reload.
     markIntentionalReload();

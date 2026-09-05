@@ -30,6 +30,7 @@
 import type { AppAppearance, CurriculumVersion, StudentSettings, University } from '../config/types';
 import type { CachedConfig, ConfigSource } from '../config/runtime';
 import { BUNDLED_CURRICULA, UNIVERSITIES } from '../config/context';
+import { SEED_APPEARANCE } from '../config/seed';
 
 const IDB_NAME = 'cgpa-pilot-config';
 const IDB_VERSION = 1;
@@ -92,7 +93,10 @@ export function bundledConfig(): CachedConfig {
   return {
     universities: UNIVERSITIES,
     curricula: BUNDLED_CURRICULA,
-    appearance: undefined,
+    // Admin-set branding baked in at BUILD time (scripts/refresh-seed.mjs +
+    // the fresh-seed Vite plugin): the offline fallback carries the latest
+    // published logo/wordmark/icons, never a stale default image.
+    appearance: SEED_APPEARANCE,
     version: null,
     updatedAt: null,
     cachedAt: new Date(0).toISOString(),
@@ -247,16 +251,6 @@ async function idbDelete(key?: string): Promise<void> {
   });
 }
 
-function deleteDatabase(): void {
-  const idb = indexedDBRef();
-  if (!idb) return;
-  try {
-    idb.deleteDatabase(IDB_NAME);
-  } catch {
-    /* ignore */
-  }
-}
-
 // ── Read / write API ──────────────────────────────────────────────────────
 
 function legacyPayload(): StoredPayload | null {
@@ -367,32 +361,26 @@ export function clearCachedConfig(): void {
 }
 
 /**
- * Wipe this device's temporary browser storage and service-worker caches.
- * Used by the student "Refresh / Clear session" and "Restart to update"
- * controls so every storage touch stays inside this single boundary module.
+ * Reset the transient device state for the "Refresh / Clear session" and
+ * "Restart to update" controls.
+ *
+ * Student work is IN-MEMORY ONLY (see store.tsx — deliberately no
+ * localStorage/sessionStorage/IndexedDB), so the store 'reset' dispatch + the
+ * full page reload that follow this call ARE the complete clear. This
+ * deliberately does NOT delete:
+ *   • the offline curriculum config (localStorage meta + IndexedDB payload),
+ *   • the service-worker app-shell caches, or
+ *   • admin console data on this browser.
+ *
+ * Wiping any of those (as this used to) threw the app back to the bundled
+ * fallback seed — stale logos/icons until a re-sync landed, often only after
+ * several manual refreshes — and destroyed the offline shell, so the clear
+ * was slow. Nothing is cleared here anymore; all storage touches in the app
+ * still live in this module.
  */
 export function wipeDeviceStorage(): void {
-  const w = windowRef();
-  if (w) {
-    try {
-      w.localStorage.clear();
-    } catch {
-      /* ignore */
-    }
-    try {
-      w.sessionStorage.clear();
-    } catch {
-      /* ignore */
-    }
-    try {
-      if (typeof caches !== 'undefined') {
-        caches.keys().then((names) => {
-          names.forEach((name) => void caches.delete(name));
-        });
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  deleteDatabase();
+  // Intentionally a no-op: there is no student-owned persistent storage to
+  // reset (student state is in-memory and the caller's reload drops it), and
+  // the config cache / app shell / admin data must survive a clear so the app
+  // can never fall back to a stale bundled seed.
 }

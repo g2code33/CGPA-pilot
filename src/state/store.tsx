@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useReducer,
@@ -12,6 +13,7 @@ import type {
   InputMode,
   SemesterEntry,
 } from './studentState';
+import { setStudentDataPresent } from './studentState';
 import { uid } from '../util/format';
 import { ensureCurriculumInit } from '../services/curriculumService';
 
@@ -277,8 +279,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // from the locally cached / synced configuration; this is the defensive
   // fallback that guarantees a valid (seed) catalog in any other entry path.
   useMemo(() => ensureCurriculumInit(), []);
-  const [state, dispatch] = useReducer(reducer, undefined, initialState);
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  const [state, rawDispatch] = useReducer(reducer, undefined, initialState);
+  // Track whether the student has entered anything (in-memory only): a
+  // freshly-landed published config may then be applied with an immediate
+  // safe reload; with data present it waits for the "reload to apply" banner.
+  const dispatch: React.Dispatch<Action> = useCallback((action) => {
+    if (action.type === 'reset') setStudentDataPresent(false);
+    else setStudentDataPresent(true);
+    rawDispatch(action);
+  }, []);
+  const value = useMemo(() => ({ state, dispatch }), [state, dispatch]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

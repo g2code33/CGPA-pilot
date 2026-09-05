@@ -6,6 +6,23 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
+ * Transient in-memory flag: has the student entered anything in this session?
+ * Lets the config-sync client decide whether a newly-landed published config
+ * can be applied with an immediate safe reload (nothing entered yet → nothing
+ * can be lost) or must wait for the explicit "reload to apply" banner.
+ * Never persisted — it resets with the page, exactly like student data.
+ */
+let studentDataPresent = false;
+
+export function setStudentDataPresent(v: boolean): void {
+  studentDataPresent = v;
+}
+
+export function isStudentDataPresent(): boolean {
+  return studentDataPresent;
+}
+
+/**
  * The three student-facing input experiences (Prompt 8):
  *  - 'quick'    : current level + current CGPA only.
  *  - 'history'  : semester-by-semester GPA history.
