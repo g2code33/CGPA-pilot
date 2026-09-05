@@ -308,18 +308,47 @@ export function Th({
   right?: boolean;
   className?: string;
 }) {
+  // Arrangement: the small 💡 idea icon sits ON TOP, the column title
+  // directly below it (right-aligned columns align both to the right edge).
   return (
     <th
       scope="col"
-      className={`whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-500 ${
-        right ? 'text-right' : 'text-left'
-      } ${className}`}
+      className={`px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-500 ${className}`}
     >
-      <span className={`inline-flex items-center gap-1 ${right ? 'flex-row-reverse' : ''}`}>
-        {label}
-        <TipIcon tip={tip} label={`About: ${label}`} />
+      <span className={`flex flex-col gap-1 ${right ? 'items-end text-right' : 'items-start text-left'}`}>
+        {tip ? (
+          <span className="no-print inline-flex">
+            <TipIcon tip={tip} label={`About: ${label}`} />
+          </span>
+        ) : null}
+        <span>{label}</span>
       </span>
     </th>
+  );
+}
+
+/**
+ * Small "print this table" button shown above a data table (screen only —
+ * the .no-print wrapper is stripped from the print clone, so it can never
+ * reach paper).
+ */
+export function PrintButton({
+  onClick,
+  label = 'Print this table',
+}: {
+  onClick: () => void;
+  label?: string;
+}) {
+  return (
+    <div className="no-print mb-1.5 flex justify-end">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-200 active:scale-95"
+      >
+        🖨️ {label}
+      </button>
+    </div>
   );
 }
 

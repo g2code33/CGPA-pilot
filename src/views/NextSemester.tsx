@@ -359,13 +359,15 @@ export function NextSemester() {
             )}
 
             <div className={tableStyles.wrap}>
-            <table className={`${tableStyles.table} min-w-[380px]`}>
+            {/* Fixed layout + narrow numeric columns: the whole table always
+                fits the screen width — no horizontal scroll on this table. */}
+            <table className={`${tableStyles.table} table-fixed`}>
               <thead>
                 <tr className={tableStyles.headRow}>
                   <Th label="Course" tip={ideaTip('table.ns.course')} />
-                  <Th label="Credits" tip={ideaTip('table.ns.credits')} right />
-                  <Th label="Target grade" tip={ideaTip('table.ns.grade')} right />
-                  <Th label="Grade points" tip={ideaTip('table.ns.points')} right className="no-print" />
+                  <Th label="Credits" tip={ideaTip('table.ns.credits')} right className="w-12" />
+                  <Th label="Target grade" tip={ideaTip('table.ns.grade')} right className="w-14" />
+                  <Th label="Grade points" tip={ideaTip('table.ns.points')} right className="no-print w-14" />
                 </tr>
               </thead>
               <tbody>

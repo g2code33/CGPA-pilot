@@ -64,30 +64,38 @@ function brandingHtml(b: PrintBranding): string {
     day: 'numeric',
   });
   const appLogo = b.appLogo
-    ? `<img src="${esc(b.appLogo)}" alt="" style="width:34px;height:34px;object-fit:contain;border-radius:8px;">`
+    ? `<img src="${esc(b.appLogo)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:7px;">`
     : '';
   const instLogo = b.institutionLogo
-    ? `<img src="${esc(b.institutionLogo)}" alt="" style="width:34px;height:34px;object-fit:contain;border-radius:8px;">`
+    ? `<img src="${esc(b.institutionLogo)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:7px;">`
     : '';
+  const metaLine = [
+    b.programmeName ? esc(b.programmeName) : '',
+    b.curriculumVersion ? `Curriculum ${esc(b.curriculumVersion)}` : '',
+    date,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  // RUNNING HEADER: `position: fixed` elements are repeated on EVERY printed
+  // page by the browser, so page 2+ also carries the app + institution
+  // identity. The print stylesheet keeps body content below it
+  // (#cgpa-print-root padding-top), and the fixed header sits inside the top
+  // @page margin so it never collides with page-2+ content.
   return `
-    <div class="print-brand" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-      <div style="display:flex;align-items:flex-start;gap:10px;">
+    <div class="print-header" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 2px 7px;border-bottom:2px solid #0f172a;">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
         ${appLogo}
-        <div>
-          <div style="font-size:18px;font-weight:900;letter-spacing:0.5px;">
+        <div style="min-width:0;">
+          <div style="font-size:13px;font-weight:900;letter-spacing:0.5px;line-height:1.15;">
             CGPA <span style="color:#4f46e5;">PILOT</span>
           </div>
-          <div style="font-style:italic;color:#64748b;font-size:10px;">Navigate Your Academic Future.</div>
-          <div style="font-weight:800;margin-top:4px;">${esc(b.title)}</div>
+          <div style="font-size:9.5px;font-weight:700;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.title)}</div>
         </div>
       </div>
-      <div style="display:flex;align-items:flex-start;gap:10px;justify-content:flex-end;">
-        <div style="text-align:right;font-size:10px;color:#475569;">
-          ${b.institutionLabel ? `<div style="font-weight:700;">${esc(b.institutionLabel)}</div>` : ''}
-          ${b.programmeName ? `<div>${esc(b.programmeName)}</div>` : ''}
-          <div>Curriculum: ${esc(b.curriculumVersion) || 'not published'}</div>
-          <div>${date}</div>
-          <div style="font-weight:700;color:#059669;">Anonymous · no personal data</div>
+      <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;min-width:0;">
+        <div style="min-width:0;text-align:right;">
+          ${b.institutionLabel ? `<div style="font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.institutionLabel)}</div>` : ''}
+          <div style="font-size:9px;color:#64748b;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${metaLine}</div>
         </div>
         ${instLogo}
       </div>

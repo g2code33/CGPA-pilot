@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge, Info, TipIcon, Th, tableStyles } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info, TipIcon, Th, tableStyles, PrintButton } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
@@ -673,6 +673,13 @@ export function FlightPathView() {
         <div ref={tableRef}>
         <Card className="print-sheet">
           <SectionTitle icon="📍" title="Milestones" subtitle="End of each level through graduation." />
+          {permissionOn('allowPrinting') && (
+            <PrintButton
+              onClick={() =>
+                printSection(tableRef.current, printBranding('Milestones', 'Milestones Table'))
+              }
+            />
+          )}
           <div className={tableStyles.wrap}>
             <table className={tableStyles.table}>
               <thead>

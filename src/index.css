@@ -112,7 +112,8 @@ body {
     display: none !important;
   }
 
-  /* A4-friendly page setup. */
+  /* A4-friendly page setup. The fixed running header lives inside the top
+     margin, so content starts at 14mm and never collides with it. */
   @page {
     size: A4;
     margin: 14mm;
@@ -125,11 +126,8 @@ body {
     color: #0f172a;
     font-size: 12px;
     line-height: 1.45;
-  }
-  #cgpa-print-root .print-brand {
-    border-bottom: 2px solid #0f172a;
-    padding-bottom: 8px;
-    margin-bottom: 12px;
+    /* Keep page-1 content clear of the fixed running header. */
+    padding-top: 16mm;
   }
   #cgpa-print-root h1,
   #cgpa-print-root h2,
@@ -144,8 +142,37 @@ body {
   #cgpa-print-root tr {
     page-break-inside: avoid;
   }
+  /* Table header rows repeat on every page the table spans. */
   #cgpa-print-root thead {
     display: table-header-group;
+  }
+  /* Wide on-screen tables must never be clipped on paper — let them spill
+     to their natural width instead of scrolling. */
+  #cgpa-print-root .overflow-x-auto {
+    overflow: visible !important;
+  }
+  /* Headers: allow wrap (no nowrap) + a bold rule that prints even when the
+     browser is set to omit background graphics. */
+  #cgpa-print-root th {
+    white-space: normal !important;
+  }
+  #cgpa-print-root thead th {
+    border-bottom: 2px solid #0f172a !important;
+  }
+  #cgpa-print-root tbody tr {
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+  #cgpa-print-root td {
+    vertical-align: top;
+  }
+  /* Screen-only controls (print buttons, 💡 icons, toggles) never reach paper. */
+  #cgpa-print-root button {
+    display: none !important;
+  }
+  /* Section cards get a visible frame on paper. */
+  #cgpa-print-root .print-sheet {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
   }
   #cgpa-print-root svg {
     max-width: 100%;

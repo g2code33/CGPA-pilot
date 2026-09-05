@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note, Info, TipIcon, Th, tableStyles } from '../components/ui';
 import { ideaTip } from '../infoTips';
@@ -12,7 +12,7 @@ import {
 } from '../services/scenarioService';
 import { analyzeTarget } from '../services/targetService';
 import { progressThrough } from '../services/structureService';
-import { printFileName, printHtml, sectionHeading, htmlTable, TONE } from '../services/scopedPrint';
+import { printFileName, printHtml, printSection, sectionHeading, htmlTable, TONE } from '../services/scopedPrint';
 import { printAppLogo } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import type { CourseEntry } from '../state/studentState';
@@ -155,6 +155,7 @@ export function WhatIf() {
     setResetKey((k) => k + 1);
   }
 
+  const scenarioTableRef = useRef<HTMLDivElement>(null);
   const branding = {
     title: 'Print Scenario',
     institutionLabel: d.institutionLabel,
@@ -163,6 +164,18 @@ export function WhatIf() {
     appLogo: printAppLogo(getRuntimeCatalog().appearance),
     institutionLogo: d.university?.logo,
   };
+
+  /** Print the whole scenario-comparison table as a single sheet. */
+  function printScenarioTable() {
+    printSection(scenarioTableRef.current, {
+      ...branding,
+      title: 'What-If — Scenario Comparison',
+      fileName: printFileName(
+        `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
+        'What-If Scenarios'
+      ),
+    });
+  }
 
   // Print ONLY the single selected scenario as a standalone one-page sheet.
   function printScenario(s: FutureScenario) {
@@ -301,10 +314,20 @@ export function WhatIf() {
       </Card>
 
       {/* ── Scenario comparison (printable) ──────────────────────────── */}
+      <div ref={scenarioTableRef}>
       <Card className="print-sheet">
         <div className="no-print mb-2 flex items-center justify-between">
           <h3 className="text-sm font-extrabold text-slate-800">Compare scenarios</h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {permissionOn('allowPrinting') && (
+              <button
+                onClick={printScenarioTable}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
+                title="Print the whole scenario comparison table"
+              >
+                🖨️ Print scenario table
+              </button>
+            )}
             {permissionOn('allowPrinting') && (
               <button
                 onClick={() => scenarios[3] && printScenario(scenarios[3])}
@@ -337,7 +360,7 @@ export function WhatIf() {
                 <Th label="Δ vs target" tip={ideaTip('table.wi.vsTarget')} right />
                 <Th label="Final if held" tip={ideaTip('table.wi.final')} right />
                 <Th label="Target feasibility" tip={ideaTip('table.wi.feasibility')} right />
-                <Th label="Print" right />
+                <Th label="Print" right className="no-print" />
               </tr>
             </thead>
             <tbody>
@@ -377,7 +400,7 @@ export function WhatIf() {
                         </span>
                       )}
                   </td>
-                  <td className={`${tableStyles.cell} text-right`}>
+                  <td className={`${tableStyles.cell} no-print text-right`}>
                     {permissionOn('allowPrinting') && (
                       <button
                         onClick={() => printScenario(s)}
@@ -414,6 +437,7 @@ export function WhatIf() {
           </Info>
         </div>
       </Card>
+      </div>
 
       <PendingGradesCard key={resetKey} />
     </div>

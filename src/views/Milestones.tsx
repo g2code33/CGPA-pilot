@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge, Info, TipIcon, Th, tableStyles } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info, TipIcon, Th, tableStyles, PrintButton } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { permissionOn } from '../permissions';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
@@ -35,6 +35,8 @@ export function Milestones() {
   const [fallbackCredits, setFallbackCredits] = useState(18);
   const [fallbackSemesters, setFallbackSemesters] = useState(6);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const stageTableRef = useRef<HTMLDivElement>(null);
+  const positionLabel = `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`;
   const printSheet = () =>
     printSection(sheetRef.current, {
       title: 'Print Semester Projection — Milestones',
@@ -43,10 +45,19 @@ export function Milestones() {
       curriculumVersion: d.curriculum?.versionName,
       appLogo: printAppLogo(getRuntimeCatalog().appearance),
       institutionLogo: d.university?.logo,
-      fileName: printFileName(
-        `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
-        'Milestones'
-      ),
+      fileName: printFileName(positionLabel, 'Milestones'),
+    });
+
+  /** Print ONLY the stage-by-stage table (single sheet). */
+  const printStageTable = () =>
+    printSection(stageTableRef.current, {
+      title: 'Stage-by-Stage Milestones',
+      institutionLabel: d.institutionLabel,
+      programmeName: d.programme?.name ?? '',
+      curriculumVersion: d.curriculum?.versionName,
+      appLogo: printAppLogo(getRuntimeCatalog().appearance),
+      institutionLogo: d.university?.logo,
+      fileName: printFileName(positionLabel, 'Milestones Table'),
     });
 
   const currentLevel =
@@ -273,8 +284,10 @@ export function Milestones() {
 
       {/* ── Per-stage milestone table ───────────────────────────────── */}
       {!noData && (
+        <div ref={stageTableRef}>
         <Card className="print-sheet">
           <SectionTitle icon="📍" title="Stage-by-stage milestones" subtitle="End of each remaining level through graduation." />
+          {permissionOn('allowPrinting') && <PrintButton onClick={printStageTable} />}
           <div className={tableStyles.wrap}>
             <table className={`${tableStyles.table} min-w-[600px]`}>
               <thead>
@@ -334,6 +347,7 @@ export function Milestones() {
             Projected CGPA uses each scenario’s steady future GPA credit-weighted; “required GPA” is the average still needed after that stage; max possible is the configured top grade from here. These are planning scenarios — not guaranteed outcomes, and no real-world grade data is assumed.
           </p>
         </Card>
+        </div>
       )}
       </div>
 
