@@ -198,10 +198,26 @@ export function Milestones() {
             <p className="flex-1 text-sm font-bold text-slate-800">{verdict.answer}</p>
           </div>
           <div className="no-print mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
-            <Mini label="Projected CGPA after" value={fmt2(verdict.projectedCgpaAfter)} />
-            <Mini label="Required future GPA" value={verdict.requiredFutureGpaAfter === null ? '—' : fmt2(verdict.requiredFutureGpaAfter)} />
-            <Mini label="Best possible after" value={fmt2(verdict.maxPossibleFinal)} />
-            <Mini label="Credits still ahead" value={String(verdict.remainingCreditsAfter)} />
+            <Mini
+              label="Projected CGPA after"
+              value={fmt2(verdict.projectedCgpaAfter)}
+              info="Your CGPA after this stage, if you keep the scenario average."
+            />
+            <Mini
+              label="Required future GPA"
+              value={verdict.requiredFutureGpaAfter === null ? '—' : fmt2(verdict.requiredFutureGpaAfter)}
+              info="The average you must keep after this stage to still reach your target."
+            />
+            <Mini
+              label="Best possible after"
+              value={fmt2(verdict.maxPossibleFinal)}
+              info="The highest CGPA still possible after this stage — top grades in everything left."
+            />
+            <Mini
+              label="Credits still ahead"
+              value={String(verdict.remainingCreditsAfter)}
+              info="Credits left after this stage."
+            />
           </div>
         </Card>
       )}
@@ -326,8 +342,15 @@ export function Milestones() {
           <div className="grid gap-2 sm:grid-cols-3">
             {(['best', 'target', 'user'] as const).map((id) => (
               <div key={id} className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                <p className="text-xs font-black uppercase tracking-wide" style={{ color: COLORS[id] }}>
+                <p className="flex items-center gap-1 text-xs font-black uppercase tracking-wide" style={{ color: COLORS[id] }}>
                   {id === 'best' ? 'Best case' : id === 'target' ? 'Target case' : 'User scenario'}
+                  <Info compact label={`About: ${id === 'best' ? 'best case' : id === 'target' ? 'target case' : 'user scenario'}`}>
+                    {id === 'best'
+                      ? 'You get the top grade in every credit you still have.'
+                      : id === 'target'
+                        ? 'You keep the steady average needed to hit your target.'
+                        : 'The GPA you set on the slider — a possible dip, for planning only.'}
+                  </Info>
                 </p>
                 <p className="mt-1 text-lg font-black tabular-nums text-slate-800">{analysis.scenarios[id].futureGpa.toFixed(2)}</p>
                 <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{analysis.scenarios[id].description}</p>
@@ -356,10 +379,13 @@ function Legend({ color, label, dashed }: { color: string; label: string; dashed
   );
 }
 
-function Mini({ label, value }: { label: string; value: string }) {
+function Mini({ label, value, info }: { label: string; value: string; info?: string }) {
   return (
     <div className="rounded-xl bg-white/80 p-2.5 ring-1 ring-slate-200">
-      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+        <span className="truncate">{label}</span>
+        {info && <Info compact label={`About: ${label}`}>{info}</Info>}
+      </p>
       <p className="text-lg font-black tabular-nums text-slate-800">{value}</p>
     </div>
   );

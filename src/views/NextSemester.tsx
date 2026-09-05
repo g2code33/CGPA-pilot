@@ -281,13 +281,24 @@ export function NextSemester() {
                 ✓ Your credits, all accounted for
               </p>
               <div className="grid grid-cols-3 gap-2 text-center">
-                <Audit label="Confirmed credits" value={record.creditHours} note="in your CGPA now" />
+                <Audit
+                  label="Confirmed credits"
+                  value={record.creditHours}
+                  note="in your CGPA now"
+                  info="Credits already inside your confirmed CGPA."
+                />
                 <Audit
                   label={role === 'finish-current' ? 'This semester' : 'Next semester'}
                   value={plan.next.credits}
                   note={role === 'finish-current' ? 'you are finishing it now' : 'to be written'}
+                  info="The credits in the semester this plan works on."
                 />
-                <Audit label="After that" value={Math.max(0, remainingCredits - plan.next.credits)} note="semesters still to come" />
+                <Audit
+                  label="After that"
+                  value={Math.max(0, remainingCredits - plan.next.credits)}
+                  note="semesters still to come"
+                  info="Credits in the semesters that come after this one."
+                />
               </div>
               <p className="mt-2 text-center text-[10px] font-semibold text-emerald-700">
                 {record.creditHours} + {plan.next.credits} + {Math.max(0, remainingCredits - plan.next.credits)} = {d.totalProgrammeCredits} programme credits · nothing dropped or double-counted
@@ -573,10 +584,23 @@ function UponReleaseCard({
   );
 }
 
-function Audit({ label, value, note }: { label: string; value: number; note: string }) {
+function Audit({
+  label,
+  value,
+  note,
+  info,
+}: {
+  label: string;
+  value: number;
+  note: string;
+  info?: string;
+}) {
   return (
     <div className="rounded-xl bg-white/80 p-2 text-center ring-1 ring-slate-200">
-      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+        <span className="truncate">{label}</span>
+        {info && <Info compact label={`About: ${label}`}>{info}</Info>}
+      </p>
       <p className="text-2xl font-black tabular-nums text-slate-800">{value}</p>
       <p className="truncate text-[9px] font-semibold text-slate-400">{note}</p>
     </div>

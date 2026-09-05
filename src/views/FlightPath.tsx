@@ -235,19 +235,31 @@ export function FlightPathView() {
 
       {/* ── Summary strip ─────────────────────────────────────────────── */}
       <div className="no-print grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Current CGPA" value={fmt2(record.cgpa)} tone={COLORS.current} />
-        <Stat label="Target CGPA" value={fmt2(target)} tone={COLORS.target} />
+        <Stat
+          label="Current CGPA"
+          value={fmt2(record.cgpa)}
+          tone={COLORS.current}
+          info="Where you are right now — your confirmed CGPA."
+        />
+        <Stat
+          label="Target CGPA"
+          value={fmt2(target)}
+          tone={COLORS.target}
+          info="The CGPA you aim to finish with (your goal)."
+        />
         <Stat
           label="Required future GPA"
           value={model.requiredFutureGpa === null ? '—' : fmt2(model.requiredFutureGpa)}
           tone={COLORS.required}
           sub={model.targetReachable ? 'reachable' : 'above ceiling'}
+          info="The steady average you must keep from now to hit your target."
         />
         <Stat
           label="Projected at graduation"
           value={fmt2(grad?.projectedCgpa ?? null)}
           tone={COLORS.projected}
           sub={gradClass?.label ?? ''}
+          info="The CGPA you land on if you keep your current average. The line under it is the class you would get."
         />
       </div>
 
@@ -523,15 +535,21 @@ function Stat({
   value,
   sub,
   tone,
+  info,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: string;
+  /** Short plain-language explanation, behind a small 💡 icon. */
+  info?: string;
 }) {
   return (
     <div className="rounded-2xl bg-white p-3 text-center shadow-sm ring-1 ring-slate-200">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <span className="truncate">{label}</span>
+        {info && <Info compact label={`About: ${label}`}>{info}</Info>}
+      </p>
       <p className={`mt-0.5 text-xl font-black tabular-nums ${tone ?? 'text-slate-900'}`}>{value}</p>
       {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
     </div>

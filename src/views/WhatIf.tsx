@@ -228,7 +228,12 @@ export function WhatIf() {
         <div className="no-print mt-2 space-y-3">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <label className="block">
-              <span className="label">{role === 'upon-release' ? 'Pending credits' : period.period + ' credits'}</span>
+              <span className="label flex items-center gap-1">
+                {role === 'upon-release' ? 'Pending credits' : period.period + ' credits'}
+                <Info compact label="What do these credits mean?">
+                  The credits this “what-if” average applies to.
+                </Info>
+              </span>
               <input
                 type="number"
                 min={1}
@@ -243,7 +248,12 @@ export function WhatIf() {
               />
             </label>
             <label className="block">
-              <span className="label">Remaining to graduation</span>
+              <span className="label flex items-center gap-1">
+                Remaining to graduation
+                <Info compact label="What does remaining mean?">
+                  All credits still ahead, including this one. Your projected final CGPA is divided by this number.
+                </Info>
+              </span>
               <input
                 type="number"
                 min={0}

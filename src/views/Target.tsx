@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDerived } from '../state/derived';
 import { getRuntimeCatalog } from '../config/runtime';
-import { Card, SectionTitle } from '../components/ui';
+import { Card, Info, SectionTitle } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { analyzeTarget, type TargetAnalysis } from '../services/targetService';
 import { fmt2 } from '../util/format';
@@ -348,7 +348,12 @@ export function Target() {
             ) : (
               <p className="text-2xl font-black text-slate-800">{creditsCompleted}</p>
             )}
-            <p className="mt-1 text-[11px] font-semibold text-slate-500">credits completed</p>
+            <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-500">
+              credits completed
+              <Info compact label="What is credits completed">
+                Credits you have finished and that count in your CGPA right now.
+              </Info>
+            </p>
             {creditEditingAllowed ? (
               curriculumCompleted !== null && completed === null && (
                 <p className="mt-1 text-[9px] font-bold text-brand-600">auto · from curriculum</p>
@@ -374,7 +379,12 @@ export function Target() {
             ) : (
               <p className="text-2xl font-black text-brand-700">{creditsRemaining}</p>
             )}
-            <p className="mt-1 text-[11px] font-semibold text-brand-700">credits remaining</p>
+            <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-brand-700">
+              credits remaining
+              <Info compact label="What is credits remaining">
+                Credits still to go before you graduate.
+              </Info>
+            </p>
           </div>
         </div>
         {!creditEditingAllowed && (
@@ -429,12 +439,18 @@ export function Target() {
         {/* Key numbers: Current / Target / What you need / Best possible */}
         {analysis.status !== 'unknown' && (
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Metric label="Current CGPA" value={fmt2(analysis.currentCgpa)} tone="slate" />
+            <Metric
+              label="Current CGPA"
+              value={fmt2(analysis.currentCgpa)}
+              tone="slate"
+              info="Your confirmed CGPA so far. It is the starting point of everything here."
+            />
             <Metric
               label="Target"
               value={fmt2(analysis.targetCgpa)}
               sub={clsLabel ?? undefined}
               tone="brand"
+              info="The CGPA you want to finish with. It is a goal you set, not a prediction."
             />
             <Metric
               label="What you need"
@@ -447,12 +463,14 @@ export function Target() {
                     ? 'slate'
                     : 'amber'
               }
+              info="The average you must keep from now until graduation to reach your target."
             />
             <Metric
               label="Best possible final CGPA"
               value={analysis.status === 'impossible' ? fmt3(analysis.maxFinalCgpa) : fmt2(analysis.maxFinalCgpa)}
               sub={analysis.status === 'impossible' ? 'even with perfect grades' : undefined}
               tone="slate"
+              info="The highest CGPA you can still get — top grade in every credit you still have."
             />
           </div>
         )}
@@ -530,11 +548,14 @@ function Metric({
   value,
   sub,
   tone = 'slate',
+  info,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: 'slate' | 'brand' | 'amber' | 'red';
+  /** Short plain-language explanation, behind a small 💡 icon. */
+  info?: string;
 }) {
   const valueTone: Record<string, string> = {
     slate: 'text-slate-800',
@@ -544,7 +565,10 @@ function Metric({
   };
   return (
     <div className="rounded-xl bg-white/90 p-2.5 text-center ring-1 ring-black/5">
-      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+        <span className="truncate">{label}</span>
+        {info && <Info compact label={`About: ${label}`}>{info}</Info>}
+      </p>
       <p className={`text-xl font-black tabular-nums ${valueTone[tone]}`}>{value}</p>
       {sub ? <p className="truncate text-[9px] font-semibold text-slate-400">{sub}</p> : null}
     </div>

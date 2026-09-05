@@ -72,10 +72,13 @@ export function Info({
   children,
   label,
   className = '',
+  compact = false,
 }: {
   children: ReactNode;
   label?: string;
   className?: string;
+  /** Smaller button + tighter popover, for use inside small stat boxes. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -86,7 +89,9 @@ export function Info({
         aria-expanded={open}
         aria-label={label ?? 'Help'}
         title="How to use / what this means"
-        className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm transition ring-1 ${
+        className={`inline-flex items-center justify-center rounded-full text-sm transition ring-1 ${
+          compact ? 'h-6 w-6 text-xs' : 'h-7 w-7'
+        } ${
           open
             ? 'bg-brand-600 text-white ring-brand-600'
             : 'bg-brand-50 text-brand-700 ring-brand-200'
@@ -95,7 +100,11 @@ export function Info({
         {open ? '✕' : '💡'}
       </button>
       {open && (
-        <p className="mt-2 rounded-xl bg-brand-50/70 px-3 py-2.5 text-xs leading-relaxed text-slate-600 ring-1 ring-brand-100">
+        <p
+          className={`rounded-xl bg-brand-50/70 text-slate-600 leading-relaxed ring-1 ring-brand-100 ${
+            compact ? 'mt-1.5 px-2.5 py-2 text-[11px]' : 'mt-2 px-3 py-2.5 text-xs'
+          }`}
+        >
           {children}
         </p>
       )}
