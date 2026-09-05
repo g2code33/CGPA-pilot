@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useAdmin } from '../adminStore';
+import { appLogoImage } from '../../config/branding';
+import { Wordmark } from '../../components/Wordmark';
 import { getAuthState, MAX_PASSCODE_LENGTH, MIN_PASSCODE_LENGTH } from '../adminApi';
 import { readAdminAuth } from '../adminStorage';
 
 type Mode = 'checking' | 'login' | 'setup' | 'offline-blocked' | 'api-unreachable' | 'not-configured';
 
 export function Login() {
-  const { login, setup } = useAdmin();
+  const { login, setup, catalog } = useAdmin();
   const [mode, setMode] = useState<Mode>('checking');
   const [offlineLocal, setOfflineLocal] = useState(false);
   const [pass, setPass] = useState('');
@@ -101,9 +103,23 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
         <div className="mb-4 flex flex-col items-center text-center">
-          <img src="./icon-512.png" alt="" className="h-14 w-14 rounded-2xl" width={56} height={56} />
-          <h1 className="mt-3 text-lg font-black uppercase tracking-wide">
-            CGPA <span className="text-brand-600">Pilot</span>
+          <img
+            src={appLogoImage(catalog.appearance) ?? './icon-512.png'}
+            alt=""
+            className="h-14 w-14 rounded-2xl object-contain"
+            width={56}
+            height={56}
+          />
+          <h1 className="mt-3 text-lg uppercase tracking-wide">
+            <Wordmark
+              appearance={catalog.appearance}
+              size={18}
+              color="#0f172a"
+              accent
+              accentClass="text-brand-600"
+              applyColor={false}
+              className="font-black"
+            />
           </h1>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
             Admin Console

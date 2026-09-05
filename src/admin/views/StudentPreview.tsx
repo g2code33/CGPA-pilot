@@ -4,6 +4,7 @@ import type { Programme, School, University } from '../../config/types';
 import type { AppAppearance } from '../../config/types';
 import { SkySplash } from '../../components/SkySplash';
 import { AppGlyph } from '../../components/AppGlyph';
+import { Wordmark, Tagline } from '../../components/Wordmark';
 import { appLogoImage, appName, tagline } from '../../config/branding';
 
 /**
@@ -205,17 +206,28 @@ function SelectionScreen(props: {
         </button>
       )}
 
-      <div className="mx-auto mt-8 w-full max-w-sm">
-        {logo ? (
-          <img src={logo} alt={appName(appearance)} className="mx-auto h-20 w-20 object-contain drop-shadow-xl" />
-        ) : (
-          <span className="mx-auto grid h-20 w-20 place-items-center drop-shadow-xl">
-            <AppGlyph appearance={appearance} slot="appIcon" fallback="🧭" size={48} />
-          </span>
-        )}
-        <h1 className="mt-3 text-3xl font-black tracking-tight text-white drop-shadow">
-          {appName(appearance)}
+      <div className="mx-auto mt-8 w-full max-w-sm text-center">
+        {/* Mirrors the app: fixed 96px slot, admin-sized logo grows in place. */}
+        <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
+          {logo ? (
+            <img
+              src={logo}
+              alt={appName(appearance)}
+              className="relative object-contain drop-shadow-xl"
+              style={{ width: appearance?.logoSize ?? 80, height: appearance?.logoSize ?? 80 }}
+            />
+          ) : (
+            <span className="relative drop-shadow-xl">
+              <AppGlyph appearance={appearance} slot="appIcon" fallback="🧭" size={48} />
+            </span>
+          )}
+        </div>
+        <h1 className="mt-3 tracking-tight text-white drop-shadow">
+          <Wordmark appearance={appearance} size={30} accent className="font-black" />
         </h1>
+        <p className="mt-2">
+          <Tagline appearance={appearance} size={14} />
+        </p>
         <p className="mt-2 text-sm font-medium text-white/90">Select your university, school and programme.</p>
 
         <LogoStrip university={university} department={department} />

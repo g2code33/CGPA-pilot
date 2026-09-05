@@ -206,14 +206,34 @@ export interface AppIcon {
  * is shipped to the student app as part of its offline config (so it shows
  * even without a network). Only ever contains non-personal assets.
  */
+/** Text styling for the wordmark / tagline (admin-controlled). */
+export interface TextBrandStyle {
+  /** Font size in px. */
+  fontSize?: number;
+  /** Text colour (hex, e.g. '#4f46e5'). */
+  color?: string;
+  /** Font family key (one of BRAND_FONTS ids: system/sans/serif/mono/rounded). */
+  fontFamily?: string;
+}
+
 export interface AppAppearance {
   /** App logo image (data URL) overriding the bundled icon-512. */
   logo?: string;
+  /** Display size (px) of the app logo on the opening screen (default 80). */
+  logoSize?: number;
   /** Replaces the app icon used on the home hub / hero when present. */
   appIcon?: AppIcon;
   /** Overridable icons keyed by a slot name (e.g. a tool id). */
   icons?: Record<string, AppIcon>;
   /** Optional product wordmark / tagline override. */
   appName?: string;
+  /** Wordmark image (data URL) replacing the app-name text. */
+  appImage?: string;
+  /** Wordmark text styling. */
+  appNameStyle?: TextBrandStyle;
   tagline?: string;
+  /** Tagline image (data URL) replacing the tagline text. */
+  taglineImage?: string;
+  /** Tagline text styling. */
+  taglineStyle?: TextBrandStyle;
 }

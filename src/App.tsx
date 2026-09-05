@@ -29,6 +29,7 @@ import { FlightPathView } from './views/FlightPath';
 import { Milestones } from './views/Milestones';
 import { Privacy } from './views/Privacy';
 import { InstitutionSelector } from './components/InstitutionSelector';
+import { Wordmark, Tagline } from './components/Wordmark';
 import { Info } from './components/ui';
 import { ideaTip } from './infoTips';
 import { useViewMode } from './platform';
@@ -181,18 +182,22 @@ export default function App() {
           🎮 Play
         </button>
         <div className="w-full max-w-md py-8 text-center">
-          <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center">
-            <AppLogoImg appearance={appearance} className="h-20 w-20 object-contain drop-shadow-xl" alt="CGPA Pilot" />
+          {/* Fixed 96px slot: the admin-sized app logo grows in place
+              (overflowing the slot) and the opening layout never reflows. */}
+          <div className="relative mx-auto mb-6 flex h-24 w-24 items-center justify-center">
+            <img
+              src={appLogoImage(appearance) ?? './icon-512.png'}
+              alt={appName(appearance)}
+              className="relative object-contain drop-shadow-xl"
+              style={{ width: appearance?.logoSize ?? 80, height: appearance?.logoSize ?? 80 }}
+            />
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-xl">
-            {appearance?.appName?.trim() ? (
-              appearance.appName
-            ) : (
-              <>
-                CGPA <span className="text-brand-300">Pilot</span>
-              </>
-            )}
+          <h1 className="tracking-tight text-white drop-shadow-xl">
+            <Wordmark appearance={appearance} size={36} accent className="font-black" />
           </h1>
+          <p className="mt-2">
+            <Tagline appearance={appearance} />
+          </p>
           <p className="mt-2 text-base font-medium text-white/90">Select your university, school and programme.</p>
           <SplashInstitutionLogos />
           <div className="mt-6 rounded-3xl bg-white/10 backdrop-blur-md p-4 shadow-2xl shadow-brand-900/20 ring-1 ring-white/20">
@@ -682,23 +687,7 @@ export default function App() {
   );
 }
 
-/** The app logo shown at opening and in the header — administrator-changeable. */
-function AppLogoImg({
-  appearance,
-  className,
-  alt,
-}: {
-  appearance?: AppAppearance;
-  className?: string;
-  alt?: string;
-}) {
-  const src = appLogoImage(appearance);
-  return src ? (
-    <img src={src} alt={alt ?? 'app logo'} className={className} />
-  ) : (
-    <img src="./icon-512.png" alt={alt ?? 'CGPA Pilot'} className={className} />
-  );
-}
+
 
 /** Renders an appearance-overridable icon slot as an image or its emoji. */
 function SlotGlyph({
@@ -810,14 +799,16 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
     <div className="flex min-w-0 items-center gap-2">
       <img src={logoUrl} alt={appName(appearance)} onClick={onLogoTap} title={appName(appearance)} className="h-8 w-8 shrink-0 cursor-pointer select-none rounded-lg shadow-sm" width={32} height={32} />
       <button type="button" onClick={onLogoTap} className="cursor-pointer select-none text-left leading-tight" title={appName(appearance)}>
-        <h1 className="font-extrabold tracking-tight text-slate-900" style={{ fontSize: 13 }}>
-          {appearance?.appName?.trim() ? (
-            appearance.appName
-          ) : (
-            <>
-              CGPA <span className="text-brand-600">Pilot</span>
-            </>
-          )}
+        <h1 className="font-extrabold tracking-tight">
+          <Wordmark
+            appearance={appearance}
+            size={13}
+            color="#0f172a"
+            accent
+            accentClass="text-brand-600"
+            applyColor={false}
+            className="font-extrabold"
+          />
         </h1>
         {!compact && (
           <p className="text-[10px] font-medium leading-tight text-slate-500">

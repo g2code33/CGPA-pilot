@@ -137,6 +137,20 @@ export function appName(appearance: AppAppearance | undefined): string {
   return appearance?.appName?.trim() || DEFAULT_APP_NAME;
 }
 
+/** Font families the admin can pick for the wordmark / tagline. */
+export const BRAND_FONTS: { id: string; label: string; stack: string }[] = [
+  { id: 'system', label: 'System (default)', stack: '' },
+  { id: 'sans', label: 'Sans (Arial)', stack: "Arial, 'Helvetica Neue', Helvetica, sans-serif" },
+  { id: 'serif', label: 'Serif (Georgia)', stack: "Georgia, 'Times New Roman', serif" },
+  { id: 'mono', label: 'Mono (Courier)', stack: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" },
+  { id: 'rounded', label: 'Rounded (Trebuchet)', stack: "'Trebuchet MS', Verdana, 'Segoe UI', sans-serif" },
+];
+
+/** The CSS font stack for an admin-picked font key ('' = the app default). */
+export function brandFontStack(id: string | undefined): string {
+  return BRAND_FONTS.find((f) => f.id === id)?.stack ?? '';
+}
+
 /** The tagline the admin set, or the default. */
 export function tagline(appearance: AppAppearance | undefined): string {
   return appearance?.tagline?.trim() || DEFAULT_TAGLINE;

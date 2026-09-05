@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useAdmin } from './adminStore';
+import { appLogoImage } from '../config/branding';
+import type { AppAppearance } from '../config/types';
 import { preflightPublish } from './adminApi';
 import { writeAdminCatalog } from './adminStorage';
 import { Login } from './views/Login';
@@ -45,7 +47,7 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
 ];
 
 export function AdminApp() {
-  const { authed } = useAdmin();
+  const { authed, catalog } = useAdmin();
   const [view, setView] = useState<View>({ name: 'overview' });
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const flashSave = (m: string) => {
@@ -60,7 +62,7 @@ export function AdminApp() {
       {/* Sticky full-height sidebar: brand header + save actions stay in
           place while the main content scrolls (never scroll away). */}
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white p-4 sm:flex">
-        <Brand />
+        <Brand appearance={catalog.appearance} />
         <nav className="mt-6 flex flex-col gap-1">
           {NAV.map((n) => (
             <button
@@ -86,7 +88,7 @@ export function AdminApp() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:hidden">
-          <Brand compact />
+          <Brand compact appearance={catalog.appearance} />
           <div className="ml-auto flex items-center gap-2">
             <BackToApp />
             <LogoutButton />
@@ -221,10 +223,17 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
   );
 }
 
-function Brand({ compact = false }: { compact?: boolean }) {
+function Brand({ compact = false, appearance }: { compact?: boolean; appearance?: AppAppearance }) {
   return (
     <div className="flex items-center gap-2.5">
-      <img src="./icon-512.png" alt="" className="h-9 w-9 rounded-xl" width={36} height={36} />
+      {/* The admin-set app logo — the console follows its own branding. */}
+      <img
+        src={appLogoImage(appearance) ?? './icon-512.png'}
+        alt=""
+        className="h-9 w-9 rounded-xl object-contain"
+        width={36}
+        height={36}
+      />
       <div>
         <h1 className="text-sm font-black uppercase tracking-wide text-slate-900">
           CGPA <span className="text-brand-600">Pilot</span>

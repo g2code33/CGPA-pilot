@@ -31,7 +31,7 @@ export interface ValidationResult {
 }
 
 const CURRICULUM_STATUSES = ['draft', 'review', 'published', 'archived'] as const;
-const APPEARANCE_STRING_KEYS = ['logo', 'appName', 'tagline'] as const;
+const APPEARANCE_STRING_KEYS = ['logo', 'appName', 'tagline', 'appImage', 'taglineImage'] as const;
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
@@ -313,6 +313,36 @@ export function validateAppearance(appearance: unknown, issues: string[], label 
       issues.push(`${label}.${key} must be a string when present.`);
     }
   }
+  if (
+    ap.logoSize !== undefined &&
+    ap.logoSize !== null &&
+    (typeof ap.logoSize !== 'number' || !Number.isFinite(ap.logoSize) || ap.logoSize < 16 || ap.logoSize > 256)
+  ) {
+    issues.push(`${label}.logoSize must be a number between 16 and 256 when present.`);
+  }
+  const checkTextStyle = (style: unknown, sl: string): void => {
+    if (style === undefined || style === null) return;
+    if (!isPlainObject(style)) {
+      issues.push(`${sl} must be an object when present.`);
+      return;
+    }
+    const st = style as Record<string, unknown>;
+    if (
+      st.fontSize !== undefined &&
+      st.fontSize !== null &&
+      (typeof st.fontSize !== 'number' || !Number.isFinite(st.fontSize) || st.fontSize < 8 || st.fontSize > 128)
+    ) {
+      issues.push(`${sl}.fontSize must be a number between 8 and 128 when present.`);
+    }
+    if (st.color !== undefined && st.color !== null && typeof st.color !== 'string') {
+      issues.push(`${sl}.color must be a string (hex colour) when present.`);
+    }
+    if (st.fontFamily !== undefined && st.fontFamily !== null && typeof st.fontFamily !== 'string') {
+      issues.push(`${sl}.fontFamily must be a string (font key) when present.`);
+    }
+  };
+  checkTextStyle(ap.appNameStyle, `${label}.appNameStyle`);
+  checkTextStyle(ap.taglineStyle, `${label}.taglineStyle`);
   const checkIcon = (icon: unknown, il: string): void => {
     if (!isPlainObject(icon)) {
       issues.push(`${il} must be an object.`);
