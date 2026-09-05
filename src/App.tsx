@@ -123,14 +123,6 @@ const TOOLS: {
     tagline: 'Stage-by-stage checkpoints',
     needsData: true,
   },
-  {
-    id: 'ai',
-    icon: '🤖',
-    emoji: '🤖',
-    title: 'AI Assistant',
-    tagline: 'Ask about your academics',
-    needsData: false,
-  },
 ];
 
 const SCREEN_TITLES: Partial<Record<Screen, { icon: string; title: string }>> = {
@@ -140,14 +132,14 @@ const SCREEN_TITLES: Partial<Record<Screen, { icon: string; title: string }>> = 
   whatif: { icon: '🔀', title: 'What-If Simulator' },
   flight: { icon: '🛩️', title: 'Flight Path' },
   milestones: { icon: '🏁', title: 'Milestones' },
-  ai: { icon: '🤖', title: 'AI Assistant' },
+  ai: { icon: '🤖', title: 'CGPA PILOT AI' },
   privacy: { icon: '🔒', title: 'Privacy' },
 };
 
 // Linear order of the tool screens so every open tool can offer an obvious
-// Previous / Next at the bottom for simple thumb navigation. AI comes AFTER
-// the milestones (the next stage of the app).
-const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones', 'ai'] as const;
+// Previous / Next at the bottom for simple thumb navigation.
+// (CGPA PILOT AI is NOT a tool — it lives on the floating 🤖 button.)
+const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones'] as const;
 type ToolId = (typeof TOOL_ORDER)[number];
 const isTool = (s: Screen): s is ToolId =>
   (TOOL_ORDER as readonly string[]).includes(s);
@@ -199,7 +191,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
     };
   }, []);
   const aiVisible = !(aiStatus && aiStatus.enabled === false);
-  const visibleTools = TOOLS.filter((t) => (t.id !== 'whatif' || whatIfAllowed) && (t.id !== 'ai' || aiVisible));
+  const visibleTools = TOOLS.filter((t) => t.id !== 'whatif' || whatIfAllowed);
   const visibleOrder = visibleTools.map((t) => t.id) as ToolId[];
 
   // A newer published configuration was stored mid-session → offer an
@@ -345,6 +337,25 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
       {screen === 'privacy' && <Privacy />}
     </>
   );
+
+  // ── CGPA PILOT AI — floating button (bottom-right, every main screen) ──
+  // Not part of the tools: always one tap away from anywhere. Hidden when the
+  // admin has switched the assistant off, and on the AI screen itself.
+  const aiFab = (pos: string) =>
+    aiVisible && screen !== 'ai' ? (
+      <button
+        onClick={() => setScreen('ai')}
+        aria-label="Open CGPA Pilot AI"
+        title="CGPA Pilot AI — ask anything about your academics"
+        className={`no-print fixed z-30 ${pos} grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-indigo-700 text-2xl text-white shadow-xl shadow-brand-900/40 ring-2 ring-white/50 transition hover:scale-105 active:scale-95`}
+      >
+        🤖
+        <span
+          className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-white"
+          aria-hidden
+        />
+      </button>
+    ) : null;
 
   const pendingCfgBanner = pendingCfg ? (
     <div className="no-print flex flex-wrap items-center justify-center gap-2 bg-sky-600 px-4 py-2 text-center text-xs font-semibold text-white">
@@ -651,6 +662,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             </div>
           </div>
         </div>
+        {aiFab('bottom-6 right-6')}
       </div>
     );
   }
@@ -739,6 +751,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             )}
           </div>
         </nav>
+        {aiFab('bottom-16 right-3')}
       </div>
     );
   }
@@ -761,6 +774,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
           {homeContent(false)}
         </div>
       </div>
+      {aiFab('bottom-4 right-3')}
     </div>
   );
 }
