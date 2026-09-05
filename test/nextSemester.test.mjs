@@ -267,34 +267,94 @@ test('reshuffle: returns null for an empty course list', () => {
   assert.equal(ns.reshufflePlan([], grading, 10), null);
 });
 
-test('smart reshuffles: every returned plan is valid and distinct', () => {
-  // A mid target leaves headroom, so the different strategies produce
-  // different shapes of plan. (At a ceiling target they legitimately
-  // converge on the single plan that clears.)
+test('reshuffle space: every returned form is valid and distinct', () => {
   const p = plan({ targetCgpa: 3.0 });
-  const combos = ns.smartReshuffles(p.next.courses, grading, p.requiredNextPoints);
-  assert.ok(combos.length >= 3, `expected several smart plans, got ${combos.length}`);
+  const space = ns.reshuffleSpace(p.next.courses, grading, p.requiredNextPoints);
+  assert.ok(space.length >= 3, `expected several result forms, got ${space.length}`);
   const codes = p.next.courses.map((c) => c.code).sort();
   const keys = new Set();
-  for (const c of combos) {
+  for (const c of space) {
     assert.ok(c.totalPoints >= p.requiredNextPoints - 1e-9, 'clears required points');
     assert.equal(c.clears, true);
     assert.deepEqual(c.assignments.map((a) => a.code).sort(), codes, 'same courses');
     const key = c.assignments.map((a) => a.grade).join('|');
-    assert.ok(!keys.has(key), 'plans are distinct');
+    assert.ok(!keys.has(key), 'forms are distinct');
     keys.add(key);
   }
 });
 
-test('smart reshuffles: a high target still yields only valid plans', () => {
+test('reshuffle space: COMPLETE — every possible valid form is found (brute-force check)', () => {
+  // Small, exhaustive case: 3 courses × 3 bands = 27 possible forms.
+  const g3 = {
+    id: 'g3',
+    name: 'three bands',
+    bands: [
+      { grade: 'A', minScore: 80, maxScore: 100, points: 4 },
+      { grade: 'B', minScore: 60, maxScore: 79, points: 3 },
+      { grade: 'C', minScore: 40, maxScore: 59, points: 2 },
+    ],
+  };
+  const courses = [
+    { code: 'X1', name: 'x1', creditHours: 3 },
+    { code: 'X2', name: 'x2', creditHours: 2 },
+    { code: 'X3', name: 'x3', creditHours: 1 },
+  ];
+  const required = 14;
+  // Brute force: every one of the 27 assignments.
+  const expected = new Set();
+  const pts = g3.bands.map((b) => b.points);
+  const grades = g3.bands.map((b) => b.grade);
+  const cr = courses.map((c) => c.creditHours);
+  for (const a of pts)
+    for (const b of pts)
+      for (const c of pts) {
+        const total = a * cr[0] + b * cr[1] + c * cr[2];
+        if (total >= required - 1e-9)
+          expected.add(`${grades[pts.indexOf(a)]}|${grades[pts.indexOf(b)]}|${grades[pts.indexOf(c)]}`);
+      }
+  const space = ns.reshuffleSpace(courses, g3, required);
+  assert.equal(space.length, expected.size, `found ${space.length}, expected ${expected.size}`);
+  for (const c of space) {
+    const key = c.assignments.map((x) => x.grade).join('|');
+    assert.ok(expected.has(key), `form ${key} is a real valid combination`);
+    assert.ok(c.totalPoints >= required - 1e-9);
+  }
+});
+
+test('reshuffle space: ordered lightest → richest (a ladder each click climbs)', () => {
+  const p = plan({ targetCgpa: 3.0 });
+  const space = ns.reshuffleSpace(p.next.courses, grading, p.requiredNextPoints);
+  for (let i = 1; i < space.length; i++) {
+    assert.ok(
+      space[i].totalPoints >= space[i - 1].totalPoints - 1e-9,
+      'totals are non-decreasing'
+    );
+  }
+});
+
+test('reshuffle space: huge spaces are capped so reshuffling stays instant', () => {
+  const p = plan({ targetCgpa: 3.0 });
+  const capped = ns.reshuffleSpace(p.next.courses, grading, p.requiredNextPoints, 60);
+  assert.equal(capped.length, 60, 'stops at the cap');
+  for (const c of capped) assert.ok(c.totalPoints >= p.requiredNextPoints - 1e-9);
+});
+
+test('reshuffle space: a high target still yields only valid forms', () => {
   const p = plan({ targetCgpa: 3.9 });
-  const combos = ns.smartReshuffles(p.next.courses, grading, p.requiredNextPoints);
-  assert.ok(combos.length >= 1);
-  for (const c of combos) {
+  const space = ns.reshuffleSpace(p.next.courses, grading, p.requiredNextPoints);
+  assert.ok(space.length >= 1);
+  for (const c of space) {
     assert.ok(c.totalPoints >= p.requiredNextPoints - 1e-9, 'never under the required points');
   }
 });
 
-test('smart reshuffles: empty course list yields nothing', () => {
-  assert.deepEqual(ns.smartReshuffles([], grading, 10), []);
+test('reshuffle space: impossible requirement yields nothing', () => {
+  const p = plan({ targetCgpa: 3.0 });
+  const credits = p.next.courses.reduce((s, c) => s + c.creditHours, 0);
+  const impossible = credits * 4 + 10; // above the theoretical maximum
+  assert.deepEqual(ns.reshuffleSpace(p.next.courses, grading, impossible), []);
+});
+
+test('reshuffle space: empty course list yields nothing', () => {
+  assert.deepEqual(ns.reshuffleSpace([], grading, 10), []);
 });

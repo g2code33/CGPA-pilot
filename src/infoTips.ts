@@ -45,6 +45,8 @@ export const IDEA_TIPS: IdeaTip[] = [
   { key: 'flight.target', page: 'Flight Path', subject: 'Target CGPA', text: 'The CGPA you aim to finish with (your goal).' },
   { key: 'flight.required', page: 'Flight Path', subject: 'Required future GPA', text: 'The steady average you must keep from now to hit your target.' },
   { key: 'flight.projected', page: 'Flight Path', subject: 'Projected at graduation', text: 'The CGPA you land on if you keep your current average. The line under it is the class you would get.' },
+  { key: 'flight.assumeGpa', page: 'Flight Path', subject: 'Assumed future GPA', text: 'The average you expect to keep in the semesters ahead. Drag it — the projected line follows.' },
+  { key: 'flight.flyRequired', page: 'Flight Path', subject: 'Fly the required line', text: 'Snaps your assumed average to the required one — the exact line you would need to fly.' },
   // ── Milestones ─────────────────────────────────────────────────────────
   { key: 'milestones.projectedAfter', page: 'Milestones', subject: 'Projected CGPA after', text: 'Your CGPA after this stage, if you keep the scenario average.' },
   { key: 'milestones.requiredAfter', page: 'Milestones', subject: 'Required future GPA', text: 'The average you must keep after this stage to still reach your target.' },

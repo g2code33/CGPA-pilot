@@ -397,120 +397,93 @@ export interface ShuffledCombo {
   clears: boolean;
 }
 
-/** Build a combo from per-course band indices (bands ordered best→worst). */
-function comboFromIndices(
-  courses: NextCourse[],
-  bandsDesc: Band[],
-  bandIndex: number[]
-): { key: string; assignments: GradeAssignment[]; totalPoints: number; semesterGpa: number } {
-  const assignments: GradeAssignment[] = courses.map((c, i) => {
-    const band = bandsDesc[bandIndex[i]];
-    return { code: c.code, name: c.name, creditHours: c.creditHours, grade: band.grade, points: band.points };
-  });
-  const totalPoints = assignments.reduce((s, a) => s + a.points * a.creditHours, 0);
-  const credits = courses.reduce((s, c) => s + c.creditHours, 0);
-  return {
-    key: assignments.map((a) => a.grade).join('|'),
-    assignments,
-    totalPoints,
-    semesterGpa: credits > 0 ? totalPoints / credits : 0,
-  };
-}
-
 /**
- * Repeat single-band upgrades until the required points are met.
- * `preferLow` upgrades the LOWEST-credit courses first (spreads the hard
- * grades onto the small courses); otherwise the highest-credit first.
- */
-function upgradeUntil(
-  courses: NextCourse[],
-  bandsDesc: Band[],
-  start: number[],
-  required: number,
-  preferLow: boolean
-): number[] {
-  const idx = [...start];
-  const total = () => idx.reduce((s, bi, i) => s + courses[i].creditHours * bandsDesc[bi].points, 0);
-  let guard = 0;
-  while (total() < required - 1e-9 && guard++ < 1000) {
-    const movable = idx
-      .map((bi, i) => ({ bi, i }))
-      .filter((x) => x.bi > 0)
-      .sort((a, b) =>
-        preferLow
-          ? courses[a.i].creditHours - courses[b.i].creditHours
-          : courses[b.i].creditHours - courses[a.i].creditHours
-      );
-    if (movable.length === 0) break;
-    idx[movable[0].i] = movable[0].bi - 1;
-  }
-  return idx;
-}
-
-/**
- * The full set of SMART alternative plans for the same required points —
- * every distinct, valid way of shaping the grades that the engine knows:
+ * The POWERFUL reshuffle: enumerates the semester's possible RESULT FORMS —
+ * every distinct per-course grade-band assignment whose credit-weighted
+ * points meet (or exceed) the required points.
  *
- *   1. Credit-focused  — strongest grades on the highest-credit courses
- *      (the lightest plan that still clears).
- *   2. Small-course focused — the tougher grades parked on the smallest
- *      courses so the big ones stay easy.
- *   3. Balanced — every course at (or just above) the required average.
- *   4. Uniform — one single grade in every course, the weakest that clears.
- *   5. Cushion — the required plan plus a small safety margin.
- *   6. A randomized valid mix (fresh variety every call).
+ * How it works:
+ *   • depth-first search over the courses, each course trying every grade
+ *     band from its best downward;
+ *   • aggressive pruning — the moment the points already earned plus the
+ *     BEST POSSIBLE total of the remaining courses cannot reach the
+ *     required points, that branch is abandoned (it can only get worse);
+ *   • every surviving leaf is a real, valid result form (never under the
+ *     required points — the engine's hard boundary);
+ *   • when the space is bigger than `cap`, the search stops once `cap`
+ *     forms are collected, so even a huge semester stays instant;
+ *   • the result is ordered lightest-clearing form first → each Reshuffle
+ *     click climbs the ladder: closest-to-minimum passes, then stronger
+ *     and stronger, up to top grades in every course.
  *
- * Identical results are de-duplicated; every returned combo clears the
- * required points. The view cycles through these as the student reshuffles.
+ * Returns [] when nothing can clear the required points (impossible
+ * target) — the view then disables reshuffling as before.
  */
-export function smartReshuffles(
+export function reshuffleSpace(
   courses: NextCourse[],
   grading: GradingSystem,
-  requiredPoints: number
+  requiredPoints: number,
+  cap = 4000
 ): ShuffledCombo[] {
   if (courses.length === 0) return [];
   const bandsDesc: Band[] = [...grading.bands]
     .sort((a, b) => b.points - a.points)
     .map((b) => ({ grade: b.grade, points: b.points }));
   const n = courses.length;
-  const credits = courses.reduce((s, c) => s + c.creditHours, 0);
   const required = Math.max(0, requiredPoints);
-  const lowest = bandsDesc.length - 1;
-  const maxTotal = credits * bandsDesc[0].points;
-  const rPerCredit = credits > 0 ? required / credits : 0;
+  const credits = courses.reduce((s, c) => s + c.creditHours, 0);
 
-  const variants: number[][] = [
-    // 1. Credit-focused (strongest on the big courses).
-    upgradeUntil(courses, bandsDesc, Array(n).fill(lowest), required, false),
-    // 2. Small-course focused (tough grades on the small courses).
-    upgradeUntil(courses, bandsDesc, Array(n).fill(lowest), required, true),
-    // 3. Balanced (weakest band meeting the average, then top up on big courses).
-    (() => {
-      const bi = bandsDesc.findIndex((b) => b.points >= rPerCredit - 1e-9);
-      const start = bi === -1 ? Array(n).fill(0) : Array(n).fill(bi);
-      return upgradeUntil(courses, bandsDesc, start, required, false);
-    })(),
-    // 4. Uniform (one grade everywhere, weakest that clears).
-    (() => {
-      const bi = bandsDesc.findIndex((b) => b.points * credits >= required - 1e-9);
-      return bi === -1 ? null : Array(n).fill(bi);
-    })(),
-    // 5. Cushion (required + 4% safety margin, credit-focused).
-    required > 0
-      ? upgradeUntil(courses, bandsDesc, Array(n).fill(lowest), Math.min(required * 1.04, maxTotal), false)
-      : null,
-  ].filter((v): v is number[] => v !== null);
+  // best[i] = maximum points courses i..n-1 can still contribute (pruning).
+  const best = new Array<number>(n + 1).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    best[i] = best[i + 1] + courses[i].creditHours * bandsDesc[0].points;
+  }
 
   const seen = new Set<string>();
-  const out: ShuffledCombo[] = [];
-  for (const idx of variants) {
-    const built = comboFromIndices(courses, bandsDesc, idx);
-    if (seen.has(built.key)) continue;
-    if (built.totalPoints < required - 1e-9) continue;
-    seen.add(built.key);
-    out.push({ ...built, clears: true });
-  }
-  return out;
+  const found: { key: string; total: number; assignments: GradeAssignment[] }[] = [];
+  const idx = new Array<number>(n).fill(0); // band index per course (0 = best grade)
+
+  const dfs = (i: number, points: number): void => {
+    if (found.length >= cap) return;
+    if (i === n) {
+      if (points >= required - 1e-9) {
+        const assignments: GradeAssignment[] = courses.map((c, k) => ({
+          code: c.code,
+          name: c.name,
+          creditHours: c.creditHours,
+          grade: bandsDesc[idx[k]].grade,
+          points: bandsDesc[idx[k]].points,
+        }));
+        const key = assignments.map((a) => a.grade).join('|');
+        if (!seen.has(key)) {
+          seen.add(key);
+          found.push({ key, total: points, assignments });
+        }
+      }
+      return;
+    }
+    // bi ascends = points descend: once this band (and everything below it)
+    // can no longer clear even with a perfect finish on the rest, stop.
+    for (let bi = 0; bi < bandsDesc.length; bi++) {
+      const p = points + courses[i].creditHours * bandsDesc[bi].points;
+      if (p + best[i + 1] < required - 1e-9) break;
+      idx[i] = bi;
+      dfs(i + 1, p);
+      if (found.length >= cap) return;
+    }
+  };
+  dfs(0, 0);
+
+  // Ladder order: lightest clearing form first, then stronger — so each
+  // reshuffle click is a meaningful step up (ties broken deterministically).
+  found.sort((a, b) => a.total - b.total || a.key.localeCompare(b.key));
+
+  return found.map((f) => ({
+    assignments: f.assignments,
+    totalPoints: f.total,
+    semesterGpa: credits > 0 ? f.total / credits : 0,
+    clears: true,
+  }));
 }
 
 /**

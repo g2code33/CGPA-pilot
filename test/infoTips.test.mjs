@@ -48,6 +48,8 @@ test('expected icons exist (Target / NextSemester / WhatIf / FlightPath / Milest
     'flight.target',
     'flight.required',
     'flight.projected',
+    'flight.assumeGpa',
+    'flight.flyRequired',
     'milestones.projectedAfter',
     'milestones.requiredAfter',
     'milestones.bestAfter',

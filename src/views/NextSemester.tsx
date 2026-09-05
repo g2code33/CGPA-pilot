@@ -7,7 +7,7 @@ import {
   nextSemesterAfter,
   planNextSemester,
   reshufflePlan,
-  smartReshuffles,
+  reshuffleSpace,
   whatIfGrades,
   type ShuffledCombo,
 } from '../services/nextSemesterService';
@@ -137,11 +137,12 @@ export function NextSemester() {
     setShuffleIndex(-1);
   }, [plan.requiredNextPoints, plan.next.credits, plan.status, showWhatIf, comboId]);
 
-  // The smart set of distinct valid plans (credit-focused, small-course
-  // focused, balanced, uniform, cushion). Reshuffle cycles through the
-  // unused ones, then falls back to fresh random-but-valid mixes.
-  const smartSet = useMemo(
-    () => smartReshuffles(plan.next.courses, grading, plan.requiredNextPoints ?? 0),
+  // The full space of possible RESULT FORMS for this semester: every valid
+  // grade combination that clears the required points, ordered as a ladder
+  // (lightest clearing form → top grades). Reshuffle climbs the ladder one
+  // unused form at a time, then keeps going with random-but-valid mixes.
+  const planSpace = useMemo(
+    () => reshuffleSpace(plan.next.courses, grading, plan.requiredNextPoints ?? 0),
     [plan.next.courses, grading, plan.requiredNextPoints]
   );
 
@@ -149,7 +150,7 @@ export function NextSemester() {
     if (plan.requiredNextPoints === null) return;
     const used = new Set(shuffleHistory.map((h) => h.assignments.map((a) => a.grade).join('|')));
     const combo =
-      smartSet.find((c) => !used.has(c.assignments.map((a) => a.grade).join('|'))) ??
+      planSpace.find((c) => !used.has(c.assignments.map((a) => a.grade).join('|'))) ??
       reshufflePlan(plan.next.courses, grading, plan.requiredNextPoints);
     if (!combo) return;
     const keep = shuffleHistory.slice(0, shuffleIndex + 1); // drop any redo tail
@@ -158,6 +159,8 @@ export function NextSemester() {
   }
   const canUndo = shuffleIndex >= 0;
   const canRedo = shuffleIndex < shuffleHistory.length - 1;
+  const undoCount = shuffleIndex + 1;
+  const redoCount = shuffleHistory.length - 1 - shuffleIndex;
 
   // The GPA used for the semester being acted on. For the study-plan roles this
   // is the derived required average; for "upon release" it is the pending
@@ -426,19 +429,25 @@ export function NextSemester() {
                   >
                     🔀 Reshuffle
                   </button>
+                  {shuffleIndex >= 0 && (
+                    <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold tabular-nums text-slate-500 ring-1 ring-slate-200">
+                      Form {shuffleIndex + 1}
+                      {planSpace.length > 0 ? ` of ${planSpace.length.toLocaleString()}` : ''}
+                    </span>
+                  )}
                   <button
                     onClick={() => setShuffleIndex((i) => Math.max(-1, i - 1))}
                     disabled={!canUndo}
-                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold tabular-nums text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    ↩ Undo
+                    ↩ Undo · {undoCount}
                   </button>
                   <button
                     onClick={() => setShuffleIndex((i) => Math.min(shuffleHistory.length - 1, i + 1))}
                     disabled={!canRedo}
-                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold tabular-nums text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    ↪ Redo
+                    ↪ Redo · {redoCount}
                   </button>
                 </>
               )}

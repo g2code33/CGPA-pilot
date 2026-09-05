@@ -37,28 +37,30 @@ export function SectionTitle({
           <span className="truncate">{title}</span>
         </h2>
         {info && (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            aria-label={infoLabel ?? 'How to use this'}
-            title="How to use / what this means"
-            className={`shrink-0 grid h-7 w-7 place-items-center rounded-full text-sm transition ring-1 ${
-              open
-                ? 'bg-brand-600 text-white ring-brand-600'
-                : 'bg-brand-50 text-brand-700 ring-brand-200'
-            }`}
-          >
-            {open ? '✕' : '💡'}
-          </button>
+          <span className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              aria-label={infoLabel ?? 'How to use this'}
+              title="How to use / what this means"
+              className={`grid h-7 w-7 place-items-center rounded-full text-sm transition ring-1 ${
+                open
+                  ? 'bg-brand-600 text-white ring-brand-600'
+                  : 'bg-brand-50 text-brand-700 ring-brand-200'
+              }`}
+            >
+              {open ? '✕' : '💡'}
+            </button>
+            {open && (
+              <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[80vw] rounded-xl bg-slate-900/95 px-3 py-2.5 text-xs leading-relaxed text-slate-100 shadow-xl ring-1 ring-white/10">
+                {info}
+              </div>
+            )}
+          </span>
         )}
       </div>
-      {subtitle && !open && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
-      {info && open && (
-        <div className="mt-2 rounded-xl bg-brand-50/70 px-3 py-2.5 text-xs leading-relaxed text-slate-600 ring-1 ring-brand-100">
-          {info}
-        </div>
-      )}
+      {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
     </div>
   );
 }
@@ -82,7 +84,7 @@ export function Info({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={`inline-block ${className}`}>
+    <div className={`relative inline-block ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -99,14 +101,18 @@ export function Info({
       >
         {open ? '✕' : '💡'}
       </button>
+      {/* Overlay popover: floats over the card (never extends it), deep
+          background for visibility. */}
       {open && (
-        <p
-          className={`rounded-xl bg-brand-50/70 text-slate-600 leading-relaxed ring-1 ring-brand-100 ${
-            compact ? 'mt-1.5 px-2.5 py-2 text-[11px]' : 'mt-2 px-3 py-2.5 text-xs'
+        <div
+          className={`absolute z-50 rounded-xl bg-slate-900/95 text-slate-100 leading-relaxed shadow-xl ring-1 ring-white/10 ${
+            compact
+              ? 'left-1/2 top-full mt-1.5 w-44 max-w-[78vw] -translate-x-1/2 px-2.5 py-2 text-[11px]'
+              : 'left-1/2 top-full mt-2 w-64 max-w-[80vw] -translate-x-1/2 px-3 py-2.5 text-xs'
           }`}
         >
           {children}
-        </p>
+        </div>
       )}
     </div>
   );

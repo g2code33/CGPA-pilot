@@ -17,13 +17,13 @@ export function IdeaIcons() {
   const ideaTips = catalog.settings?.ideaTips;
   const enabled = ideaTips?.enabled !== false;
   const texts = ideaTips?.texts ?? {};
-  const overrideCount = Object.keys(texts).filter((k) => (texts[k] ?? '').trim() !== '').length;
+  const overrideCount = Object.keys(texts).length;
 
   const setText = (key: string, value: string) =>
     apply((c) => {
-      const t = { ...(c.settings?.ideaTips?.texts ?? {}) };
-      if (value.trim() === '') delete t[key];
-      else t[key] = value;
+      // The sentence is stored as typed — an EMPTY string means "hide just
+      // this icon" (the default sentence comes back only via ↺ reset).
+      const t = { ...(c.settings?.ideaTips?.texts ?? {}), [key]: value };
       return {
         ...c,
         settings: {
@@ -123,12 +123,11 @@ export function IdeaIcons() {
                       </span>
                       <input
                         type="text"
-                        value={custom ?? ''}
-                        placeholder={t.text}
+                        value={custom ?? t.text}
                         onChange={(e) => setText(t.key, e.target.value)}
                         className="input w-full flex-1 py-1.5 text-xs"
                       />
-                      {overridden && (
+                      {(overridden || cleared) && (
                         <button
                           onClick={() => resetText(t.key)}
                           title="Back to the default sentence"

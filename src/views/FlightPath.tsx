@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle, Note, Badge, Info } from '../components/ui';
+import { Card, SectionTitle, Note, Badge, Info, TipIcon } from '../components/ui';
 import { ideaTip } from '../infoTips';
 import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
@@ -244,7 +244,10 @@ export function FlightPathView() {
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <label className="block">
-            <span className="label">Assumed future GPA: {(assumedGpa ?? record.cgpa ?? target).toFixed(2)}</span>
+            <span className="label flex items-center gap-1">
+              Assumed future GPA: {(assumedGpa ?? record.cgpa ?? target).toFixed(2)}
+              <TipIcon tip={ideaTip('flight.assumeGpa')} label="About assumed future GPA" />
+            </span>
             <input
               type="range"
               min={0}
@@ -256,16 +259,19 @@ export function FlightPathView() {
             />
           </label>
           {model.requiredFutureGpa !== null && (
-            <button
-              onClick={() =>
-                setAssumedGpa(
-                  clamp(model.requiredFutureGpa ?? target, 0, maxPoints)
-                )
-              }
-              className="self-end rounded-lg bg-amber-100 px-2 py-2 text-[11px] font-bold text-amber-800 ring-1 ring-amber-300 hover:bg-amber-200"
-            >
-              Fly the required line ({fmt2(model.requiredFutureGpa)})
-            </button>
+            <div className="flex items-center gap-1.5 self-end">
+              <button
+                onClick={() =>
+                  setAssumedGpa(
+                    clamp(model.requiredFutureGpa ?? target, 0, maxPoints)
+                  )
+                }
+                className="rounded-lg bg-amber-100 px-2 py-2 text-[11px] font-bold text-amber-800 ring-1 ring-amber-300 hover:bg-amber-200"
+              >
+                Fly the required line ({fmt2(model.requiredFutureGpa)})
+              </button>
+              <TipIcon tip={ideaTip('flight.flyRequired')} label="About the required line" />
+            </div>
           )}
           {model.fallback && (
             <>
