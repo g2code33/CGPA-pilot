@@ -158,6 +158,8 @@ export interface AppIcon {
   emoji: string;
   /** Optional uploaded image (png/jpg/jpeg/webp as a data URL). */
   image?: string;
+  /** Optional display size in px for the uploaded image (student app + admin preview). */
+  size?: number;
 }
 
 /**

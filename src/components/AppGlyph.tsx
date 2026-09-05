@@ -33,12 +33,13 @@ export function AppGlyph({
   const icon = slot === 'appIcon' ? appearance?.appIcon : appearance?.icons?.[slot];
   const el = iconElement(icon, fallback);
   if (el.type === 'img') {
+    const px = el.sizePx ?? size;
     return (
       <img
         src={el.src}
         alt={el.alt ?? 'icon'}
-        width={size}
-        height={size}
+        width={px}
+        height={px}
         className={`object-contain ${imgClassName ?? ''} ${className}`}
       />
     );

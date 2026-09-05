@@ -187,12 +187,6 @@ export function Grading() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-slate-900">Grading &amp; Classification</h1>
-        <p className="text-xs text-slate-500">
-          Define raw-score ranges, letter grades, grade points, interpretations
-          and degree-classification CGPA ranges. The calculation engine always
-          uses the active published rules — nothing is hard-coded in the
-          student UI. Enter only the official rules for the institution.
-        </p>
       </header>
 
       {notice && <div className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white">{notice}</div>}

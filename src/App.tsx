@@ -347,6 +347,12 @@ export default function App() {
       : d.state.mode === 'history'
         ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)
         : d.state.baseline.cgpa;
+  // Container size for an icon slot: an admin-set display size on a custom
+  // image wins over the per-site default.
+  const iconBoxPx = (slotId: string, fallback: number): number => {
+    const ic = appearance?.icons?.[slotId];
+    return ic?.image && ic.size ? ic.size : fallback;
+  };
   return (
     <div className="h-[100dvh] flex flex-col bg-gradient-to-b from-brand-50 to-white">
       <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
@@ -468,7 +474,8 @@ export default function App() {
                   }`}
                 >
                   <span
-                    className={`grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br text-base text-white shadow ${t.grad}`}
+                    className={`grid shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br text-base text-white shadow ${t.grad}`}
+                    style={{ width: iconBoxPx(t.id, 36), height: iconBoxPx(t.id, 36) }}
                   >
                     <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} />
                   </span>
@@ -499,7 +506,10 @@ export default function App() {
             onClick={() => setScreen('privacy')}
             className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
           >
-            <span className="flex h-5 w-5 items-center justify-center text-base">
+            <span
+              className="flex items-center justify-center text-base"
+              style={{ width: iconBoxPx('privacy', 20), height: iconBoxPx('privacy', 20) }}
+            >
               <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
             </span>
             <span className="flex-1 text-[11px] font-bold text-emerald-800">
@@ -551,6 +561,17 @@ function SlotGlyph({
 }) {
   const el = iconElement(appearance?.icons?.[slot], fallback);
   if (el.type === 'img') {
+    // Admin-adjusted display size wins over the per-site default classes.
+    if (el.sizePx) {
+      return (
+        <img
+          src={el.src}
+          alt={el.alt ?? ''}
+          className="object-contain"
+          style={{ width: el.sizePx, height: el.sizePx }}
+        />
+      );
+    }
     return <img src={el.src} alt={el.alt ?? ''} className={`object-contain ${imgCls ?? 'h-6 w-6'}`} />;
   }
   return <span className="inline-flex leading-none">{el.text}</span>;

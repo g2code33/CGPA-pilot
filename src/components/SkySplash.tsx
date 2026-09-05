@@ -354,7 +354,12 @@ export function SkySplash({
             style={{ left: s.x, top: s.y, transform: 'translate(-50%, -50%)' }}
           >
             {hasStarImg ? (
-              <img src={starOverride?.image} alt="" className="pointer-events-none h-[30px] w-[30px] object-contain" />
+              <img
+                src={starOverride?.image}
+                alt=""
+                style={starOverride?.size ? { width: starOverride.size, height: starOverride.size } : undefined}
+                className="pointer-events-none h-[30px] w-[30px] object-contain"
+              />
             ) : (
               <span style={{ fontSize: 30, lineHeight: 1 }}>{starChar}</span>
             )}
@@ -388,6 +393,7 @@ export function SkySplash({
             <img
               src={planeOverride?.image}
               alt="plane"
+              style={planeOverride?.size ? { width: planeOverride.size, height: planeOverride.size } : undefined}
               className="pointer-events-none h-16 w-16 object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.35)]"
             />
           ) : planeEmoji ? (

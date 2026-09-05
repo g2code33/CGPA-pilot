@@ -324,6 +324,13 @@ export function validateAppearance(appearance: unknown, issues: string[], label 
     if (ic.image !== undefined && ic.image !== null && typeof ic.image !== 'string') {
       issues.push(`${il}.image must be a string (data URL) when present.`);
     }
+    if (
+      ic.size !== undefined &&
+      ic.size !== null &&
+      (typeof ic.size !== 'number' || !Number.isFinite(ic.size) || ic.size < 8 || ic.size > 256)
+    ) {
+      issues.push(`${il}.size must be a number between 8 and 256 (px) when present.`);
+    }
   };
   if (ap.appIcon !== undefined) checkIcon(ap.appIcon, `${label}.appIcon`);
   if (ap.icons !== undefined) {

@@ -164,7 +164,6 @@ function GroupSection({
             key={slot.id}
             title={`${slot.emoji} ${slot.label}`}
             hint={slot.hint}
-            shape={slot.shape}
             value={appearance?.icons?.[slot.id]}
             fallbackEmoji={slot.emoji}
             onChange={(v) => onCommit(v, slot.id)}
@@ -178,41 +177,36 @@ function GroupSection({
 function SlotEditor({
   title,
   hint,
-  shape,
   value,
   fallbackEmoji,
   onChange,
 }: {
   title: string;
   hint?: string;
-  shape?: string;
   value: AppIcon | undefined;
   fallbackEmoji: string;
   onChange: (v: AppIcon | undefined) => void;
 }) {
   const [emojiInput, setEmojiInput] = useState(value?.emoji ?? '');
   const img = value?.image;
+  const previewPx = value?.size ?? 48;
 
   function applyEmoji(emoji: string) {
     setEmojiInput(emoji);
     const trimmed = emoji.trim();
-    if (trimmed) onChange({ image: img, emoji: trimmed });
-    else if (img) onChange({ image: img, emoji: fallbackEmoji });
+    if (trimmed) onChange({ image: img, emoji: trimmed, size: value?.size });
+    else if (img) onChange({ image: img, emoji: fallbackEmoji, size: value?.size });
     else onChange(undefined);
   }
 
-  const isPlane = shape === 'plane';
+  function setSize(px: number) {
+    if (img) onChange({ image: img, emoji: emojiInput.trim() || fallbackEmoji, size: px });
+  }
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:flex-row sm:items-center">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span
-          className={`grid h-12 w-12 shrink-0 place-items-center overflow-hidden ring-1 ring-slate-200 ${
-            isPlane ? 'rounded-full bg-brand-50' : 'rounded-xl bg-white'
-          }`}
-        >
-          {renderPreview(value, fallbackEmoji, isPlane)}
-        </span>
+        <span className="shrink-0">{renderPreview(value, fallbackEmoji)}</span>
         <div className="min-w-0">
           <p className="text-sm font-extrabold text-slate-800">{title}</p>
           {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
@@ -229,6 +223,21 @@ function SlotEditor({
           placeholder="emoji, e.g. ⭐"
           className="input w-32"
         />
+        {img && (
+          <label className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-2 text-[11px] font-bold text-slate-500 ring-1 ring-slate-200">
+            Size
+            <input
+              type="range"
+              min={16}
+              max={160}
+              step={2}
+              value={previewPx}
+              onChange={(e) => setSize(Number(e.target.value))}
+              className="w-24 accent-brand-600"
+            />
+            <span className="w-9 text-right tabular-nums">{previewPx}px</span>
+          </label>
+        )}
         <ImageButton
           small
           label="⬆️ Image"
@@ -256,12 +265,13 @@ function SlotEditor({
   );
 }
 
-function renderPreview(value: AppIcon | undefined, fallbackEmoji: string, isPlane: boolean) {
+function renderPreview(value: AppIcon | undefined, fallbackEmoji: string) {
   const el = iconElement(value, fallbackEmoji);
   if (el.type === 'img') {
-    return <img src={el.src} alt="" className="h-11 w-11 object-contain p-1" />;
+    const px = el.sizePx ?? 48;
+    return <img src={el.src} alt="" className="object-contain" style={{ width: px, height: px }} />;
   }
-  return <span className="text-2xl">{el.text}</span>;
+  return <span className="text-2xl leading-none">{el.text}</span>;
 }
 
 function SectionTitle({ title, sub }: { title: string; sub?: string }) {

@@ -124,10 +124,12 @@ export function iconElement(
   icon: AppIcon | undefined,
   fallbackEmoji: string,
   cls = ''
-): { type: 'img' | 'emoji'; src?: string; alt?: string; text?: string; cls?: string } {
+): { type: 'img' | 'emoji'; src?: string; alt?: string; text?: string; cls?: string; sizePx?: number } {
   const src = icon?.image;
   if (src) {
-    return { type: 'img', src, alt: icon?.emoji ? `custom icon (${icon.emoji})` : 'custom icon', cls };
+    const sizePx =
+      typeof icon?.size === 'number' && Number.isFinite(icon.size) && icon.size > 0 ? icon.size : undefined;
+    return { type: 'img', src, alt: icon?.emoji ? `custom icon (${icon.emoji})` : 'custom icon', cls, sizePx };
   }
   return { type: 'emoji', text: icon?.emoji || fallbackEmoji, cls };
 }

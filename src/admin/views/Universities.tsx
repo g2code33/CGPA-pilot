@@ -32,11 +32,6 @@ export function Universities() {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-slate-900">Institutions</h1>
-        <p className="text-xs text-slate-500">
-          Universities, departments and programmes. Deactivation hides an
-          entity from students; deletion is blocked where published curricula
-          or child records exist.
-        </p>
       </header>
 
       {/* Add university */}
