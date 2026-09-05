@@ -294,9 +294,15 @@ export function AiSettings({ toast }: { toast: Toast }) {
                     return;
                   }
                   // Test the provider + key exactly as they are on screen —
-                  // no need to save first.
+                  // no need to save first. On failure, show the provider's
+                  // RAW error (detail) too — that is the evidence, the
+                  // friendly message is just a translation of it.
                   const r = await testAiKey(p, key.value);
-                  toast(r.ok ? `✅ ${keyLabel}: ${r.message}` : `⛔ ${keyLabel}: ${r.message}`);
+                  if (r.ok) toast(`✅ ${keyLabel}: ${r.message}`);
+                  else {
+                    const detail = r.detail ? ` · provider said: ${r.detail.slice(0, 160)}` : '';
+                    toast(`⛔ ${keyLabel}: ${r.message}${detail}`);
+                  }
                 }}
               />
             ))}

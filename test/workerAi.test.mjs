@@ -462,3 +462,44 @@ test('drafts: save → list → fetch → delete', async () => {
   res = await worker.fetch(req('/api/admin/drafts/d1', { method: 'GET', token: TOKEN }), e);
   assert.equal(res.status, 404);
 });
+
+test('test endpoint: rejected key → 200 with ok:false + the provider raw error (detail)', async () => {
+  const e = env();
+  __resetAi();
+  const provider = {
+    id: 'prov-test',
+    preset: 'nvidia-nim',
+    label: 'NVIDIA NIM (free)',
+    type: 'openai-compatible',
+    mode: 'worker',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: 'meta/llama-3.3-70b-instruct',
+    keys: [],
+    enabled: true,
+  };
+  const { f } = mockProvider([{ errorStatus: 401, errorMessage: 'Invalid API key provided' }]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = f;
+  try {
+    const res = await worker.fetch(
+      req('/api/admin/ai/test', {
+        method: 'POST',
+        token: TOKEN,
+        body: { provider, keyValue: 'nvapi-12345678' },
+      }),
+      e
+    );
+    // A failed KEY TEST is a normal, successful HTTP response — the result
+    // is in the body. No more 502 noise in the admin console.
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    const out = await j(res);
+    assert.equal(out.ok, false);
+    assert.match(out.message, /rejected the API key/i);
+    // The provider's RAW error is surfaced for diagnosis.
+    assert.match(out.detail ?? '', /HTTP 401/);
+    assert.match(out.detail ?? '', /Invalid API key provided/);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});

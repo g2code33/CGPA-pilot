@@ -638,7 +638,7 @@ export async function testAiKey(
   provider: AiProvider,
   keyValue: string,
   deps: AdminApiDeps = {}
-): Promise<{ ok: boolean; message: string; model?: string; ms?: number }> {
+): Promise<{ ok: boolean; message: string; detail?: string; model?: string; ms?: number }> {
   // Sends the provider + key exactly as the admin has them ON SCREEN —
   // testing works before the settings are saved (the Worker sanitizes the
   // same way it does on save).
@@ -653,7 +653,7 @@ export async function testAiKey(
       headers: { ...headers(deps), 'content-type': 'application/json' },
       body: JSON.stringify({ provider, keyValue }),
     });
-    const doc = (await safeJson(res)) as { ok: boolean; message: string; model?: string; ms?: number } | null;
+    const doc = (await safeJson(res)) as { ok: boolean; message: string; detail?: string; model?: string; ms?: number } | null;
     if (res.status === 401) return { ok: false, message: 'Sign in again — your admin session expired.' };
     return doc ?? { ok: false, message: `Test failed (HTTP ${res.status}).` };
   } catch {

@@ -403,12 +403,15 @@ export async function testAiKey(
   provider: AiProvider,
   key: AiKey,
   system: string
-): Promise<{ ok: boolean; message: string; model?: string; ms?: number }> {
+): Promise<{ ok: boolean; message: string; detail?: string; model?: string; ms?: number }> {
   const res = await callProvider(f, provider, key, system, [{ role: 'user', content: 'Reply with the single word: ready' }], 24, 0);
   if (res.ok) {
     return { ok: true, message: `Connected — “${res.text.slice(0, 60)}”`, model: provider.model, ms: res.ms };
   }
-  return { ok: false, message: friendlyProviderError(res.error) };
+  // `detail` carries the provider's RAW error (HTTP status + body) so the
+  // admin can see exactly what the provider said — the friendly `message`
+  // is a guess, the detail is the evidence.
+  return { ok: false, message: friendlyProviderError(res.error), detail: res.error.slice(0, 240) };
 }
 
 export { publicAiStatus };

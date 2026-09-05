@@ -590,7 +590,9 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         const key: AiKey = { id: 'test', label: 'test', value: b.keyValue.trim() };
         if (!key.value) return json({ ok: false, message: 'Enter the API key value first, then Test.' });
         const res = await testAiKey(fetch, { ...prov, keys: [key] }, key, current.systemPrompt);
-        return json(res, res.ok ? 200 : 502);
+        // The test REQUEST succeeded — the RESULT (res.ok) says whether the
+        // key works. A failed test is not an HTTP error (no 502 noise).
+        return json(res);
       }
 
       // Legacy: test a SAVED provider/key by id.
@@ -605,7 +607,7 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         return json({ ok: false, error: 'not-found', message: 'Unknown key for that provider.' }, 404);
       }
       const res = await testAiKey(fetch, provider, key, current.systemPrompt);
-      return json(res, res.ok ? 200 : 502);
+      return json(res);
     }
 
     return json({ ok: false, error: 'method-not-allowed' }, 405);
