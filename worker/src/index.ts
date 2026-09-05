@@ -541,15 +541,39 @@ async function publishedAppearance(env: Env): Promise<{ logo?: string; appName?:
   }
 }
 
+/**
+ * Short content hash of the logo bytes, appended to the manifest icon URL as
+ * `?v=…`. Whenever the admin changes the app logo the manifest itself
+ * changes, so browsers re-download the icon — Chrome/iOS otherwise keep the
+ * first PWA icon they ever installed, forever.
+ */
+async function iconVersion(bytes: Uint8Array): Promise<string> {
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest).slice(0, 8))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch {
+    let h = 2166136261;
+    for (let i = 0; i < bytes.length; i++) {
+      h ^= bytes[i];
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+}
+
 async function handlePwaIdentity(url: URL, req: Request, env: Env): Promise<Response> {
   const appearance = await publishedAppearance(env);
   const logoInfo = dataUrlInfo(appearance?.logo);
 
   if (url.pathname === '/app-icon') {
     if (logoInfo) {
+      // Cache-busted by the manifest's ?v=<logo-hash>, so it may be
+      // cached aggressively — the URL changes whenever the logo changes.
       return new Response(logoInfo.bytes, {
         status: 200,
-        headers: { 'content-type': logoInfo.mime, 'cache-control': 'public, max-age=300' },
+        headers: { 'content-type': logoInfo.mime, 'cache-control': 'public, max-age=31536000, immutable' },
       });
     }
     // No custom logo → the bundled default icon (static asset).
@@ -564,8 +588,10 @@ async function handlePwaIdentity(url: URL, req: Request, env: Env): Promise<Resp
   }
 
   // manifest.webmanifest — app name follows the admin branding, and the
-  // icons point at /app-icon (admin logo) or the bundled default.
+  // icons point at /app-icon (admin logo, cache-busted with a hash of the
+  // logo bytes) or the bundled default.
   const appName = appearance?.appName?.trim() || 'CGPA Pilot';
+  const logoVer = logoInfo ? await iconVersion(logoInfo.bytes) : null;
   const manifest = {
     name: appearance?.appName?.trim()
       ? `${appName} — Navigate Your Academic Future`
@@ -580,10 +606,10 @@ async function handlePwaIdentity(url: URL, req: Request, env: Env): Promise<Resp
     orientation: 'portrait',
     background_color: '#eef2f7',
     theme_color: '#4f46e5',
-    icons: logoInfo
+    icons: logoInfo && logoVer
       ? [
-          { src: '/app-icon', sizes: 'any', type: logoInfo.mime, purpose: 'any' },
-          { src: '/app-icon', sizes: 'any', type: logoInfo.mime, purpose: 'maskable' },
+          { src: `/app-icon?v=${logoVer}`, sizes: 'any', type: logoInfo.mime, purpose: 'any' },
+          { src: `/app-icon?v=${logoVer}`, sizes: 'any', type: logoInfo.mime, purpose: 'maskable' },
         ]
       : [
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

@@ -284,14 +284,39 @@ test('PWA identity: manifest + /app-icon reflect the admin-set logo', async () =
   const doc = await m.json();
   assert.equal(doc.short_name, 'Sky CGPA');
   assert.ok(doc.name.startsWith('Sky CGPA'));
-  assert.ok(doc.icons.some((i) => i.src === '/app-icon' && i.purpose === 'any' && i.type === 'image/png'));
-  assert.ok(doc.icons.some((i) => i.src === '/app-icon' && i.purpose === 'maskable'));
+  // Icon URLs are cache-busted with a hash of the logo bytes so browsers
+  // re-download the icon whenever the admin changes the logo.
+  assert.ok(doc.icons.some((i) => i.src.startsWith('/app-icon?v=') && i.purpose === 'any' && i.type === 'image/png'));
+  assert.ok(doc.icons.some((i) => i.src.startsWith('/app-icon?v=') && i.purpose === 'maskable'));
 
-  const ic = await worker.fetch(req('/app-icon'), e);
+  const ic = await worker.fetch(req(doc.icons[0].src), e);
   assert.equal(ic.status, 200);
   assert.equal(ic.headers.get('content-type'), 'image/png');
-  assert.match(ic.headers.get('cache-control') ?? '', /max-age=300/);
+  assert.match(ic.headers.get('cache-control') ?? '', /immutable/);
   assert.equal(Buffer.from(await ic.arrayBuffer()).toString('base64'), LOGO_B64);
+});
+
+test('PWA identity: changing the logo changes the manifest icon URL (cache bust)', async () => {
+  const e = env();
+  const L1 = Buffer.from('logo-bytes-version-one').toString('base64');
+  const L2 = Buffer.from('logo-bytes-version-two').toString('base64');
+  assert.equal(
+    (await publish(e, { ...makeValidCatalog(), appearance: { logo: `data:image/png;base64,${L1}` } })).status,
+    200
+  );
+  const d1 = await (await worker.fetch(req('/manifest.webmanifest'), e)).json();
+  assert.match(d1.icons[0].src, /^\/app-icon\?v=[0-9a-f]+$/);
+
+  assert.equal(
+    (await publish(e, { ...makeValidCatalog(), appearance: { logo: `data:image/png;base64,${L2}` } })).status,
+    200
+  );
+  const d2 = await (await worker.fetch(req('/manifest.webmanifest'), e)).json();
+  assert.notEqual(d2.icons[0].src, d1.icons[0].src, 'icon URL must change when the logo changes');
+
+  // The new URL serves the new icon bytes.
+  const ic = await worker.fetch(req(d2.icons[0].src), e);
+  assert.equal(Buffer.from(await ic.arrayBuffer()).toString('base64'), L2);
 });
 
 test('PWA identity without a custom logo keeps the bundled icon', async () => {
