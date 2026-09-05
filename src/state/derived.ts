@@ -25,6 +25,8 @@ import {
   totalProgrammeCredits,
   type SemesterSlot,
 } from '../services/structureService';
+import { historyJourney as computeHistoryJourney } from '../services/historyProgress';
+import type { HistoryJourney } from '../services/historyProgress';
 
 /**
  * Single derived-data hook for the UI. Components never calculate directly
@@ -45,8 +47,19 @@ export function useDerived() {
     const curriculum = getActiveCurriculum(context);
 
     const slots: SemesterSlot[] = curriculumSemesters(curriculum);
+    /**
+     * GPA-History mode: each entered row is a WHOLE-LEVEL CGPA ("Level X CGPA"),
+     * so it is weighted by the level's TOTAL credits (both semesters) — not
+     * just semester 1's load. Current mode keeps per-semester credits.
+     */
+    const levelCreditsFor = (levelIndex: number) =>
+      slots
+        .filter((s) => s.levelIndex === levelIndex)
+        .reduce((sum, s) => sum + s.credits, 0);
     const configuredCreditsFor = (levelIndex: number, semesterIndex: number) =>
-      configuredSemesterCredits(curriculum, levelIndex, semesterIndex);
+      state.mode === 'history'
+        ? levelCreditsFor(levelIndex)
+        : configuredSemesterCredits(curriculum, levelIndex, semesterIndex);
 
     // ── Single source of truth: how to interpret the selected semester ───
     const historyLast =
@@ -154,6 +167,22 @@ export function useDerived() {
       classification
     );
 
+    // ── GPA-History journey: Level 100 → current level ───────────────────
+    // The whole point of History mode is that the student's progress FROM
+    // SCRATCH is known: every level below the current one must be entered,
+    // and the app shows the running CGPA + trend. A partial history is
+    // flagged (missingRequired) and never produces a headline CGPA anywhere.
+    const historyJourney: HistoryJourney | null =
+      state.mode === 'history'
+        ? computeHistoryJourney({
+            semesters: state.semesters,
+            currentLevelIndex: state.baseline.levelIndex,
+            standing,
+            levelCreditsFor,
+            classify: (g) => classifyCgpa(g, classification)?.label ?? null,
+          })
+        : null;
+
     const remainingSlots = progress.remainingSlots;
     const remainingCredits =
       curriculum && progress.hasCreditData
@@ -163,7 +192,13 @@ export function useDerived() {
     const dashboard: DashboardModel = buildDashboard({
       currentPoints: snapshot.qualityPoints,
       currentCredits: snapshot.creditHours,
-      currentCgpa: snapshot.cgpa,
+      // An incomplete CGPA history must not present a "current" CGPA — the
+      // dashboard reports "awaiting data" and the journey strip says exactly
+      // which levels to go back and complete.
+      currentCgpa:
+        state.mode === 'history' && historyJourney && !historyJourney.complete
+          ? null
+          : snapshot.cgpa,
       currentLevelIndex: confirmedPosition.levelIndex,
       currentSemesterIndex: confirmedPosition.semesterIndex,
       targetCgpa: state.targetCgpa ?? 3.6,
@@ -210,6 +245,9 @@ export function useDerived() {
       classBand,
       pending,
       dashboard,
+      // GPA-History: the student's journey from Level 100 to now (null in
+      // Current mode) — journey view, completeness guard, trend.
+      historyJourney,
     };
   }, [state, context]);
 }

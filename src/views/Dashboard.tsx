@@ -38,6 +38,10 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   };
 
   const model = d.dashboard;
+  // GPA-History mode: the student's Level 100 → now journey (null otherwise).
+  const journey = d.historyJourney;
+  // A partial history must never show a confirmed CGPA anywhere.
+  const journeyIncomplete = !!journey && !journey.complete;
   const flight = model.flightPath.milestones;
   const positionRemainingCredits =
     d.state.mode === 'current' && d.progress.hasCreditData
@@ -95,10 +99,10 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
               Current position
             </p>
             <p className="mt-1 text-5xl font-black tabular-nums leading-none">
-              {fmt2(model.currentCgpa)}
+              {journeyIncomplete ? '—' : fmt2(model.currentCgpa)}
             </p>
             <p className="mt-2 text-xs font-semibold text-brand-100">
-              🏅 {model.currentClassLabel ?? 'Awaiting data'}
+              🏅 {journeyIncomplete ? 'History incomplete' : model.currentClassLabel ?? 'Awaiting data'}
             </p>
             <p className="text-xs text-brand-200">
               Level {model.currentLevel * 100} · {model.creditsCompleted} graded credits
@@ -138,6 +142,65 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
           </button>
         </div>
       </Card>
+
+      {/* ── JOURNEY STRIP (GPA-History mode: progress from scratch) ─── */}
+      {journey &&
+        (journey.hasAny || journey.missingRequired.length > 0 ? (
+          journey.complete ? (
+            journey.hasAny && journey.finalCgpa !== null && journey.firstCgpa !== null ? (
+              <Card className="no-print bg-gradient-to-r from-indigo-50 to-emerald-50 ring-indigo-200">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700">
+                  <span className="text-base">📈</span>
+                  <span>
+                    Your journey: <b>{journey.firstCgpa.toFixed(2)}</b> (Level 100) →{' '}
+                    <b>{journey.finalCgpa.toFixed(2)}</b> (Level {journey.currentLevelIndex * 100})
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {journey.levels.map((l) => (
+                      <span
+                        key={l.levelIndex}
+                        title={`${l.label}: ${l.cgpa !== null ? l.cgpa.toFixed(2) : 'not entered'}`}
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          l.cgpa !== null ? 'bg-indigo-600' : 'bg-white ring-1 ring-rose-400'
+                        }`}
+                      />
+                    ))}
+                  </span>
+                  {journey.trend && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${
+                        journey.trend === 'up'
+                          ? 'bg-emerald-100 text-emerald-700 ring-emerald-200'
+                          : journey.trend === 'down'
+                            ? 'bg-red-100 text-red-700 ring-red-200'
+                            : 'bg-slate-100 text-slate-600 ring-slate-200'
+                      }`}
+                    >
+                      {journey.trend === 'up'
+                        ? '↑ Rising'
+                        : journey.trend === 'down'
+                          ? '↓ Falling'
+                          : '→ Steady'}
+                    </span>
+                  )}
+                  <span className="text-slate-500">{journey.enteredCredits} credits</span>
+                </div>
+              </Card>
+            ) : null
+          ) : (
+            <Card className="no-print bg-red-50 ring-red-300">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-red-800">
+                <span className="text-base">⚠️</span>
+                <span>
+                  CGPA history incomplete — you're in Level {journey.currentLevelIndex * 100} but{' '}
+                  <b>{journey.missingRequired.map((lv) => `Level ${lv * 100}`).join(', ')}</b>{' '}
+                  {journey.missingRequired.length === 1 ? 'is' : 'are'} not entered. Go back and
+                  complete it before the app can confirm your CGPA.
+                </span>
+              </div>
+            </Card>
+          )
+        ) : null)}
 
       {/* ── FLIGHT STATUS ─────────────────────────────────────────── */}
       <Card className={`print-sheet ring-2 ${STATUS_TONE[model.status] ?? STATUS_TONE.unknown}`}>

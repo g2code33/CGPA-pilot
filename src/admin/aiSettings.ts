@@ -392,6 +392,18 @@ export interface AiStudentContext {
   targetCgpa?: number | null;
   plannedNextCredits?: number | null;
   hasAnyData?: boolean;
+  /**
+   * GPA-History mode: the student's journey from Level 100 to the current
+   * level — level CGPAs, the running (cumulative) CGPA, and which levels are
+   * still missing. Lets the assistant talk about the WHOLE progress, and
+   * warn when the history is incomplete.
+   */
+  journey?: {
+    level: number; // 1 = Level 100
+    cgpa: number | null;
+    cumulativeCgpa: number | null;
+    status: 'complete' | 'missing' | 'current';
+  }[];
 }
 
 /** Public view of the settings — what students may ever see. */

@@ -6,6 +6,7 @@ import { ideaTip } from '../infoTips';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { validateGpa } from '../services/gradingService';
 import { curriculumSemesterCourses } from '../services/structureService';
+import type { HistoryJourney } from '../services/historyProgress';
 import { fmt2 } from '../util/format';
 
 type StandingStatus = 'released' | 'notReleased' | 'justStarted';
@@ -186,6 +187,14 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
       ? state.semesters.some((s) => s.gpa !== null)
       : state.baseline.cgpa !== null;
 
+  // GPA-History completeness: the record only counts when EVERY level below
+  // the current one (and the current one, if its results are released) has a
+  // CGPA entered. A partial history must never yield a number or a proceed.
+  const journey = d.historyJourney;
+  const historyIncomplete =
+    state.mode === 'history' && !!journey && !journey.complete;
+  const canProceed = hasCgpa && !historyIncomplete;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -213,18 +222,54 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
         <PendingProjectionPanel pending={d.pending} target={state.targetCgpa} />
       )}
 
+      {/* GPA-History completeness guard — a partial history must NOT produce
+          a CGPA. Tell the student exactly which levels to go back and complete. */}
+      {historyIncomplete && journey && (
+        <Card className="border-2 border-red-300 bg-red-50">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 text-xl">⚠️</span>
+            <div>
+              <p className="text-sm font-black text-red-800">
+                Your CGPA history is incomplete — go back and complete it
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-red-700">
+                You are in <b>Level {state.baseline.levelIndex * 100}</b>, but these levels have no
+                CGPA entered:{' '}
+                <b>{journey.missingRequired.map((lv) => `Level ${lv * 100}`).join(', ')}</b>.
+                CGPA History tracks your journey from Level 100, so the app will not compute or
+                confirm a CGPA from partial data. Enter each missing level above, then continue.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card className="bg-slate-900 text-white ring-0">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Confirmed CGPA
+              {historyIncomplete ? 'CGPA — incomplete history' : 'Confirmed CGPA'}
             </p>
-            <p className="text-4xl font-black tabular-nums">{fmt2(record.cgpa)}</p>
+            <p className="text-4xl font-black tabular-nums">
+              {historyIncomplete ? '—' : fmt2(record.cgpa)}
+            </p>
           </div>
           <div className="text-right text-xs text-slate-300">
-            <p>{record.creditHours} graded credits</p>
-            {record.pendingCount > 0 && (
-              <p className="text-amber-300">⏳ {d.pending.pendingCreditHours} cr not released</p>
+            {historyIncomplete ? (
+              <>
+                <p className="font-bold text-amber-300">
+                  {journey?.missingRequired.length} level
+                  {journey?.missingRequired.length === 1 ? '' : 's'} missing
+                </p>
+                <p className="mt-0.5">complete it to see your CGPA</p>
+              </>
+            ) : (
+              <>
+                <p>{record.creditHours} graded credits</p>
+                {record.pendingCount > 0 && (
+                  <p className="text-amber-300">⏳ {d.pending.pendingCreditHours} cr not released</p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -232,15 +277,21 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
 
       {/* Proceed — plain & disabled until a CGPA exists, then coloured & enabled */}
       <button
-        onClick={() => hasCgpa && onProceed?.()}
-        disabled={!hasCgpa}
+        onClick={() => canProceed && onProceed?.()}
+        disabled={!canProceed}
         className={`w-full rounded-2xl px-6 py-4 text-base font-black transition active:scale-[0.99] ${
-          hasCgpa
+          canProceed
             ? 'bg-brand-600 text-white shadow-lg hover:bg-brand-700'
             : 'cursor-not-allowed bg-slate-200 text-slate-400 ring-1 ring-slate-300'
         }`}
       >
-        {hasCgpa ? 'Proceed to Tools →' : 'Enter your CGPA to continue'}
+        {historyIncomplete
+          ? `Complete ${journey?.missingRequired.length} missing level${
+              journey?.missingRequired.length === 1 ? '' : 's'
+            } to continue`
+          : canProceed
+            ? 'Proceed to Tools →'
+            : 'Enter your CGPA to continue'}
       </button>
     </div>
   );
@@ -738,7 +789,182 @@ function HistoryMode() {
           </>
         )}
       </Card>
+
+      {/* The payoff of History mode: the whole journey, Level 100 → now. */}
+      {d.historyJourney && d.historyJourney.hasAny && (
+        <JourneyCard journey={d.historyJourney} maxPoints={d.maxPoints} />
+      )}
     </div>
+  );
+}
+
+/**
+ * "Your journey" — the Level 100 → current-level view that makes History
+ * mode worth using: a per-level table (level CGPA, running CGPA, band), a
+ * trend line, and a start→now summary. Missing levels are shown in place
+ * so the student sees exactly what's left to complete.
+ */
+function JourneyCard({
+  journey,
+  maxPoints,
+}: {
+  journey: HistoryJourney;
+  maxPoints: number;
+}) {
+  const { levels, trend, firstCgpa, finalCgpa, complete, missingRequired, enteredCredits } =
+    journey;
+  const n = levels.length;
+  const trendChip =
+    trend === 'up'
+      ? { icon: '↑', text: 'Rising', cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200' }
+      : trend === 'down'
+        ? { icon: '↓', text: 'Falling', cls: 'bg-red-100 text-red-700 ring-red-200' }
+        : trend === 'flat'
+          ? { icon: '→', text: 'Steady', cls: 'bg-slate-100 text-slate-600 ring-slate-200' }
+          : null;
+  const entered = levels.filter((l) => l.cgpa !== null);
+  const lastEntered = entered[entered.length - 1];
+
+  // ── Trend chart: one point per level (entered = filled, missing = hollow) ─
+  const W = 320;
+  const H = 116;
+  const PL = 10;
+  const PR = 10;
+  const PT = 12;
+  const PB = 20;
+  const x = (i: number) => (n <= 1 ? W / 2 : PL + (i / (n - 1)) * (W - PL - PR));
+  const yMax = Math.max(maxPoints, 4);
+  const y = (v: number) => PT + (1 - Math.min(1, Math.max(0, v / yMax))) * (H - PT - PB);
+  const segs: string[] = [];
+  for (let i = 1; i < n; i++) {
+    if (levels[i - 1].cgpa !== null && levels[i].cgpa !== null) {
+      segs.push(`M ${x(i - 1).toFixed(1)} ${y(levels[i - 1].cgpa!).toFixed(1)} L ${x(i).toFixed(1)} ${y(levels[i].cgpa!).toFixed(1)}`);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center gap-2">
+        <SectionTitle
+          icon="📈"
+          title="Your journey"
+          subtitle="Your progress from scratch — Level 100 to where you are now."
+        />
+        {trendChip && lastEntered && firstCgpa !== null && (
+          <span
+            className={`ml-auto rounded-full px-3 py-1 text-[11px] font-black ring-1 ${trendChip.cls}`}
+          >
+            {trendChip.icon} {trendChip.text} · {firstCgpa.toFixed(2)} →{' '}
+            {lastEntered.cgpa!.toFixed(2)}
+          </span>
+        )}
+      </div>
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        role="img"
+        aria-label="CGPA by level, from Level 100 to your current level"
+      >
+        {segs.map((d, i) => (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke="#4f46e5"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+          />
+        ))}
+        {levels.map((l, i) =>
+          l.cgpa !== null ? (
+            <circle key={i} cx={x(i)} cy={y(l.cgpa)} r={4.5} fill="#4f46e5" stroke="#fff" strokeWidth={1.5} />
+          ) : (
+            <g key={i}>
+              <line
+                x1={x(i)}
+                y1={H - PB}
+                x2={x(i)}
+                y2={H - PB - 14}
+                stroke="#f43f5e"
+                strokeWidth={1.5}
+                strokeDasharray="3 2"
+              />
+              <circle cx={x(i)} cy={H - PB - 20} r={4} fill="none" stroke="#f43f5e" strokeWidth={1.5} />
+            </g>
+          )
+        )}
+        {levels.map((l, i) => (
+          <text
+            key={`t${i}`}
+            x={x(i)}
+            y={H - 5}
+            fontSize={9}
+            fontWeight={700}
+            textAnchor="middle"
+            fill={l.cgpa !== null ? '#0f172a' : '#f43f5e'}
+          >
+            {l.levelIndex * 100}
+          </text>
+        ))}
+      </svg>
+
+      {/* Per-level table */}
+      <div className="mt-1 overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-slate-400">
+              <th className="pb-1 pr-2 font-black">Level</th>
+              <th className="pb-1 pr-2 text-right font-black">Level CGPA</th>
+              <th className="pb-1 pr-2 text-right font-black">Running CGPA</th>
+              <th className="pb-1 text-right font-black">Band</th>
+            </tr>
+          </thead>
+          <tbody>
+            {levels.map((l) => (
+              <tr key={l.levelIndex} className="border-t border-slate-100">
+                <td className="py-1.5 pr-2 font-bold text-slate-700">{l.label}</td>
+                <td className="py-1.5 pr-2 text-right font-black tabular-nums text-slate-900">
+                  {l.cgpa !== null ? l.cgpa.toFixed(2) : (
+                    l.status === 'missing' ? (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-700">not entered</span>
+                    ) : (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">in progress</span>
+                    )
+                  )}
+                </td>
+                <td className="py-1.5 pr-2 text-right tabular-nums text-slate-600">
+                  {l.cumulativeCgpa !== null ? l.cumulativeCgpa.toFixed(2) : '—'}
+                </td>
+                <td className="py-1.5 text-right font-bold text-slate-500">
+                  {l.classification ?? '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Start → now summary */}
+      <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold leading-relaxed text-slate-600 ring-1 ring-slate-200">
+        {complete && finalCgpa !== null && firstCgpa !== null ? (
+          <>
+            You started at <b>{firstCgpa.toFixed(2)}</b> (Level 100) and have reached{' '}
+            <b>{finalCgpa.toFixed(2)}</b> running CGPA across{' '}
+            <b>{entered.length} level{entered.length === 1 ? '' : 's'}</b> · {enteredCredits}{' '}
+            credits. {trend === 'up' ? 'Your trajectory is climbing — keep it going.' : trend === 'down' ? 'Your trajectory is slipping — the tools below show how to turn it around.' : 'You are holding steady.'}
+          </>
+        ) : (
+          <>
+            You have entered <b>{entered.length} of {n} level{n === 1 ? '' : 's'}</b>
+            {missingRequired.length > 0 && (
+              <> — complete <b>{missingRequired.map((lv) => `Level ${lv * 100}`).join(', ')}</b></>
+            )}{' '}
+            to lock in your full journey CGPA.
+          </>
+        )}
+      </p>
+    </Card>
   );
 }
 

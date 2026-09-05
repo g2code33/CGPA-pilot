@@ -169,6 +169,30 @@ export function formatAiContext(ctx: AiStudentContext): string {
       }
     }
   }
+  if (ctx.mode === 'history' && Array.isArray(ctx.journey) && ctx.journey.length) {
+    const missing = ctx.journey.filter((l) => l.status === 'missing');
+    lines.push(
+      'LEVEL JOURNEY (the student\'s progress from Level 100 to their current level — treat this as the whole trajectory, not just the latest number):'
+    );
+    for (const l of ctx.journey) {
+      lines.push(
+        `  ▸ Level ${l.level * 100}: level CGPA ${l.cgpa != null ? l.cgpa.toFixed(2) : '—'} · running CGPA ${
+          l.cumulativeCgpa != null ? l.cumulativeCgpa.toFixed(2) : '—'
+        }${l.status === 'missing' ? ' · NOT ENTERED YET' : l.status === 'current' ? ' · current level (in progress)' : ''}`
+      );
+    }
+    if (missing.length) {
+      lines.push(
+        `  ⚠ The CGPA history is INCOMPLETE — ${missing
+          .map((l) => `Level ${l.level * 100}`)
+          .join(', ')} ${missing.length === 1 ? 'is' : 'are'} not entered. Do NOT compute, confirm or quote a final CGPA for this student until they are; tell them to go back and complete those levels first.`
+      );
+    } else {
+      lines.push(
+        '  ✓ The CGPA history is complete — use the running CGPA as the student\'s true progress and mention the direction of the journey (rising / falling / steady) when it is relevant to the question.'
+      );
+    }
+  }
   if (ctx.pendingCredits) lines.push(`PENDING CREDITS (awaiting release): ${ctx.pendingCredits}`);
   if (ctx.targetCgpa != null) lines.push(`TARGET CGPA: ${ctx.targetCgpa.toFixed(2)}`);
   if (ctx.plannedNextCredits) lines.push(`PLANNED NEXT-SEMESTER CREDITS: ${ctx.plannedNextCredits}`);

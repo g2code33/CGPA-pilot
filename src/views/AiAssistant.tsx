@@ -126,19 +126,26 @@ export function AiAssistant({
     setLiveText('');
     setMeta(null);
 
+    // An incomplete CGPA history never yields a "confirmed" CGPA — the
+    // journey block below tells the model exactly what is missing.
+    const historyIncomplete =
+      state.mode === 'history' && !!d.historyJourney && !d.historyJourney.complete;
     const ctx = buildAiContext(
       state,
       {
         creditHours: d.record.creditHours,
         points: d.record.points,
-        cgpa: d.record.cgpa,
+        cgpa: historyIncomplete ? null : d.record.cgpa,
         pendingCreditHours: d.record.pendingCreditHours,
       },
       d.classBand?.label ?? null,
       (() => {
         const c = resolveContext();
         return { university: c.university?.shortName || c.university?.name, school: c.school?.name, programme: c.programme?.name };
-      })()
+      })(),
+      // History mode: pass the Level 100 → now journey so the assistant can
+      // talk about the whole progress (and the completeness rule).
+      d.historyJourney
     );
 
     const ctrl = new AbortController();

@@ -305,16 +305,22 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   const effectiveScreen: Screen = screen === 'whatif' && !whatIfAllowed ? 'home' : screen;
 
   // ── Shared derived values (used by both the mobile and desktop views) ──
+  // An incomplete CGPA history (a selected level without ALL earlier levels
+  // entered) must never count as "results entered" — the tools stay locked
+  // and the app keeps telling the student to go back and complete it.
+  const historyIncomplete =
+    d.state.mode === 'history' && !!d.historyJourney && !d.historyJourney.complete;
   // "Results entered" == the user has typed a CGPA (Quick: current standing;
-  // History: at least one completed level). This mirrors the Proceed gate so
+  // History: a COMPLETE level history). This mirrors the Proceed gate so
   // proceeding home actually unlocks the tools and shows the entered state.
   const resultsEntered =
     d.state.mode === 'history'
-      ? d.state.semesters.some((s) => s.gpa !== null)
+      ? d.state.semesters.some((s) => s.gpa !== null) && !historyIncomplete
       : d.state.baseline.cgpa !== null;
   const hasData = resultsEntered;
-  const heroCgpa =
-    d.record.cgpa !== null
+  const heroCgpa = historyIncomplete
+    ? null
+    : d.record.cgpa !== null
       ? d.record.cgpa
       : d.state.mode === 'history'
         ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)

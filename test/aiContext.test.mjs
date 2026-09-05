@@ -132,3 +132,79 @@ test('history mode counts entered COURSES as data (even without a GPA yet)', () 
   });
   assert.equal(hasAnyStudentData(s), true);
 });
+
+// ── GPA-History JOURNEY in the AI context ─────────────────────────────────
+
+test('history mode: the Level 100→now journey is passed to the model (complete)', () => {
+  const s = quickState({
+    inputMode: 'history',
+    mode: 'history',
+    semesters: [
+      { id: 's1', label: 'L100', levelIndex: 1, semesterIndex: 1, gpa: 2.9, creditHoursOverride: 24, courses: [], pending: false },
+      { id: 's2', label: 'L200', levelIndex: 2, semesterIndex: 1, gpa: 3.42, creditHoursOverride: 24, courses: [], pending: false },
+      { id: 's3', label: 'L300', levelIndex: 3, semesterIndex: 1, gpa: 3.6, creditHoursOverride: 24, courses: [], pending: false },
+    ],
+  });
+  const journey = {
+    levels: [
+      { levelIndex: 1, label: 'Level 100', cgpa: 2.9, credits: 24, cumulativeCgpa: 2.9, classification: null, status: 'complete' },
+      { levelIndex: 2, label: 'Level 200', cgpa: 3.42, credits: 24, cumulativeCgpa: 3.16, classification: null, status: 'complete' },
+      { levelIndex: 3, label: 'Level 300', cgpa: 3.6, credits: 24, cumulativeCgpa: 3.3067, classification: null, status: 'complete' },
+    ],
+    currentLevelIndex: 3,
+    complete: true,
+    missingRequired: [],
+    hasAny: true,
+    enteredCredits: 72,
+    firstCgpa: 2.9,
+    finalCgpa: 3.3067,
+    trend: 'up',
+  };
+  const ctx = buildAiContext(s, { creditHours: 72, points: 238, cgpa: 3.3067, pendingCreditHours: 0 }, null, { university: 'TU' }, journey);
+  assert.equal(ctx.journey.length, 3);
+  assert.equal(ctx.journey[0].level, 1);
+  assert.equal(ctx.journey[2].status, 'complete');
+  const block = formatAiContext(ctx);
+  assert.match(block, /LEVEL JOURNEY/);
+  assert.match(block, /Level 100: level CGPA 2\.90 · running CGPA 2\.90/);
+  assert.match(block, /✓ The CGPA history is complete/);
+});
+
+test('history mode: INCOMPLETE journey → the model is told not to confirm a CGPA', () => {
+  const s = quickState({
+    inputMode: 'history',
+    mode: 'history',
+    semesters: [
+      { id: 's1', label: 'L100', levelIndex: 1, semesterIndex: 1, gpa: 2.9, creditHoursOverride: 24, courses: [], pending: false },
+    ],
+    baseline: { levelIndex: 3, semesterIndex: 1, cgpa: null, creditHours: 0, pendingCreditHours: 0, standing: 'released' },
+  });
+  const journey = {
+    levels: [
+      { levelIndex: 1, label: 'Level 100', cgpa: 2.9, credits: 24, cumulativeCgpa: 2.9, classification: null, status: 'complete' },
+      { levelIndex: 2, label: 'Level 200', cgpa: null, credits: 24, cumulativeCgpa: null, classification: null, status: 'missing' },
+      { levelIndex: 3, label: 'Level 300', cgpa: null, credits: 24, cumulativeCgpa: null, classification: null, status: 'missing' },
+    ],
+    currentLevelIndex: 3,
+    complete: false,
+    missingRequired: [2, 3],
+    hasAny: true,
+    enteredCredits: 24,
+    firstCgpa: 2.9,
+    finalCgpa: null,
+    trend: null,
+  };
+  const ctx = buildAiContext(s, { creditHours: 24, points: 69.6, cgpa: 2.9, pendingCreditHours: 0 }, null, { university: 'TU' }, journey);
+  const block = formatAiContext(ctx);
+  assert.match(block, /LEVEL JOURNEY/);
+  assert.match(block, /Level 200: level CGPA — · running CGPA — · NOT ENTERED YET/);
+  assert.match(block, /⚠ The CGPA history is INCOMPLETE — Level 200, Level 300 are not entered/);
+  assert.match(block, /Do NOT compute, confirm or quote a final CGPA/);
+});
+
+test('current mode never carries a journey block', () => {
+  const s = quickState({ baseline: { levelIndex: 2, semesterIndex: 1, cgpa: 3.4, creditHours: 48, pendingCreditHours: 0 } });
+  const ctx = buildAiContext(s, { creditHours: 48, points: 163.2, cgpa: 3.4, pendingCreditHours: 0 }, 'Second Class Upper', { university: 'TU' });
+  assert.equal(ctx.journey, undefined);
+  assert.doesNotMatch(formatAiContext(ctx), /LEVEL JOURNEY/);
+});

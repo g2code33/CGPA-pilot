@@ -10,6 +10,7 @@
 
 import type { AiStudentContext } from '../admin/aiSettings';
 import type { AcademicState } from '../state/studentState';
+import type { HistoryJourney } from './historyProgress';
 
 export interface AiRecord {
   creditHours: number;
@@ -36,12 +37,15 @@ export function hasAnyStudentData(state: AcademicState): boolean {
   return state.baseline.cgpa !== null;
 }
 
-/** Build the AI context from the academic state + derived record + context. */
+/** Build the AI context from the academic state + derived record + context.
+ *  `journey` (GPA-History mode only) carries the Level 100 → now progress
+ *  so the assistant can answer about the student's whole trajectory. */
 export function buildAiContext(
   state: AcademicState,
   record: AiRecord,
   classification: string | null,
-  institution: AiInstitution
+  institution: AiInstitution,
+  journey?: HistoryJourney | null
 ): AiStudentContext {
   const hasAnyData = hasAnyStudentData(state);
 
@@ -80,5 +84,17 @@ export function buildAiContext(
     targetCgpa: state.targetCgpa,
     plannedNextCredits: state.plannedNextCreditHours,
     hasAnyData,
+    // Level 100 → now journey (History mode) — per-level CGPA, the running
+    // CGPA, and which levels are still missing (the model must respect the
+    // completeness rule and never invent CGPAs for missing levels).
+    journey:
+      state.mode === 'history' && journey
+        ? journey.levels.map((l) => ({
+            level: l.levelIndex,
+            cgpa: l.cgpa,
+            cumulativeCgpa: l.cumulativeCgpa,
+            status: l.status,
+          }))
+        : undefined,
   };
 }
