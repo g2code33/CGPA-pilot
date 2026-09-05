@@ -1,0 +1,45 @@
+diff --git a/.github/workflows/build-desktop.yml b/.github/workflows/build-desktop.yml
+index 7910a50..8ac7e27 100644
+--- a/.github/workflows/build-desktop.yml
++++ b/.github/workflows/build-desktop.yml
+@@ -202,9 +202,18 @@ jobs:
+           if [ -z "$APK" ]; then echo "No release APK found."; exit 0; fi
+           cp "$APK" "cgpa-pilot-$VERSION.apk"
+           echo "Uploading cgpa-pilot-$VERSION.apk to $TAG ..."
+-          gh release upload "$TAG" "cgpa-pilot-$VERSION.apk" --clobber 2>/dev/null \
+-            || gh release create "$TAG" "cgpa-pilot-$VERSION.apk" --title "CGPA Pilot $VERSION" --notes "Android APK for $VERSION" \
+-            || echo "Upload failed (release busy) — retries on next push."
++          # The release job may still be creating the release — retry until it
++          # exists, then fail LOUDLY if it never does (no silent skips).
++          for i in 1 2 3 4 5 6; do
++            if gh release upload "$TAG" "cgpa-pilot-$VERSION.apk" --clobber; then
++              echo "Android APK uploaded to $TAG."
++              exit 0
++            fi
++            echo "Release $TAG not ready yet (attempt $i/6) — waiting 15s..."
++            sleep 15
++          done
++          echo "::error::Could not upload the Android APK to $TAG after 6 attempts."
++          exit 1
+ 
+   ios:
+     name: Build iOS
+@@ -236,6 +245,15 @@ jobs:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+         run: |
+           VERSION=$(node -p "require('./package.json').version")
+-          gh release upload "v$VERSION" "cgpa-pilot-$VERSION.ios.app.zip" --clobber 2>/dev/null \
+-            || gh release create "v$VERSION" "cgpa-pilot-$VERSION.ios.app.zip" --title "CGPA Pilot $VERSION" \
+-            || echo "Upload failed (release busy) — retries on next push."
++          # The release job may still be creating the release — retry until it
++          # exists, then fail LOUDLY if it never does (no silent skips).
++          for i in 1 2 3 4 5 6; do
++            if gh release upload "v$VERSION" "cgpa-pilot-$VERSION.ios.app.zip" --clobber; then
++              echo "iOS app uploaded to v$VERSION."
++              exit 0
++            fi
++            echo "Release v$VERSION not ready yet (attempt $i/6) — waiting 15s..."
++            sleep 15
++          done
++          echo "::error::Could not upload the iOS app to v$VERSION after 6 attempts."
++          exit 1
