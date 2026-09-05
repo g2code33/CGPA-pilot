@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useAdmin } from '../adminStore';
 import type { Programme, School, University } from '../../config/types';
+import { AssetSizeBadge, CatalogSizeBanner, assetBytes } from '../components/catalogSizeUi';
+import { humanBytes } from '../catalogSize';
 import {
   addUniversity,
   updateUniversity,
@@ -33,6 +35,9 @@ export function Universities() {
       <header>
         <h1 className="text-xl font-black text-slate-900">Institutions</h1>
       </header>
+
+      {/* Institution logos are stored inside the publish record too. */}
+      <CatalogSizeBanner catalog={catalog} />
 
       {/* Add university */}
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -342,7 +347,9 @@ function LogoField({
     setErr('');
     if (!file) return;
     if (file.size > 2_000_000) {
-      setErr('Keep logos under ~2 MB.');
+      setErr(
+        `This image is ${humanBytes(file.size)} — too big. The whole catalog must stay under ~2 MB to publish; use an image under ~300 KB (resize to ~512×512, save as JPEG).`
+      );
       return;
     }
     if (!/^image\//.test(file.type)) {
@@ -368,6 +375,8 @@ function LogoField({
           🖼️
         </span>
       )}
+      {/* Stored cost of an uploaded logo (plain URLs cost nothing). */}
+      <AssetSizeBadge bytes={assetBytes(value)} />
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

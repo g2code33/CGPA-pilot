@@ -73,6 +73,12 @@ import {
 } from './ai';
 import { sanitizeProvider, validateAiSettings, type AiKey, type AiProvider, type AiSettings } from '../../src/admin/aiSettings';
 import { buildDistribution } from '../../src/admin/catalogPublish';
+import {
+  catalogAssetList,
+  largestAssetsSummary,
+  oversizeCatalogMessage,
+  D1_VALUE_SAFE_BYTES,
+} from '../../src/admin/catalogSize';
 
 export interface Env {
   /** D1 database holding the authoritative configuration. */
@@ -94,8 +100,8 @@ const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // D1 hard limit: ~2 MB per bound value. The publish writes TWO values
 // (catalog JSON + derived distribution JSON), so BOTH must stay under it —
 // the usual culprit is large base64 icon/logo images inside the catalog.
-const D1_VALUE_LIMIT_BYTES = 2 * 1024 * 1024;
-const D1_VALUE_SAFE_BYTES = 1_900_000; // small margin under the hard limit
+// The limits + asset measurement live in the shared module so the browser
+// pre-check, the admin's size badges and these messages always agree.
 
 /** Bytes of the JSON form a string will take as a D1 bound value. */
 function jsonByteLength(value: unknown): number {
@@ -479,12 +485,13 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         return json({ ok: false, error: 'not-serializable', message: 'The catalog cannot be converted to JSON — check for broken (non-serializable) fields.' }, 400);
       }
       if (biggest > D1_VALUE_SAFE_BYTES) {
-        const mb = (n: number) => (n / 1_000_000).toFixed(1);
+        // Name the biggest embedded images so the admin knows EXACTLY what
+        // to shrink (same shared message as the browser's pre-check).
         return json(
           {
             ok: false,
             error: 'payload-too-large',
-            message: `The catalog is ${mb(biggest)} MB as stored JSON — the database limit is ~2 MB per record. The usual cause is large icon or logo images (stored as base64). Use smaller images (e.g. under ~300 KB each, resized PNG/JPEG), then try again.`,
+            message: oversizeCatalogMessage(biggest, catalogAssetList(catalog)),
           },
           413
         );
@@ -923,11 +930,14 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         } else if (cBytes < 0 || dBytes < 0) {
           checks.push({ id: 'publish-path', label: 'Publish path (dry run)', ok: false, detail: 'The stored catalog cannot be serialized to JSON — a publish would fail.' });
         } else if (Math.max(cBytes, dBytes) > D1_VALUE_SAFE_BYTES) {
+          const top = largestAssetsSummary(catalogAssetList(storedDoc.catalog as AdminCatalog), 3);
           checks.push({
             id: 'publish-path',
             label: 'Publish path (dry run)',
             ok: false,
-            detail: `Publish WOULD FAIL — the stored catalog is ${mb(Math.max(cBytes, dBytes))} MB as JSON (catalog ${mb(cBytes)} MB / derived ${mb(dBytes)} MB) against the ~2 MB database limit. Shrink the largest icon/logo images, then publish.`,
+            detail: `Publish WOULD FAIL — the stored catalog is ${mb(Math.max(cBytes, dBytes))} MB as JSON (catalog ${mb(cBytes)} MB / derived ${mb(dBytes)} MB) against the ~2 MB database limit.${
+              top ? ` Largest images: ${top}.` : ''
+            } Shrink those images (or empty the Recycle bin), then publish.`,
           });
         } else {
           checks.push({

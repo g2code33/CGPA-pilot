@@ -13,6 +13,7 @@ import {
 } from '../../config/branding';
 import { Wordmark, Tagline } from '../../components/Wordmark';
 import { readImageFile } from '../appearanceEdit';
+import { AssetSizeBadge, CatalogSizeBanner, assetBytes } from '../components/catalogSizeUi';
 
 export function IconManager() {
   const { catalog, apply } = useAdmin();
@@ -35,6 +36,10 @@ export function IconManager() {
       <header>
         <h1 className="text-xl font-black text-slate-900">Icons &amp; branding</h1>
       </header>
+
+      {/* Every image below is stored INSIDE the publish record (base64) —
+          the banner keeps the whole catalog under the ~2 MB database limit. */}
+      <CatalogSizeBanner catalog={catalog} />
 
       {toast && (
         <div className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white">
@@ -107,7 +112,10 @@ export function IconManager() {
 
         {/* App logo */}
         <div className="mt-4 border-t border-slate-100 pt-4">
-          <p className="text-sm font-extrabold text-slate-800">App logo</p>
+          <p className="flex items-center gap-2 text-sm font-extrabold text-slate-800">
+            App logo
+            <AssetSizeBadge bytes={assetBytes(appearance?.logo)} />
+          </p>
           <p className="mt-0.5 text-[11px] text-slate-500">
             The mark on the opening screen (and the PWA/tab icon). Its size scales in place — the layout never moves.
           </p>
@@ -274,7 +282,10 @@ function SlotEditor({
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="shrink-0">{renderPreview(value, fallbackEmoji)}</span>
         <div className="min-w-0">
-          <p className="text-sm font-extrabold text-slate-800">{title}</p>
+          <p className="flex items-center gap-1.5 text-sm font-extrabold text-slate-800">
+            {title}
+            <AssetSizeBadge bytes={assetBytes(img)} />
+          </p>
           {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             {img ? 'custom image set' : value?.emoji ? `emoji ${value.emoji}` : 'using default'}
@@ -407,8 +418,9 @@ function BrandTextControls({
     <div className={`rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200 ${className}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-sm font-extrabold text-slate-800">
+          <p className="flex items-center gap-1.5 text-sm font-extrabold text-slate-800">
             {title}
+            <AssetSizeBadge bytes={assetBytes(image)} />
             {hint && <span className="ml-1.5 text-[10px] font-semibold text-slate-400">{hint}</span>}
           </p>
           <input

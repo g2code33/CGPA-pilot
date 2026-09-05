@@ -239,6 +239,9 @@ test('publish: a catalog that would exceed the D1 value limit is 413 with an act
   assert.equal(doc.error, 'payload-too-large');
   assert.match(doc.message, /limit/i);
   assert.match(doc.message, /image/i); // tells the admin WHAT to shrink
+  // v1.0.19: the message NAMES the exact image to shrink (2 MB of base64
+  // 'A' chars = 1.5 MB decoded).
+  assert.match(doc.message, /Largest images: App icon \(1\.5 MB\)/);
   // Nothing was stored.
   assert.equal((await worker.fetch(req('/api/config/meta'), e)).status, 404);
 });
@@ -288,6 +291,8 @@ test('diagnostics: the publish dry-run check CATCHES an over-limit stored catalo
   assert.equal(byId['publish-path'].ok, false);
   assert.match(byId['publish-path'].detail, /would fail|limit/i);
   assert.match(byId['publish-path'].detail, /icon|logo|image/i);
+  // v1.0.19: the dry run also NAMES the exact image to shrink.
+  assert.match(byId['publish-path'].detail, /Largest images: App icon \(1\.5 MB\)/);
 });
 
 test('no D1 binding → 503 not-configured (reads and admin)', async () => {

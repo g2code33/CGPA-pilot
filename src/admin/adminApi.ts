@@ -36,6 +36,12 @@ import {
 import type { AdminCatalog } from './adminStorage';
 import type { AiProvider, AiSettings } from './aiSettings';
 import { validateAdminCatalogForPublish } from './catalogValidation';
+import { buildDistribution } from './catalogPublish';
+import {
+  catalogAssetList,
+  oversizeCatalogMessage,
+  D1_VALUE_SAFE_BYTES,
+} from './catalogSize';
 
 export type BackendState =
   | 'unknown' // not checked yet
@@ -450,6 +456,15 @@ export async function publishCatalog(
   const pre = preflightPublish(catalog);
   if (!pre.ok) {
     return { ok: false, error: 'Validation failed — fix the issues before publishing.', issues: pre.issues };
+  }
+  // SIZE PRE-CHECK (mirrors the server's): the catalog is written as a single
+  // ~2 MB database record, so catch an over-limit catalog BEFORE any network
+  // call and name the exact images to shrink (instead of a round-trip 413).
+  // Both stored values are checked, exactly like the server does.
+  const jsonBytes = (v: unknown) => new Blob([JSON.stringify(v)]).size;
+  const biggest = Math.max(jsonBytes(catalog), jsonBytes(buildDistribution(catalog)));
+  if (biggest > D1_VALUE_SAFE_BYTES) {
+    return { ok: false, error: oversizeCatalogMessage(biggest, catalogAssetList(catalog)) };
   }
   const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return { ok: false, error: 'No network available in this environment.' };
