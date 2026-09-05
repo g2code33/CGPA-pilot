@@ -48,6 +48,31 @@ changes — the admin cannot publish blind.
 
 Tests: `test/catalogDiff.test.mjs`.
 
+### Live student preview (a real live seeing at the student end)
+“🔍 Preview changes” opens by default on a **📱 Live student site** tab:
+the ACTUAL student app (`src/App.tsx`) rendered full-screen, running on the
+**working catalog** — the same `buildDistribution()` the backend uses for
+publishing, injected into the in-memory runtime catalog (the published
+config cache is never written; the previous catalog is restored on close).
+The preview starts at the student's real first-run flow (institution
+selection → mode → tools) with an empty, isolated session.
+
+**Jump to the change**: a navigator bar chips one per changed area
+(🏛️ Universities / 📚 Curricula / 🎨 Branding / ⚙️ Settings) that
+navigates the embedded app to the screen where the change lands and shows a
+hint bar (“visible in Next Semester + Milestones”, …). Affected tool tiles
+carry an amber **● changed** mark; the banner shows the screen you are
+viewing. The field-level **📋 Change list** tab remains available for exact
+old → new values.
+
+Publishing from the preview publishes **exactly the catalog being previewed**
+(`publish(note, catalogToPublish)` in the admin store) — previewing a draft
+and pressing 🚀 Publish ships that draft, never the working catalog.
+
+Tests: `test/livePreview.test.mjs` (working → distribution → runtime
+catalog → student accessors; drafts excluded; deep-clone isolation;
+restore).
+
 ---
 
 ## 2 · CGPA Pilot AI (student)

@@ -262,16 +262,22 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
     onToast('💾 Saved on this admin device. Students receive it after Save & Publish.');
   }
 
-  async function saveAndPublish() {
-    const pre = preflightPublish(catalog);
+  async function saveAndPublish(catalogToPublish?: AdminCatalog) {
+    // Publish EXACTLY the catalog passed in (a preview may pass the draft it
+    // was showing) — never something the admin did not just review.
+    const target = catalogToPublish ?? catalog;
+    const isDraft = catalogToPublish !== undefined && catalogToPublish !== catalog;
+    const pre = preflightPublish(target);
     if (!pre.ok) {
       onToast(`⛔ Cannot publish — ${pre.issues[0]}`);
       return;
     }
-    const r = await publish();
+    const r = await publish(undefined, catalogToPublish);
     if (r.ok) {
       setPreview(null);
-      onToast(`✅ Published — catalog v${r.adminVersion} / student config v${r.publishedVersion} is live on every device (next open).`);
+      onToast(
+        `✅ ${isDraft ? 'Draft published' : 'Published'} — catalog v${r.adminVersion} / student config v${r.publishedVersion} is live on every device (next open).`
+      );
     } else {
       onToast(`⛔ ${r.issues?.[0] ?? r.error ?? 'Publish failed — is the backend reachable?'}`);
     }
@@ -402,8 +408,11 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
           publishing={publishing}
           onClose={() => setPreviewOpen(false)}
           onPublish={() => {
+            // Publish exactly what the preview was showing (working catalog
+            // or the DRAFT being previewed).
+            const target = preview?.working;
             setPreviewOpen(false);
-            void saveAndPublish();
+            void saveAndPublish(target);
           }}
         />
       )}

@@ -14,6 +14,7 @@ import type { AdminCatalog } from '../adminStorage';
 import { diffCatalogs, humanizePath, type CatalogDiffReport, type EntityDiff, type FieldChange } from '../catalogDiff';
 import type { AppAppearance } from '../../config/types';
 import { Wordmark } from '../../components/Wordmark';
+import { LiveStudentPreview } from './LiveStudentPreview';
 
 export interface PublishPreviewProps {
   open: boolean;
@@ -33,8 +34,25 @@ type Section = 'universities' | 'curricula' | 'branding' | 'settings' | 'trash';
 export function PublishPreview({ open, working, published, publishedVersion, onClose, onPublish, publishing, publishLabel }: PublishPreviewProps) {
   const report = useMemo<CatalogDiffReport>(() => diffCatalogs(published, working), [published, working]);
   const [section, setSection] = useState<Section | null>(null);
+  // The default view is the REAL student site running the working catalog —
+  // “a live seeing at the student end”. The field-level list stays available.
+  const [tab, setTab] = useState<'live' | 'diff'>('live');
 
   if (!open) return null;
+
+  if (tab === 'live') {
+    return (
+      <LiveStudentPreview
+        working={working}
+        report={report}
+        onExit={onClose}
+        onPublish={onPublish}
+        publishing={publishing}
+        canPublish={publishLabel === undefined ? !report.isEmpty : true}
+        onShowDiff={() => setTab('diff')}
+      />
+    );
+  }
 
   const counts: { id: Section; label: string; icon: string; n: number }[] = [
     { id: 'universities', label: 'Universities', icon: '🏛️', n: report.universities.length },
@@ -66,6 +84,22 @@ export function PublishPreview({ open, working, published, publishedVersion, onC
             </div>
             <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-sm font-black text-slate-500 hover:bg-slate-200" aria-label="Close preview">
               ✕
+            </button>
+          </div>
+
+          {/* Tab switch: live student site ↔ change list */}
+          <div className="mt-3 flex gap-1.5">
+            <button
+              onClick={() => setTab('live')}
+              className="rounded-full bg-brand-600 px-3 py-1.5 text-[11px] font-black text-white shadow-sm"
+            >
+              📱 Live student site
+            </button>
+            <button
+              onClick={() => setTab('diff')}
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
+            >
+              📋 Change list
             </button>
           </div>
 

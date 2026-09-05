@@ -70,7 +70,8 @@ interface AdminStore {
   /** (Re)check the backend; auto-adopts a newer backend catalog. */
   checkBackend: () => Promise<BackendStatus>;
   /** Save this catalog + publish the student configuration to the backend. */
-  publish: (note?: string) => Promise<PublishResult>;
+  /** Publish the working catalog — or an explicit one (preview/draft). */
+  publish: (note?: string, catalogToPublish?: AdminCatalog) => Promise<PublishResult>;
   /** Load the authoritative catalog from the backend (replaces local). */
   pull: () => Promise<PullResult & { applied: boolean }>;
 }
@@ -143,13 +144,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     return st;
   }, []);
 
-  const publish = useCallback(async (note?: string): Promise<PublishResult> => {
+  const publish = useCallback(async (note?: string, catalogToPublish?: AdminCatalog): Promise<PublishResult> => {
+    // Usually the working catalog; a PREVIEW can pass the exact catalog the
+    // admin was reviewing (e.g. a DRAFT) so what they previewed is what ships.
+    const c = catalogToPublish ?? catalogRef.current;
     setSyncing('publishing');
-    const r = await publishCatalog(catalogRef.current, { note });
+    const r = await publishCatalog(c, { note });
     if (r.ok) {
       // The catalog we just sent is now what students see → refresh the
       // preview snapshot so "Preview changes" diffs against THIS publish.
-      writePublishedSnapshot(catalogRef.current, r.adminVersion ?? null);
+      writePublishedSnapshot(c, r.adminVersion ?? null);
       setBackend((b) => ({
         ...b,
         adminVersion: r.adminVersion ?? b.adminVersion,

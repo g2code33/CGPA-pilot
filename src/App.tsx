@@ -40,7 +40,7 @@ import { SkySplash } from './components/SkySplash';
 import { AppGlyph } from './components/AppGlyph';
 import { fmt2 } from './util/format';
 
-type Screen =
+export type Screen =
   | 'home'
   | 'calculate'
   | 'target'
@@ -50,6 +50,22 @@ type Screen =
   | 'milestones'
   | 'ai'
   | 'privacy';
+
+/**
+ * Admin "live preview" hooks — the real student app is embedded in the
+ * admin console's publish preview and driven through this interface:
+ *  • `nav`   — "jump to this screen" (the counter `n` re-triggers repeats)
+ *  • `onScreen` — report the current screen back to the preview chrome
+ *  • `badges` — amber "changes live here" dots on tool tiles
+ * When absent the app behaves exactly as it always did.
+ */
+export interface StudentPreviewControls {
+  nav?: { screen: Screen; n: number } | null;
+  onScreen?: (s: Screen) => void;
+  badges?: Partial<Record<string, string>>;
+  /** Preview mode: skip the intro splash and fill the embedding container. */
+  isPreview?: boolean;
+}
 
 const TOOLS: {
   id: Exclude<Screen, 'home' | 'privacy'>;
@@ -136,7 +152,7 @@ type ToolId = (typeof TOOL_ORDER)[number];
 const isTool = (s: Screen): s is ToolId =>
   (TOOL_ORDER as readonly string[]).includes(s);
 
-export default function App() {
+export default function App({ preview }: { preview?: StudentPreviewControls } = {}) {
   const { state, dispatch } = useAcademic();
   const d = useDerived();
   // Administrator-set permissions + branding/icons ride the non-personal
@@ -147,9 +163,25 @@ export default function App() {
   const whatIfAllowed = permissionOn('allowWhatIf');
   const [institutionSelected, setInstitutionSelected] = useState(false);
   const [modeSelected, setModeSelected] = useState<string | null>(null);
-  const [splashDone, setSplashDone] = useState(!splashAllowed);
+  // Admin live-preview skips the intro splash (the admin wants the changes now).
+  const [splashDone, setSplashDone] = useState(!splashAllowed || !!preview?.isPreview);
   const [splashRun, setSplashRun] = useState(0);
-  const [screen, setScreen] = useState<Screen>('home');
+  const [screenRaw, setScreenRaw] = useState<Screen>('home');
+  const screen = screenRaw;
+  // Navigation also reports back to the admin's live-preview chrome.
+  function setScreen(s: Screen) {
+    setScreenRaw(s);
+    preview?.onScreen?.(s);
+  }
+  // Admin live-preview "jump to where the change lands".
+  const previewNavN = preview?.nav?.n;
+  useEffect(() => {
+    const nav = preview?.nav;
+    if (nav) setScreenRaw(nav.screen);
+  }, [previewNavN]);
+  // In admin live-preview the app lives in a container that is shorter than
+  // the viewport (the preview bar sits above it) — fill the parent instead.
+  const rootH = preview?.isPreview ? 'h-full' : 'h-[100dvh]';
   // Which view the client should use: Electron (deb/Windows) → desktop,
   // Android/iOS APK → mobile, web → auto-detected from the device.
   const view = useViewMode();
@@ -199,7 +231,7 @@ export default function App() {
   // Institution selection
   if (!institutionSelected) {
     return (
-      <div className="h-[100dvh] bg-gradient-to-b from-brand-900 via-brand-800 to-brand-600 flex flex-col items-center justify-center px-5 overflow-y-auto">
+      <div className={`${rootH} bg-gradient-to-b from-brand-900 via-brand-800 to-brand-600 flex flex-col items-center justify-center px-5 overflow-y-auto`}>
         {/* Replay the Sky Dash opening mini-game from the very top */}
         <button
           onClick={playGameAgain}
@@ -242,7 +274,7 @@ export default function App() {
   // Mode selection
   if (!modeSelected) {
     return (
-      <div className="h-[100dvh] bg-gradient-to-b from-brand-50 to-white flex flex-col items-center justify-center px-5 overflow-y-auto">
+      <div className={`${rootH} bg-gradient-to-b from-brand-50 to-white flex flex-col items-center justify-center px-5 overflow-y-auto`}>
         <div className="w-full max-w-sm py-8 text-center">
           <h2 className="text-2xl font-black text-slate-800">How do you want to start?</h2>
           <p className="mt-1 text-sm text-slate-500">You can change this later at any time.</p>
@@ -414,6 +446,8 @@ export default function App() {
           const disabled = t.needsData && !hasData;
           const isResults = t.id === 'calculate';
           const isNext = t.id === 'next';
+          // Admin live-preview: amber mark on the tiles where changes land.
+          const badge = preview?.badges?.[t.id];
           // The "Next Semester" tool tile name adapts to the student's
           // standing (Finish This Semester / Upon Release / Next Semester).
           const title = isNext ? toolNameFor(d.semesterRole) : t.title;
@@ -424,12 +458,18 @@ export default function App() {
               key={t.id}
               onClick={() => !disabled && setScreen(t.id)}
               disabled={disabled}
-              className={`flex w-full items-center gap-2.5 rounded-2xl p-2 text-left ring-1 transition ${
+              title={badge}
+              className={`relative flex w-full items-center gap-2.5 rounded-2xl p-2 text-left ring-1 transition ${
                 disabled
                   ? 'bg-slate-100 ring-slate-200 opacity-70'
-                  : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
+                  : badge
+                    ? 'bg-amber-50 ring-amber-300 shadow-sm active:scale-[0.99]'
+                    : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
               }`}
             >
+              {badge && !disabled && (
+                <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-white" aria-hidden />
+              )}
               {/* Fixed-size, invisible slot: an admin-enlarged image
                   overflows this box — it never moves the tile. */}
               <span className="grid h-9 w-9 shrink-0 place-items-center text-2xl leading-none">
@@ -445,9 +485,13 @@ export default function App() {
                 <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-500">
                   add results first
                 </span>
-              ) : isResults && hasData ? (
+              ) : isResults && hasData && !badge ? (
                 <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-700">
                   ✓ entered
+                </span>
+              ) : badge ? (
+                <span className="shrink-0 rounded-full bg-amber-200 px-2 py-1 text-[9px] font-black text-amber-900">
+                  ● changed
                 </span>
               ) : (
                 <span className="shrink-0 text-slate-300">›</span>
@@ -486,7 +530,7 @@ export default function App() {
   // flow below stays exactly as it is.
   if (view === 'desktop') {
     return (
-      <div className="h-[100dvh] flex flex-col bg-slate-100">
+      <div className={`${rootH} flex flex-col bg-slate-100`}>
         <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/80 px-4 py-2 backdrop-blur">
           <Brand appearance={appearance} />
           <div className="flex shrink-0 items-center gap-1.5">
@@ -622,7 +666,7 @@ export default function App() {
     const navTitle = (tool: { id: string; title: string } | null) =>
       tool && tool.id === 'next' ? toolNameFor(d.semesterRole) : tool?.title ?? '';
     return (
-      <div className="h-[100dvh] flex flex-col bg-slate-50">
+      <div className={`${rootH} flex flex-col bg-slate-50`}>
         <header className="no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
           <button
             onClick={() => setScreen('home')}
@@ -701,7 +745,7 @@ export default function App() {
 
   // ── HOME HUB (mobile view — the layout most students use) ─────────────
   return (
-    <div className="h-[100dvh] flex flex-col bg-gradient-to-b from-brand-50 to-white">
+    <div className={`${rootH} flex flex-col bg-gradient-to-b from-brand-50 to-white`}>
       <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
         <Brand appearance={appearance} />
         <div className="flex shrink-0 items-center gap-1.5">
