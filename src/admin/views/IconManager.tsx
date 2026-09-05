@@ -74,7 +74,7 @@ export function IconManager() {
               <img
                 src={appearance.logo}
                 alt="custom app logo"
-                className="h-16 w-16 rounded-2xl bg-white object-contain shadow ring-1 ring-slate-200"
+                className="h-16 w-16 object-contain"
               />
             ) : (
               <span className="grid h-16 w-16 place-items-center rounded-2xl bg-slate-100 text-3xl ring-1 ring-slate-200">
@@ -204,7 +204,7 @@ function SlotEditor({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:flex-row sm:items-center">
+    <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 last:border-0 sm:flex-row sm:items-center">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="shrink-0">{renderPreview(value, fallbackEmoji)}</span>
         <div className="min-w-0">

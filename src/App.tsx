@@ -347,12 +347,6 @@ export default function App() {
       : d.state.mode === 'history'
         ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)
         : d.state.baseline.cgpa;
-  // Container size for an icon slot: an admin-set display size on a custom
-  // image wins over the per-site default.
-  const iconBoxPx = (slotId: string, fallback: number): number => {
-    const ic = appearance?.icons?.[slotId];
-    return ic?.image && ic.size ? ic.size : fallback;
-  };
   return (
     <div className="h-[100dvh] flex flex-col bg-gradient-to-b from-brand-50 to-white">
       <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
@@ -474,8 +468,9 @@ export default function App() {
                   }`}
                 >
                   <span
-                    className={`grid shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br text-base text-white shadow ${t.grad}`}
-                    style={{ width: iconBoxPx(t.id, 36), height: iconBoxPx(t.id, 36) }}
+                    // Fixed badge: a custom image at its chosen size overflows
+                    // this box visually, but never moves the tile or its text.
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-base text-white shadow ${t.grad}`}
                   >
                     <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} />
                   </span>
@@ -506,10 +501,7 @@ export default function App() {
             onClick={() => setScreen('privacy')}
             className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
           >
-            <span
-              className="flex items-center justify-center text-base"
-              style={{ width: iconBoxPx('privacy', 20), height: iconBoxPx('privacy', 20) }}
-            >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base">
               <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
             </span>
             <span className="flex-1 text-[11px] font-bold text-emerald-800">

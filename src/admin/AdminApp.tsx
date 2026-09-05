@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useAdmin } from './adminStore';
+import { preflightPublish } from './adminApi';
+import { writeAdminCatalog } from './adminStorage';
 import { Login } from './views/Login';
 import { Overview } from './views/Overview';
 import { Universities } from './views/Universities';
@@ -39,6 +41,11 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
 export function AdminApp() {
   const { authed } = useAdmin();
   const [view, setView] = useState<View>({ name: 'overview' });
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+  const flashSave = (m: string) => {
+    setSaveToast(m);
+    window.setTimeout(() => setSaveToast(null), 5000);
+  };
 
   if (!authed) return <Login />;
 
@@ -63,6 +70,7 @@ export function AdminApp() {
           ))}
         </nav>
         <div className="mt-auto space-y-1.5">
+          <SaveButtons onToast={flashSave} />
           <BackToApp />
           <LogoutButton />
         </div>
@@ -106,6 +114,9 @@ export function AdminApp() {
         </main>
 
         <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 sm:hidden">
+          <div className="flex gap-2 border-b border-slate-200 p-2">
+            <SaveButtons onToast={flashSave} compact />
+          </div>
           <div className="flex overflow-x-auto">
             {NAV.map((n) => (
               <button
@@ -122,7 +133,81 @@ export function AdminApp() {
           </div>
         </nav>
       </div>
+
+      {saveToast && (
+        <div className="fixed bottom-20 left-1/2 z-50 w-max max-w-[92vw] -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-lg sm:bottom-6">
+          {saveToast}
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Global admin actions, available on EVERY page (sidebar on desktop, bottom
+ * bar on mobile):
+ *  • Save — persist the catalog on THIS admin device only (students see
+ *    nothing until a publish happens).
+ *  • Save & Publish — persist AND ship the student configuration to the
+ *    backend so every device picks it up on its next open (online).
+ */
+function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => void; compact?: boolean }) {
+  const { catalog, publish, syncing } = useAdmin();
+  const publishing = syncing === 'publishing';
+
+  function saveLocal() {
+    writeAdminCatalog(catalog);
+    onToast('💾 Saved on this admin device. Students receive it after Save & Publish.');
+  }
+  async function saveAndPublish() {
+    const pre = preflightPublish(catalog);
+    if (!pre.ok) {
+      onToast(`⛔ Cannot publish — ${pre.issues[0]}`);
+      return;
+    }
+    const r = await publish();
+    if (r.ok) {
+      onToast(`✅ Published — catalog v${r.adminVersion} / student config v${r.publishedVersion} is live on every device (next open).`);
+    } else {
+      onToast(`⛔ ${r.issues?.[0] ?? r.error ?? 'Publish failed — is the backend reachable?'}`);
+    }
+  }
+
+  if (compact) {
+    return (
+      <>
+        <button
+          onClick={saveLocal}
+          className="flex-1 rounded-lg bg-white px-2 py-2 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200 active:scale-[0.98]"
+        >
+          💾 Save
+        </button>
+        <button
+          onClick={() => void saveAndPublish()}
+          disabled={publishing}
+          className="flex-1 rounded-lg bg-brand-600 px-2 py-2 text-[11px] font-black text-white transition hover:bg-brand-700 active:scale-[0.98] disabled:opacity-60"
+        >
+          {publishing ? 'Publishing…' : '🚀 Save & Publish'}
+        </button>
+      </>
+    );
+  }
+  return (
+    <>
+      <button
+        onClick={() => void saveAndPublish()}
+        disabled={publishing}
+        className="w-full rounded-xl bg-brand-600 px-3 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:opacity-60"
+      >
+        {publishing ? 'Publishing…' : '🚀 Save & Publish'}
+      </button>
+      <button
+        onClick={saveLocal}
+        className="w-full rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-[0.99]"
+      >
+        💾 Save
+      </button>
+    </>
   );
 }
 
