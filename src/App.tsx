@@ -421,7 +421,10 @@ export default function App() {
             ) : (
               <div className="text-center">
                 <p className="flex items-center justify-center text-2xl">
-                  <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={26} />
+                  {/* Fixed slot: an admin-enlarged plane overflows, the hero stays */}
+                  <span className="grid h-8 w-12 place-items-center">
+                    <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={26} />
+                  </span>
                 </p>
                 <h2 className="mt-1 text-lg font-black">Let’s get you off the ground</h2>
                 <button

@@ -356,7 +356,9 @@ function HomeScreen(props: {
             ←
           </button>
           <h1 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-            <AppGlyph appearance={appearance} slot="privacy" fallback="🔒" size={16} />
+            <span className="grid h-4 w-4 shrink-0 place-items-center">
+              <AppGlyph appearance={appearance} slot="privacy" fallback="🔒" size={16} />
+            </span>
             Privacy
           </h1>
         </header>
@@ -397,7 +399,10 @@ function HomeScreen(props: {
           {/* Hero — fresh student (no results yet) */}
           <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-5 text-center text-white shadow-xl ring-1 ring-white/10">
             <p className="flex items-center justify-center text-3xl">
-              <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={34} />
+              {/* Mirrors the real hero: fixed slot, enlarged plane overflows */}
+              <span className="grid h-9 w-14 place-items-center">
+                <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={34} />
+              </span>
             </p>
             <h2 className="mt-2 text-lg font-black">Let’s get you off the ground</h2>
             <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-brand-100">
@@ -519,7 +524,10 @@ function ToolFrame({
         <div className="mx-auto w-full max-w-md">
           {m.needsData ? (
             <div className="rounded-2xl bg-white p-6 text-center ring-1 ring-slate-200">
-              <AppGlyph appearance={appearance} slot={tool} fallback={m.emoji} size={40} className="mx-auto" />
+              {/* Fixed slot: an admin-enlarged icon overflows the card's rhythm */}
+              <span className="mx-auto grid h-10 w-10 place-items-center">
+                <AppGlyph appearance={appearance} slot={tool} fallback={m.emoji} size={40} />
+              </span>
               <p className="mt-3 text-sm font-bold text-slate-700">{m.title}</p>
               <p className="mt-1 text-xs text-slate-500">{m.tagline}</p>
               <p className="mt-3 rounded-xl bg-brand-50 px-3 py-2 text-[11px] font-semibold text-brand-700 ring-1 ring-brand-100">
