@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useDerived } from '../state/derived';
-import { Card, SectionTitle } from '../components/ui';
+import { Card, Info, SectionTitle } from '../components/ui';
 import { permissionOn } from '../permissions';
 import { ideaTip } from '../infoTips';
 import { PendingProjectionPanel } from '../components/PendingProjection';
@@ -174,35 +174,11 @@ function CourseTag({
   );
 }
 
-/** Anchor help icon that shows a small popover on tap. */
-function HelpText({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-label="When to use this"
-        className={`grid h-8 w-8 place-items-center rounded-full text-sm ring-1 transition ${
-          open ? 'bg-brand-600 text-white ring-brand-600' : 'bg-brand-50 text-brand-700 ring-brand-200'
-        }`}
-      >
-        {open ? '✕' : '💡'}
-      </button>
-      {open && (
-        <div className="absolute right-0 top-10 z-20 w-64 rounded-2xl bg-white p-3 text-xs leading-relaxed text-slate-600 shadow-xl ring-1 ring-slate-200">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function Calculate({ onProceed }: { onProceed?: () => void }) {
   const d = useDerived();
   const { state, dispatch, record } = d;
-  const [helpOpen, setHelpOpen] = useState(false);
+  // Screen help sentence — registry-driven (admin can reword or hide it).
+  const modeHelp = ideaTip('calc.modeHelp');
   // A CGPA is "entered" when the user has typed one (Quick/planning = current
   // standing CGPA; History = at least one completed level's CGPA).
   const hasCgpa =
@@ -213,16 +189,7 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => setHelpOpen((v) => !v)}
-          aria-expanded={helpOpen}
-          className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm ring-1 transition ${
-            helpOpen ? 'bg-brand-600 text-white ring-brand-600' : 'bg-brand-50 text-brand-700 ring-brand-200'
-          }`}
-          aria-label="How to use / what this means"
-        >
-          {helpOpen ? '✕' : '💡'}
-        </button>
+        {modeHelp && <Info label="How to use / what this means">{modeHelp}</Info>}
         <p className="text-[11px] font-bold text-slate-500">
           {state.inputMode === 'quick' ? 'Quick mode' : 'CGPA History'}
         </p>
@@ -233,24 +200,6 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
           {state.inputMode === 'quick' ? 'Switch to History' : 'Switch to Quick'}
         </button>
       </div>
-      {helpOpen && (
-        <p className="rounded-2xl bg-brand-50/70 px-4 py-3 text-xs leading-relaxed text-slate-600 ring-1 ring-brand-100">
-          <strong>How it works:</strong> tell CGPA Pilot which semester you’re in now
-          and it works everything else out from there.
-          <br />
-          <strong className="text-emerald-700">Released</strong> — all results are out.
-          <br />
-          <strong className="text-amber-600">Not released</strong> — the whole current
-          semester’s results are pending; your CGPA uses the immediate past semester.
-          <br />
-          <strong className="text-brand-700">Just started</strong> — brand-new semester,
-          no results yet; your CGPA uses the immediate past semester.
-          <br />
-          <br />
-          Everything is computed <strong>on this device</strong>. Nothing you type
-          leaves the app, is saved, or is stored anywhere.
-        </p>
-      )}
 
       {state.inputMode === 'planning' ? (
         <Mode />
@@ -427,6 +376,8 @@ function CurrentStanding() {
         ? 'calc.standing.notReleased'
         : 'calc.standing.justStarted'
   );
+  // Advanced help sentence — registry-driven (admin can reword or hide it).
+  const advancedTip = ideaTip('calc.advanced.quick');
 
   return (
     <div className="space-y-3">
@@ -514,12 +465,7 @@ function CurrentStanding() {
                   ? `⚙️ Advanced · ${pendingSum} cr not released`
                   : '⚙️ Advanced'}
               </button>
-              <HelpText>
-                <strong>When to use Advanced:</strong> when almost everything is released
-                but a few courses from the semester you selected aren’t out yet. Tap the
-                exact courses below and their credits are <strong>calculated for you</strong> —
-                excluded from your confirmed CGPA and shown as a projection until they land.
-              </HelpText>
+              {advancedTip && <Info label="When to use Advanced">{advancedTip}</Info>}
             </div>
 
             {showAdvanced && (
@@ -675,6 +621,8 @@ function HistoryMode() {
   const pendingSum = semCourses
     .filter((c) => curPendingIds.includes(c.id))
     .reduce((s, c) => s + (c.creditHours || 0), 0);
+  // Advanced help sentence — registry-driven (admin can reword or hide it).
+  const advancedHistoryTip = ideaTip('calc.advanced.history');
 
   function setHistoryTagged(ids: string[]) {
     // Build pending CourseEntries for the chosen courses (id prefix cfg-pend-).
@@ -767,12 +715,7 @@ function HistoryMode() {
                   ? `⚙️ Advanced · ${pendingSum} cr not released`
                   : '⚙️ Advanced'}
               </button>
-              <HelpText>
-                <strong>When to use Advanced:</strong> your current level is released but
-                a few of its courses aren’t out yet. Pick exactly which ones and their
-                credits are <strong>excluded</strong> from this level’s CGPA and shown as
-                a projection until they land.
-              </HelpText>
+              {advancedHistoryTip && <Info label="When to use Advanced">{advancedHistoryTip}</Info>}
             </div>
             {showAdvanced && (
               <div className="mt-3">
