@@ -24,6 +24,7 @@ import {
 } from '../adminApi';
 import { humanBytes } from '../catalogSize';
 import { r2FallbackNote } from '../assetUpload';
+import { accountIdLooksValid, credsProbeHint } from '../credsHint';
 
 const FREE_TIER_BYTES = 10 * 1024 * 1024 * 1024; // R2 free tier: 10 GB (account-wide)
 
@@ -125,7 +126,7 @@ export function StorageMonitor() {
 
         {account === null && (
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">
-            No account credentials saved yet — add them below (a Cloudflare API token with “R2 Object Read” + your
+            No account credentials saved yet — add them below (a read-only “Admin Read” API token + your 32-hex
             Account ID).
           </p>
         )}
@@ -213,7 +214,9 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
   const [token, setToken] = useState('');
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; hint?: string } | null>(null);
+
+  const idLooksOff = accountId.trim() !== '' && !accountIdLooksValid(accountId);
 
   async function doSave() {
     setBusy(true);
@@ -226,14 +229,14 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
       setAccountId('');
       setOpen(false);
       onSaved();
-    } else {
+    } else if (r.error === 'creds-invalid') {
       setMsg({
         ok: false,
-        text:
-          r.error === 'creds-invalid'
-            ? `✗ Cloudflare rejected the token: ${r.message ?? 'check the token and account id.'}`
-            : `✗ ${r.message ?? 'Could not save credentials.'}`,
+        text: `✗ Cloudflare rejected the credentials: ${r.message ?? 'check the token and account id.'}`,
+        hint: credsProbeHint(r.message ?? ''),
       });
+    } else {
+      setMsg({ ok: false, text: `✗ ${r.message ?? 'Could not save credentials.'}` });
     }
   }
 
@@ -260,7 +263,14 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
         {hasCreds ? '✎ Edit account credentials' : '＋ Add account credentials'}
       </button>
       {msg && (
-        <p className={`mt-2 text-[11px] font-bold ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.text}</p>
+        <div className="mt-2 space-y-1.5">
+          <p className={`text-[11px] font-bold ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.text}</p>
+          {msg.hint && (
+            <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-semibold leading-relaxed text-amber-800 ring-1 ring-amber-200">
+              {msg.hint}
+            </p>
+          )}
+        </div>
       )}
       {open && (
         <div className="mt-2 space-y-2 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
@@ -269,7 +279,7 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
             <input
               type="password"
               className="input mt-1 w-full text-xs"
-              placeholder="•••• (needs R2 “Object Read” permission)"
+              placeholder="•••• (an “Admin Read” token — read-only)"
               value={token}
               onChange={(e) => setToken(e.target.value)}
               autoComplete="off"
@@ -279,14 +289,22 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
             Account ID
             <input
               className="input mt-1 w-full text-xs"
-              placeholder="32-hex-character id (dashboard → Overview)"
+              placeholder="32-hex-character id (Account Home page, top-right)"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
             />
           </label>
+          {idLooksOff && (
+            <p className="text-[10px] font-bold leading-relaxed text-amber-700">
+              ⚠️ That doesn’t look like an Account ID (32 hex characters). If it starts with “cfk_”, it’s an API key,
+              not an Account ID — the ID is on the Account Home page.
+            </p>
+          )}
           <p className="text-[10px] leading-relaxed text-slate-500">
-            Create it in the dashboard: <strong>My Profile → API Tokens → Create token → “R2 Object Read Only”</strong>.
-            It is verified before being stored, and only the Worker (D1) ever sees it — never the student config.
+            Create the token in the dashboard: <strong>My Profile → API Tokens → Create token → template “Admin
+            Read”</strong> — it is read-only and can’t change anything. ⚠️ Don’t use R2’s “Object Read Only” token
+            (from R2 → Manage R2 API Tokens): those only work with the S3 API, not this usage view. It is verified
+            before being stored, and only the Worker (D1) ever sees it — never the student config.
           </p>
           <div className="flex gap-2">
             <button
