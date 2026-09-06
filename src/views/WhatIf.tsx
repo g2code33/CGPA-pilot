@@ -13,7 +13,7 @@ import {
 import { analyzeTarget } from '../services/targetService';
 import { progressThrough } from '../services/structureService';
 import { printFileName, printHtml, printSection, sectionHeading, htmlTable, TONE } from '../services/scopedPrint';
-import { printAppLogo } from '../config/branding';
+import { printAppLogo, tagline } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import type { CourseEntry } from '../state/studentState';
 import { fmt2, clamp } from '../util/format';
@@ -174,6 +174,8 @@ export function WhatIf() {
     curriculumVersion: d.curriculum?.versionName,
     appLogo: printAppLogo(getRuntimeCatalog().appearance),
     institutionLogo: d.university?.logo,
+    schoolLogo: d.school?.logo,
+    tagline: tagline(getRuntimeCatalog().appearance),
   };
 
   /** Print the whole scenario-comparison table as a single sheet. */

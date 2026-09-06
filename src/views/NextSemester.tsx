@@ -11,7 +11,7 @@ import {
   type ShuffledCombo,
 } from '../services/nextSemesterService';
 import { classifyCgpa } from '../services/classificationService';
-import { printAppLogo } from '../config/branding';
+import { printAppLogo, tagline } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import { printFileName, printSection } from '../services/scopedPrint';
 import { fmt2 } from '../util/format';
@@ -60,6 +60,8 @@ export function NextSemester() {
       curriculumVersion: d.curriculum?.versionName,
       appLogo: printAppLogo(getRuntimeCatalog().appearance),
       institutionLogo: d.university?.logo,
+      schoolLogo: d.school?.logo,
+      tagline: tagline(getRuntimeCatalog().appearance),
       fileName: printFileName(next.label.replace(/—/g, ' '), isUponRelease ? 'On-Release Plan' : 'Semester Plan'),
     });
 

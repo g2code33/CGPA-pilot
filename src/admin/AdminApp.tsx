@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAdmin } from './adminStore';
-import { appLogoImage } from '../config/branding';
+import { appLogoImage, iconElement } from '../config/branding';
 import type { AppAppearance } from '../config/types';
 import { preflightPublish, fetchBackendCatalog, saveRemoteDraft } from './adminApi';
 import { D1_VALUE_SAFE_BYTES, humanBytes } from './catalogSize';
@@ -50,20 +50,20 @@ type ViewName =
   | 'preview';
 type View = { name: ViewName; curriculumId?: string };
 
-const NAV: { id: View['name']; label: string; icon: string }[] = [
-  { id: 'overview', label: 'Dashboard', icon: '📊' },
-  { id: 'universities', label: 'Institutions', icon: '🏛️' },
-  { id: 'curricula', label: 'Curricula', icon: '📚' },
-  { id: 'grading', label: 'Grading & Classes', icon: '🎯' },
-  { id: 'ideatips', label: 'Idea Icons', icon: '💡' },
-  { id: 'permissions', label: 'Permissions', icon: '🔐' },
-  { id: 'appearance', label: 'Icons & Branding', icon: '🎨' },
-  { id: 'aisettings', label: 'AI Assistant', icon: '🤖' },
-  { id: 'aimonitor', label: 'AI Monitor', icon: '🩺' },
-  { id: 'storage', label: 'Storage', icon: '📦' },
-  { id: 'recycle', label: 'Recycle Bin', icon: '🗑️' },
-  { id: 'previewapp', label: 'Student Preview', icon: '📱' },
-  { id: 'testlab', label: 'Test Lab', icon: '🧪' },
+const NAV: { id: View['name']; label: string; icon: string; slot: string }[] = [
+  { id: 'overview', label: 'Dashboard', icon: '📊', slot: 'admin-overview' },
+  { id: 'universities', label: 'Institutions', icon: '🏛️', slot: 'admin-universities' },
+  { id: 'curricula', label: 'Curricula', icon: '📚', slot: 'admin-curricula' },
+  { id: 'grading', label: 'Grading & Classes', icon: '🎯', slot: 'admin-grading' },
+  { id: 'ideatips', label: 'Idea Icons', icon: '💡', slot: 'admin-ideatips' },
+  { id: 'permissions', label: 'Permissions', icon: '🔐', slot: 'admin-permissions' },
+  { id: 'appearance', label: 'Icons & Branding', icon: '🎨', slot: 'admin-appearance' },
+  { id: 'aisettings', label: 'AI Assistant', icon: '🤖', slot: 'admin-aisettings' },
+  { id: 'aimonitor', label: 'AI Monitor', icon: '🩺', slot: 'admin-aimonitor' },
+  { id: 'storage', label: 'Storage', icon: '📦', slot: 'admin-storage' },
+  { id: 'recycle', label: 'Recycle Bin', icon: '🗑️', slot: 'admin-recycle' },
+  { id: 'previewapp', label: 'Student Preview', icon: '📱', slot: 'admin-previewapp' },
+  { id: 'testlab', label: 'Test Lab', icon: '🧪', slot: 'admin-testlab' },
 ];
 
 /** What the publish preview is showing (working catalog OR a draft). */
@@ -103,7 +103,7 @@ export function AdminApp() {
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <span>{n.icon}</span>
+              <NavIcon appearance={catalog.appearance} slot={n.slot} fallback={n.icon} />
               {n.label}
             </button>
           ))}
@@ -170,7 +170,9 @@ export function AdminApp() {
                   view.name === n.id ? 'text-slate-900' : 'text-slate-400'
                 }`}
               >
-                <span className="text-lg">{n.icon}</span>
+                <span className="text-lg">
+                  <NavIcon appearance={catalog.appearance} slot={n.slot} fallback={n.icon} />
+                </span>
                 {n.label}
               </button>
             ))}
@@ -516,6 +518,23 @@ function Brand({ compact = false, appearance }: { compact?: boolean; appearance?
       </div>
     </div>
   );
+}
+
+/** An admin side-menu icon, following the appearance slot the admin can override. */
+function NavIcon({
+  appearance,
+  slot,
+  fallback,
+}: {
+  appearance?: AppAppearance;
+  slot: string;
+  fallback: string;
+}) {
+  const el = iconElement(appearance?.icons?.[slot], fallback);
+  if (el.type === 'img') {
+    return <img src={el.src} alt="" className="h-5 w-5 shrink-0 object-contain" />;
+  }
+  return <span>{el.text}</span>;
 }
 
 function LogoutButton() {

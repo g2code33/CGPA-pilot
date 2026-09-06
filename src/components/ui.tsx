@@ -222,7 +222,7 @@ export function SectionTitle({
   info,
   infoLabel,
 }: {
-  icon?: string;
+  icon?: ReactNode;
   title: string;
   subtitle?: ReactNode;
   /** Longer "how to use / what does this mean" help, shown behind the info icon. */

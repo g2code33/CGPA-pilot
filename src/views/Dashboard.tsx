@@ -3,7 +3,7 @@ import { Card, SectionTitle, Stat } from '../components/ui';
 import { PendingProjectionPanel } from '../components/PendingProjection';
 import { InstitutionSelector } from '../components/InstitutionSelector';
 import { printFileName, printHtml } from '../services/scopedPrint';
-import { printAppLogo } from '../config/branding';
+import { printAppLogo, tagline } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import { summaryReport, fullReport, pilotBriefReport } from '../services/reportComposer';
 import { toolNameFor } from '../services/semesterModel';
@@ -57,6 +57,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
     curriculumVersion: model.curriculumVersion ?? undefined,
     appLogo: printAppLogo(getRuntimeCatalog().appearance),
     institutionLogo: d.university?.logo,
+    schoolLogo: d.school?.logo,
+    tagline: tagline(getRuntimeCatalog().appearance),
     fileName: printFileName(posLabel, 'Pilot Brief'),
   };
   const printSummary = () =>

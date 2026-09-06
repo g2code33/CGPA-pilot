@@ -394,14 +394,14 @@ export interface AiStudentContext {
   hasAnyData?: boolean;
   /**
    * GPA-History mode: the student's journey from Level 100 to the current
-   * level — level CGPAs, the running (cumulative) CGPA, and which levels are
+   * level — each level's CUMULATIVE CGPA (as typed) and which levels are
    * still missing. Lets the assistant talk about the WHOLE progress, and
    * warn when the history is incomplete.
    */
   journey?: {
     level: number; // 1 = Level 100
+    /** The CUMULATIVE CGPA the student typed for this level (not per-level). */
     cgpa: number | null;
-    cumulativeCgpa: number | null;
     status: 'complete' | 'missing' | 'current';
   }[];
 }

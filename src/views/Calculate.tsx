@@ -722,7 +722,7 @@ function HistoryMode() {
       <Card>
         <SectionTitle
           title="Enter CGPA per completed level"
-          subtitle="Type the CGPA for each level you have finished."
+          subtitle="Each box is your cumulative CGPA up to and including that level."
         />
         <div className="space-y-2">
           {levels.map((lv) => {
@@ -759,8 +759,8 @@ function HistoryMode() {
               >
                 <span className="label">
                   {firstSem
-                    ? `Level ${lv * 100} · First semester CGPA`
-                    : `Level ${lv * 100} CGPA`}
+                    ? `Level ${lv * 100} · First semester cumulative CGPA`
+                    : `Level ${lv * 100} cumulative CGPA`}
                 </span>
                 <input
                   type="number"
@@ -839,8 +839,8 @@ function HistoryMode() {
 
 /**
  * "Your journey" — the Level 100 → current-level view that makes History
- * mode worth using: a per-level table (level CGPA, running CGPA, band), a
- * trend line, and a start→now summary. Missing levels are shown in place
+ * mode worth using: a per-level table (cumulative CGPA + band), a trend
+ * line, and a start→now summary. Missing levels are shown in place
  * so the student sees exactly what's left to complete.
  */
 function JourneyCard({
@@ -954,8 +954,7 @@ function JourneyCard({
           <thead>
             <tr className="text-[10px] uppercase tracking-wider text-slate-400">
               <th className="pb-1 pr-2 font-black">Level</th>
-              <th className="pb-1 pr-2 text-right font-black">Level CGPA</th>
-              <th className="pb-1 pr-2 text-right font-black">Running CGPA</th>
+              <th className="pb-1 pr-2 text-right font-black">Cumulative CGPA</th>
               <th className="pb-1 text-right font-black">Band</th>
             </tr>
           </thead>
@@ -972,9 +971,6 @@ function JourneyCard({
                     )
                   )}
                 </td>
-                <td className="py-1.5 pr-2 text-right tabular-nums text-slate-600">
-                  {l.cumulativeCgpa !== null ? l.cumulativeCgpa.toFixed(2) : '—'}
-                </td>
                 <td className="py-1.5 text-right font-bold text-slate-500">
                   {l.classification ?? '—'}
                 </td>
@@ -989,7 +985,7 @@ function JourneyCard({
         {complete && finalCgpa !== null && firstCgpa !== null ? (
           <>
             You started at <b>{firstCgpa.toFixed(2)}</b> (Level 100) and have reached{' '}
-            <b>{finalCgpa.toFixed(2)}</b> running CGPA across{' '}
+            <b>{finalCgpa.toFixed(2)}</b> cumulative CGPA across{' '}
             <b>{entered.length} level{entered.length === 1 ? '' : 's'}</b> · {enteredCredits}{' '}
             credits. {trend === 'up' ? 'Your trajectory is climbing — keep it going.' : trend === 'down' ? 'Your trajectory is slipping — the tools below show how to turn it around.' : 'You are holding steady.'}
           </>

@@ -16,6 +16,9 @@ import {
 import type { AiChatMessage, AiPublicStatus } from '../admin/aiSettings';
 import { permissionOn } from '../permissions';
 import { fmt2 } from '../util/format';
+import { AppGlyph } from '../components/AppGlyph';
+import { Info } from '../components/ui';
+import { getRuntimeCatalog } from '../config/runtime';
 
 interface ErrorState {
   message: string;
@@ -48,6 +51,7 @@ export function AiAssistant({
 }) {
   const { state } = useAcademic();
   const d = useDerived();
+  const appearance = getRuntimeCatalog().appearance;
   const [status, setStatus] = useState<AiPublicStatus | null>(aiStatus ?? null);
   const [statusChecked, setStatusChecked] = useState(aiStatus !== undefined);
   const [history, setHistory] = useState<AiHistory>(() => loadAiHistory());
@@ -173,7 +177,9 @@ export function AiAssistant({
   if (!statusChecked) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-3xl ring-1 ring-brand-100">🤖</span>
+        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-3xl ring-1 ring-brand-100">
+          <AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={28} />
+        </span>
         <p className="text-sm font-semibold text-slate-600">Checking the AI assistant…</p>
       </div>
     );
@@ -296,7 +302,7 @@ export function AiAssistant({
       {/* ── Sticky AI header (never scrolls) ─────────────────────────────── */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">
-          🤖 {status.label}
+          <AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={15} /> {status.label}
         </span>
         {chip && (
           <span
@@ -334,10 +340,10 @@ export function AiAssistant({
             Until the AI can see your real numbers, answers will only be <strong>general</strong>. Enter your details in a tool below to unlock personal answers:
           </p>
           <div className="mt-2 grid grid-cols-2 gap-1.5">
-            <QuickTab icon="📝" label="My results" hint="Level + CGPA / grades" onClick={() => onNavigate('calculate')} />
-            <QuickTab icon="🎯" label="Target" hint="Your goal classification" onClick={() => onNavigate('target')} />
-            <QuickTab icon="▶️" label="Next Semester" hint="Credits coming up" onClick={() => onNavigate('next')} />
-            {whatIfAllowed && <QuickTab icon="🔀" label="What-If" hint="Try future GPAs" onClick={() => onNavigate('whatif')} />}
+            <QuickTab slot="calculate" fallback="📝" label="My results" hint="Level + CGPA / grades" onClick={() => onNavigate('calculate')} />
+            <QuickTab slot="target" fallback="🎯" label="Target" hint="Your goal classification" onClick={() => onNavigate('target')} />
+            <QuickTab slot="next" fallback="▶️" label="Next Semester" hint="Credits coming up" onClick={() => onNavigate('next')} />
+            {whatIfAllowed && <QuickTab slot="whatif" fallback="🔀" label="What-If" hint="Try future GPAs" onClick={() => onNavigate('whatif')} />}
           </div>
         </div>
       )}
@@ -400,8 +406,9 @@ export function AiAssistant({
         </div>
       </div>
 
-      {/* ── Fixed typing area (never scrolls) ───────────────────────────── */}
-      <div className="mt-2 shrink-0">
+      {/* ── Fixed typing area (never scrolls) — a pure-white card so the
+          input is always clearly visible against the app background ─────── */}
+      <div className="mt-2 shrink-0 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
         {attachments.length > 0 && (
           <div className="mb-1.5 flex gap-1.5">
             {attachments.map((src, i) => (
@@ -462,10 +469,22 @@ export function AiAssistant({
             </button>
           )}
         </div>
-        <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-slate-400">
-          🔒 {status.notice || 'Your tool data is sent to the AI provider only when you ask a question — it is never stored by the app.'}
-          {meta && <span className="ml-1 opacity-70">· {meta.provider} · {meta.model}</span>}
-        </p>
+        {/* Privacy note + provider now live behind a tappable 💡 idea icon. */}
+        <div className="mt-1.5 flex items-center justify-between gap-2 px-0.5">
+          <span className="min-w-0 flex-1 truncate text-left text-[10px] font-semibold text-slate-400">
+            {meta ? `${meta.provider} · ${meta.model}` : ''}
+          </span>
+          <Info label="How your data is handled">
+            <span className="font-semibold">
+              🔒 {status.notice || 'Your tool data is sent to the AI provider only when you ask a question — it is never stored by the app.'}
+            </span>
+            {meta && (
+              <span className="mt-1 block opacity-80">
+                Provider: {meta.provider} · {meta.model}
+              </span>
+            )}
+          </Info>
+        </div>
       </div>
 
       {/* ── History drawer (hamburger) ──────────────────────────────────── */}
@@ -632,13 +651,30 @@ function downscaleImage(file: File): Promise<string> {
   });
 }
 
-function QuickTab({ icon, label, hint, onClick }: { icon: string; label: string; hint: string; onClick: () => void }) {
+function QuickTab({
+  slot,
+  fallback,
+  label,
+  hint,
+  onClick,
+}: {
+  slot: string;
+  fallback: string;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  // Quick links follow the admin's tool-slot icons (same glyphs as the
+  // home tiles), so a branded icon change shows here too.
+  const appearance = getRuntimeCatalog().appearance;
   return (
     <button
       onClick={onClick}
       className="flex items-center gap-2 rounded-xl bg-white p-2 text-left ring-1 ring-red-200 transition hover:bg-red-50 active:scale-[0.98]"
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-red-100/70 text-base">{icon}</span>
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-red-100/70 text-base">
+        <AppGlyph appearance={appearance} slot={slot} fallback={fallback} size={18} />
+      </span>
       <span className="min-w-0">
         <span className="block truncate text-[11px] font-black text-red-700">{label}</span>
         <span className="block truncate text-[9px] font-semibold text-red-500/80">{hint}</span>

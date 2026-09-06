@@ -6,7 +6,7 @@ import { permissionOn } from '../permissions';
 import { analyzeMilestones, classAt } from '../services/milestoneService';
 import { progressThrough } from '../services/structureService';
 import { printFileName, printSection } from '../services/scopedPrint';
-import { printAppLogo } from '../config/branding';
+import { printAppLogo, tagline } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import { fmt2, clamp } from '../util/format';
 
@@ -45,6 +45,8 @@ export function Milestones() {
       curriculumVersion: d.curriculum?.versionName,
       appLogo: printAppLogo(getRuntimeCatalog().appearance),
       institutionLogo: d.university?.logo,
+      schoolLogo: d.school?.logo,
+      tagline: tagline(getRuntimeCatalog().appearance),
       fileName: printFileName(positionLabel, 'Milestones'),
     });
 
@@ -57,6 +59,8 @@ export function Milestones() {
       curriculumVersion: d.curriculum?.versionName,
       appLogo: printAppLogo(getRuntimeCatalog().appearance),
       institutionLogo: d.university?.logo,
+      schoolLogo: d.school?.logo,
+      tagline: tagline(getRuntimeCatalog().appearance),
       fileName: printFileName(positionLabel, 'Milestones Table'),
     });
 

@@ -190,9 +190,7 @@ export function formatAiContext(ctx: AiStudentContext): string {
     );
     for (const l of ctx.journey) {
       lines.push(
-        `  ▸ Level ${l.level * 100}: level CGPA ${l.cgpa != null ? l.cgpa.toFixed(2) : '—'} · running CGPA ${
-          l.cumulativeCgpa != null ? l.cumulativeCgpa.toFixed(2) : '—'
-        }${l.status === 'missing' ? ' · NOT ENTERED YET' : l.status === 'current' ? ' · current level (in progress)' : ''}`
+        `  ▸ Level ${l.level * 100}: cumulative CGPA ${l.cgpa != null ? l.cgpa.toFixed(2) : '—'}${l.status === 'missing' ? ' · NOT ENTERED YET' : l.status === 'current' ? ' · current level (in progress)' : ''}`
       );
     }
     if (missing.length) {
@@ -203,7 +201,7 @@ export function formatAiContext(ctx: AiStudentContext): string {
       );
     } else {
       lines.push(
-        '  ✓ The CGPA history is complete — use the running CGPA as the student\'s true progress and mention the direction of the journey (rising / falling / steady) when it is relevant to the question.'
+        '  ✓ The CGPA history is complete — each level value is the cumulative CGPA up to that level, so use the MOST RECENT value as the student\'s true progress and mention the direction of the journey (rising / falling / steady) when it is relevant to the question.'
       );
     }
   }

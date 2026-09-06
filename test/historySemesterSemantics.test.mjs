@@ -144,8 +144,8 @@ test('journey (released+Second = whole level): current level completes the journ
   assert.equal(j.complete, true);
   assert.deepEqual(j.missingRequired, []);
   assert.equal(j.levels[2].status, 'complete');
-  // Weighted by the WHOLE level's 40 credits.
-  assert.ok(Math.abs(j.finalCgpa - (2.8 * 20 + 3.2 * 20 + 3.0 * 40) / 80) < 1e-9);
+  // Headline = the most recent cumulative CGPA typed (Level 300 = 3.00).
+  assert.equal(j.finalCgpa, 3.0);
 });
 
 test('journey (released+First = first semester): entry counts with FIRST-SEMESTER credits only', () => {
@@ -160,9 +160,8 @@ test('journey (released+First = first semester): entry counts with FIRST-SEMESTE
   assert.equal(j.complete, true, 'first-semester standing is complete up to now');
   assert.deepEqual(j.missingRequired, []);
   assert.equal(j.levels[2].status, 'current', 'the level is still in progress');
-  // 15-credit weighting → exactly 3.00 (whole-level weighting would give 3.05).
-  assert.ok(Math.abs(j.finalCgpa - (2.8 * 20 + 3.2 * 20 + 3.0 * 15) / 55) < 1e-9);
-  assert.ok(Math.abs(j.finalCgpa - 3.05) > 1e-9, 'must NOT weight by whole-level credits');
+  // Headline = the most recent cumulative CGPA typed (Level 300 = 3.00).
+  assert.equal(j.finalCgpa, 3.0);
 });
 
 test('journey (first-semester, nothing entered yet for the level): complete up to the last finished level', () => {
@@ -177,7 +176,7 @@ test('journey (first-semester, nothing entered yet for the level): complete up t
   assert.deepEqual(j.missingRequired, []);
   assert.equal(j.levels[2].status, 'current');
   assert.equal(j.hasAny, true);
-  assert.ok(Math.abs(j.finalCgpa - (2.8 * 20 + 3.2 * 20) / 40) < 1e-9);
+  assert.equal(j.finalCgpa, 3.2); // most recent cumulative CGPA typed
 });
 
 test('journey (notReleased+First = nothing): a left-over entry for the level is ignored', () => {
@@ -194,8 +193,8 @@ test('journey (notReleased+First = nothing): a left-over entry for the level is 
   assert.equal(lv3.status, 'current');
   assert.equal(j.complete, true);
   assert.deepEqual(j.missingRequired, []);
-  // Headline = running through Level 200 only.
-  assert.ok(Math.abs(j.finalCgpa - (2.8 * 20 + 3.2 * 20) / 40) < 1e-9);
+  // Headline = the most recent cumulative CGPA typed (Level 200 = 3.20).
+  assert.equal(j.finalCgpa, 3.2);
 });
 
 test('journey (justStarted+First = nothing, Level 100, nothing entered): no numbers invented', () => {

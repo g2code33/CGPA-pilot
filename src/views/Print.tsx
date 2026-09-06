@@ -1,6 +1,6 @@
 import { useDerived } from '../state/derived';
 import { Card, SectionTitle, Note } from '../components/ui';
-import { printAppLogo } from '../config/branding';
+import { printAppLogo, tagline } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import { printFileName, printHtml, sectionHeading } from '../services/scopedPrint';
 import {
@@ -27,6 +27,8 @@ export function PrintView() {
     curriculumVersion: m.curriculumVersion ?? undefined,
     appLogo: printAppLogo(getRuntimeCatalog().appearance),
     institutionLogo: d.university?.logo,
+    schoolLogo: d.school?.logo,
+    tagline: tagline(getRuntimeCatalog().appearance),
   };
 
   const options = [

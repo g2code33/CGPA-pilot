@@ -7,10 +7,13 @@ import {
   PRIVACY_AI_NOTE,
 } from '../services/privacyService';
 import { cacheInfo } from '../services/curriculumService';
+import { AppGlyph } from '../components/AppGlyph';
+import { getRuntimeCatalog } from '../config/runtime';
 
 export function Privacy() {
   const d = useDerived();
   const cache = cacheInfo();
+  const appearance = getRuntimeCatalog().appearance;
 
   return (
     <div className="space-y-4">
@@ -78,7 +81,10 @@ export function Privacy() {
       </Card>
 
       <Card className="bg-indigo-50 ring-indigo-200">
-        <SectionTitle icon="🤖" title="The AI assistant (if enabled)" />
+        <SectionTitle
+          icon={<AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={18} />}
+          title="The AI assistant (if enabled)"
+        />
         <p className="text-sm leading-relaxed text-slate-700">{PRIVACY_AI_NOTE}</p>
       </Card>
 

@@ -12,7 +12,7 @@
 import type { AppAppearance, AppIcon } from './types';
 import { resolveAssetUrl } from './assets';
 
-export type IconGroup = 'identity' | 'tools' | 'game';
+export type IconGroup = 'identity' | 'tools' | 'game' | 'admin';
 
 /** One editable app-icon slot the admin can customise. */
 export interface IconSlotDef {
@@ -43,6 +43,10 @@ export const ICON_GROUPS: { id: IconGroup; label: string }[] = [
     id: 'game',
     label: 'Splash & game',
   },
+  {
+    id: 'admin',
+    label: 'Admin console',
+  },
 ];
 
 /**
@@ -59,10 +63,25 @@ export const APP_ICON_SLOTS: IconSlotDef[] = [
   { id: 'flight', label: 'Flight Path', emoji: '🛩️', shape: 'tile', hint: 'Route to graduation', group: 'tools' },
   { id: 'milestones', label: 'Milestones', emoji: '🏁', shape: 'tile', hint: 'Stage checkpoints', group: 'tools' },
   { id: 'privacy', label: 'Privacy', emoji: '🔒', shape: 'tile', hint: 'Privacy explanation', group: 'tools' },
+  { id: 'ai', label: 'AI assistant', emoji: '🤖', shape: 'tile', hint: 'The AI button, AI screen header, privacy AI section and the admin AI item', group: 'tools' },
   // Game
   { id: 'plane', label: 'Sky Dash plane', emoji: '🛩️', shape: 'plane', hint: 'The aeroplane you steer in the opening mini-game', group: 'game' },
   { id: 'star', label: 'Collect star', emoji: '⭐', shape: 'circle', hint: 'Stars you catch while flying (Sky Dash)', group: 'game' },
   { id: 'landing', label: 'Landing icon', emoji: '🛬', shape: 'circle', hint: 'Shown when the plane lands and you take off', group: 'game' },
+  // Admin console side-menu icons (one slot per console screen).
+  { id: 'admin-overview', label: 'Dashboard', emoji: '📊', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-universities', label: 'Institutions', emoji: '🏛️', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-curricula', label: 'Curricula', emoji: '📚', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-grading', label: 'Grading & classes', emoji: '🎯', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-ideatips', label: 'Idea icons', emoji: '💡', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-permissions', label: 'Permissions', emoji: '🔐', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-appearance', label: 'Icons & branding', emoji: '🎨', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-aisettings', label: 'AI assistant', emoji: '🤖', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-aimonitor', label: 'AI monitor', emoji: '🩺', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-storage', label: 'Storage', emoji: '📦', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-recycle', label: 'Recycle bin', emoji: '🗑️', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-previewapp', label: 'Student preview', emoji: '📱', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
+  { id: 'admin-testlab', label: 'Test lab', emoji: '🧪', shape: 'tile', hint: 'Admin console side-menu icon', group: 'admin' },
 ];
 
 /** Slots belonging to a given group (in catalogue order). */

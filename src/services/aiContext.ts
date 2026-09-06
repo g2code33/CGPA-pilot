@@ -117,15 +117,16 @@ export function buildAiContext(
     targetCgpa: state.targetCgpa,
     plannedNextCredits: state.plannedNextCreditHours,
     hasAnyData,
-    // Level 100 → now journey (History mode) — per-level CGPA, the running
-    // CGPA, and which levels are still missing (the model must respect the
-    // completeness rule and never invent CGPAs for missing levels).
+    // Level 100 → now journey (History mode) — each level's CUMULATIVE CGPA
+    // (as typed) and which levels are still missing (the model must respect
+    // the completeness rule and never invent CGPAs for missing levels).
     journey:
       state.mode === 'history' && journey
         ? journey.levels.map((l) => ({
             level: l.levelIndex,
+            // The value the student typed is already the CUMULATIVE CGPA up
+            // to and including this level — never a per-level GPA.
             cgpa: l.cgpa,
-            cumulativeCgpa: l.cumulativeCgpa,
             status: l.status,
           }))
         : undefined,

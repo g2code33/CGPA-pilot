@@ -6,7 +6,7 @@ import { buildFlightPath } from '../services/flightPathService';
 import { classifyCgpa } from '../services/classificationService';
 import { progressThrough } from '../services/structureService';
 import { printFileName, printSection, printHtml, type PrintBranding } from '../services/scopedPrint';
-import { printAppLogo } from '../config/branding';
+import { printAppLogo, tagline } from '../config/branding';
 import { getRuntimeCatalog } from '../config/runtime';
 import { permissionOn } from '../permissions';
 import { smoothPath, smoothAreaPath, type Pt } from '../util/curve';
@@ -67,6 +67,8 @@ export function FlightPathView() {
     curriculumVersion: d.curriculum?.versionName,
     appLogo: printAppLogo(getRuntimeCatalog().appearance),
     institutionLogo: d.university?.logo,
+    schoolLogo: d.school?.logo,
+    tagline: tagline(getRuntimeCatalog().appearance),
     fileName: printFileName(
       `Level ${d.confirmedPosition.levelIndex * 100} - Sem ${d.confirmedPosition.semesterIndex}`,
       docName

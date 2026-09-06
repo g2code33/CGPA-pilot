@@ -112,13 +112,14 @@ body {
     display: none !important;
   }
 
-  /* A4 page setup. The fixed running header (~11mm tall) is anchored at the
-     top of the paper; the generous 18mm top margin keeps EVERY page's
-     content at least ~6mm below it, so the header can never overlap the
+  /* A4 page setup. The fixed branded letterhead (~13mm tall) is anchored at
+     the top of the paper and the fixed "Generated with CGPA PILOT" footer at
+     the bottom. The generous 22mm top / 16mm bottom margins keep EVERY page's
+     content clear of BOTH, so the header and footer can never overlap the
      main info (no per-page padding tricks needed). */
   @page {
     size: A4;
-    margin: 18mm 14mm 14mm 14mm;
+    margin: 22mm 14mm 16mm 14mm;
   }
   html,
   body {

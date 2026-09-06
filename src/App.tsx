@@ -161,6 +161,15 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   const [splashRun, setSplashRun] = useState(0);
   const [screenRaw, setScreenRaw] = useState<Screen>('home');
   const screen = screenRaw;
+  // Transient warning shown when a blocked "Next" is tapped (e.g. the next
+  // tool needs results the student has not entered yet).
+  const [navWarn, setNavWarn] = useState<string | null>(null);
+  const navWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function warnNav(msg: string) {
+    setNavWarn(msg);
+    if (navWarnTimer.current) clearTimeout(navWarnTimer.current);
+    navWarnTimer.current = setTimeout(() => setNavWarn(null), 2600);
+  }
   // Navigation also reports back to the admin's live-preview chrome.
   function setScreen(s: Screen) {
     setScreenRaw(s);
@@ -378,7 +387,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
         title="CGPA Pilot AI — ask anything about your academics"
         className={`no-print fixed z-30 ${pos} grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-indigo-700 text-2xl text-white shadow-xl shadow-brand-900/40 ring-2 ring-white/50 transition hover:scale-105 active:scale-95`}
       >
-        🤖
+        <AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={26} />
         <span
           className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-white"
           aria-hidden
@@ -801,7 +810,15 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             </button>
             {isTool(screen) && next ? (
               <button
-                onClick={() => setScreen(next.id)}
+                onClick={() => {
+                  // The next tool needs entered results — a student with no
+                  // results cannot proceed; every tap says so.
+                  if (next.needsData && !hasData) {
+                    warnNav('Enter your results first');
+                    return;
+                  }
+                  setScreen(next.id);
+                }}
                 className="flex min-w-0 flex-1 items-center justify-end gap-1.5 rounded-xl px-2 py-2 text-right text-brand-700 active:scale-95"
               >
                 <span className="min-w-0">
@@ -818,6 +835,11 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
               </div>
             </nav>
           </>
+        )}
+        {navWarn && (
+          <div className="no-print fixed bottom-20 left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-lg">
+            ⚠️ {navWarn}
+          </div>
         )}
         {aiFab('bottom-16 right-3')}
       </div>
@@ -899,8 +921,10 @@ function SplashInstitutionLogos() {
   const uni = listUniversities().find((u) => u.id === context.universityId);
   const depts = uni?.schools.filter((s) => s.status === 'active') ?? [];
   const items: { src?: string; emoji: string; name: string }[] = [];
-  if (uni) items.push({ src: uni.logo, emoji: '🏛️', name: uni.shortName || uni.name });
-  for (const d of depts) items.push({ src: d.logo, emoji: '🏢', name: d.name });
+  // resolveAssetUrl: institution logos may be asset:<key> refs (R2) or data
+  // URLs — a raw `asset:…` value must never reach an <img src> (CSP error).
+  if (uni) items.push({ src: resolveAssetUrl(uni.logo), emoji: '🏛️', name: uni.shortName || uni.name });
+  for (const d of depts) items.push({ src: resolveAssetUrl(d.logo), emoji: '🏢', name: d.name });
   const anyLogo = items.some((i) => i.src);
   if (!anyLogo) return null;
   return (

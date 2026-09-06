@@ -156,6 +156,26 @@ export function useDerived() {
     const pendingLoad =
       semesterRole === 'upon-release' ? model.pendingCreditHours : advancedPending;
 
+    // ── GPA-History journey: Level 100 → current level ───────────────────
+    // The whole point of History mode is that the student's progress FROM
+    // SCRATCH is known: every level below the current one must be entered.
+    // Each entered value is the CUMULATIVE CGPA up to that level (not a
+    // per-level GPA), so there is no "running CGPA" to compute — the band is
+    // the typed value and the confirmed CGPA is the most recent typed value.
+    // A partial history is flagged (missingRequired) and never produces a
+    // headline CGPA anywhere.
+    const historyJourney: HistoryJourney | null =
+      state.mode === 'history'
+        ? computeHistoryJourney({
+            semesters: effectiveSemesters,
+            currentLevelIndex: state.baseline.levelIndex,
+            standing,
+            currentEntryKind: historyEntryKind ?? undefined,
+            levelCreditsFor: historyCreditsFor,
+            classify: (g) => classifyCgpa(g, classification)?.label ?? null,
+          })
+        : null;
+
     // The confirmed credit base already accounts for the current/pending
     // position, so tell the engine not to subtract the "current semester" again
     // (older logic approximated this by subtracting). Pending load is injected
@@ -174,10 +194,24 @@ export function useDerived() {
           ? { ...state, semesters: effectiveSemesters }
           : state;
 
-    const snapshot = computeSnapshot(snapshotState, grading, {
+    let snapshot = computeSnapshot(snapshotState, grading, {
       configuredCreditsFor,
       curriculumCompletedCredits,
     });
+
+    // History mode: each typed level value IS the cumulative CGPA, so the
+    // confirmed CGPA is the MOST RECENT typed value (never a re-weighted
+    // average), and the quality points are that CGPA over the completed
+    // credits. An incomplete history never yields a confirmed CGPA.
+    if (state.mode === 'history' && historyJourney) {
+      const finalCgpa = historyJourney.complete ? historyJourney.finalCgpa : null;
+      snapshot = {
+        ...snapshot,
+        cgpa: finalCgpa,
+        qualityPoints:
+          finalCgpa !== null ? finalCgpa * snapshot.creditHours : 0,
+      };
+    }
 
     // Backwards-compatible record shape for the views.
     const record = {
@@ -218,23 +252,6 @@ export function useDerived() {
       grading,
       classification
     );
-
-    // ── GPA-History journey: Level 100 → current level ───────────────────
-    // The whole point of History mode is that the student's progress FROM
-    // SCRATCH is known: every level below the current one must be entered,
-    // and the app shows the running CGPA + trend. A partial history is
-    // flagged (missingRequired) and never produces a headline CGPA anywhere.
-    const historyJourney: HistoryJourney | null =
-      state.mode === 'history'
-        ? computeHistoryJourney({
-            semesters: effectiveSemesters,
-            currentLevelIndex: state.baseline.levelIndex,
-            standing,
-            currentEntryKind: historyEntryKind ?? undefined,
-            levelCreditsFor: historyCreditsFor,
-            classify: (g) => classifyCgpa(g, classification)?.label ?? null,
-          })
-        : null;
 
     const remainingSlots = progress.remainingSlots;
     const remainingCredits =

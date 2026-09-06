@@ -2,8 +2,9 @@
 // historyProgress — the student's CGPA journey from Level 100 to the current
 // level. This is what makes GPA-History mode *worth using*:
 //
-//   • One row per level — the level CGPA entered, that level's credit load,
-//     the cumulative (running) CGPA from Level 100, and its classification.
+//   • One row per level — the CUMULATIVE CGPA the student entered for that
+//     level (each box holds the running total up to and including that
+//     level), that level's credit load, and its classification band.
 //   • COMPLETENESS GUARD — a partial history must not produce a headline
 //     number. If the student is in Level 300 but never entered Level 200,
 //     `missingRequired` names exactly which levels to go back and complete,
@@ -23,16 +24,15 @@ export interface LevelJourney {
   /** 1 = Level 100, 2 = Level 200, … */
   levelIndex: number;
   label: string; // "Level 100"
-  /** The level CGPA the student entered (null = not entered yet). */
+  /**
+   * The CUMULATIVE CGPA the student entered for this level — the running
+   * total from Level 100 through this level (null = not entered yet).
+   * It is used as typed; the app never re-averages it.
+   */
   cgpa: number | null;
   /** Configured total credits of this level (both semesters; 0 = unpublished). */
   credits: number;
-  /**
-   * Running credit-weighted CGPA from Level 100 through this level.
-   * Null after a gap — a cumulative that skips a level is a lie.
-   */
-  cumulativeCgpa: number | null;
-  /** Classification band label of the cumulative CGPA (null when unknown). */
+  /** Classification band label of the typed cumulative CGPA (null when unknown). */
   classification: string | null;
   status: LevelStatus;
 }
@@ -48,11 +48,12 @@ export interface HistoryJourney {
   hasAny: boolean;
   /** Total configured credits of the levels actually entered. */
   enteredCredits: number;
-  /** CGPA of the first completed level — where the journey starts. */
+  /** Cumulative CGPA of the first completed level — where the journey starts. */
   firstCgpa: number | null;
   /**
-   * The overall CGPA — ONLY when the history is complete (and at least one
-   * level is entered). A partial history never yields a headline number.
+   * The overall CGPA = the MOST RECENT cumulative CGPA the student typed —
+   * ONLY when the history is complete (and at least one level is entered).
+   * A partial history never yields a headline number.
    */
   finalCgpa: number | null;
   trend: 'up' | 'down' | 'flat' | null;
@@ -74,7 +75,7 @@ export interface HistoryJourneyInput {
   currentEntryKind?: CurrentLevelEntryKind;
   /** Total configured credits of one level (0 when unpublished). */
   levelCreditsFor: (levelIndex: number) => number;
-  /** Optional classification lookup for a cumulative CGPA. */
+  /** Optional classification lookup for a typed cumulative CGPA. */
   classify?: (cgpa: number) => string | null;
 }
 
@@ -196,9 +197,6 @@ export function historyJourney(input: HistoryJourneyInput): HistoryJourney {
   const missingRequired: number[] = [];
   const enteredGpas: number[] = [];
 
-  let runPoints = 0;
-  let runCredits = 0;
-  let gapSeen = false; // an earlier required level is missing → no running totals after
   let enteredCredits = 0;
   let firstCgpa: number | null = null;
   let finalCgpa: number | null = null;
@@ -223,22 +221,16 @@ export function historyJourney(input: HistoryJourneyInput): HistoryJourney {
     else if (cgpa !== null) status = 'complete';
     else status = required ? 'missing' : 'current';
 
-    let cumulativeCgpa: number | null = null;
     if (cgpa !== null) {
       enteredGpas.push(cgpa);
       enteredCredits += credits;
       if (firstCgpa === null) firstCgpa = cgpa;
-      if (!gapSeen && credits > 0) {
-        runPoints += cgpa * credits;
-        runCredits += credits;
-        cumulativeCgpa = runPoints / runCredits;
-        finalCgpa = cumulativeCgpa; // latest gap-free running total
-      } else if (gapSeen || credits === 0) {
-        // Kept out of the headline: this cumulative would skip a level.
-      }
+      // Each typed value IS the cumulative CGPA up to that level, so the
+      // headline is simply the MOST RECENT value entered — never a
+      // re-weighted average of the boxes.
+      finalCgpa = cgpa;
     } else if (required) {
       missingRequired.push(lv);
-      gapSeen = true;
     }
 
     levels.push({
@@ -246,9 +238,7 @@ export function historyJourney(input: HistoryJourneyInput): HistoryJourney {
       label: `Level ${lv * 100}`,
       cgpa,
       credits,
-      cumulativeCgpa,
-      classification:
-        cumulativeCgpa !== null && classify ? classify(cumulativeCgpa) : null,
+      classification: cgpa !== null && classify ? classify(cgpa) : null,
       status,
     });
   }

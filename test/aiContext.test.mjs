@@ -166,7 +166,7 @@ test('history mode: the Level 100→now journey is passed to the model (complete
   assert.equal(ctx.journey[2].status, 'complete');
   const block = formatAiContext(ctx);
   assert.match(block, /LEVEL JOURNEY/);
-  assert.match(block, /Level 100: level CGPA 2\.90 · running CGPA 2\.90/);
+  assert.match(block, /Level 100: cumulative CGPA 2\.90/);
   assert.match(block, /✓ The CGPA history is complete/);
 });
 
@@ -197,7 +197,7 @@ test('history mode: INCOMPLETE journey → the model is told not to confirm a CG
   const ctx = buildAiContext(s, { creditHours: 24, points: 69.6, cgpa: 2.9, pendingCreditHours: 0 }, null, { university: 'TU' }, journey);
   const block = formatAiContext(ctx);
   assert.match(block, /LEVEL JOURNEY/);
-  assert.match(block, /Level 200: level CGPA — · running CGPA — · NOT ENTERED YET/);
+  assert.match(block, /Level 200: cumulative CGPA — · NOT ENTERED YET/);
   assert.match(block, /⚠ The CGPA history is INCOMPLETE — Level 200, Level 300 are not entered/);
   assert.match(block, /Do NOT compute, confirm or quote a final CGPA/);
 });

@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { resolveAssetUrl } from '../config/assets';
+import { DEFAULT_TAGLINE } from '../config/branding';
 
 export interface PrintBranding {
   title: string;
@@ -25,6 +26,10 @@ export interface PrintBranding {
   appLogo?: string;
   /** University / institution logo image shown in the sheet header. */
   institutionLogo?: string;
+  /** Department / school logo shown in the header next to the university logo. */
+  schoolLogo?: string;
+  /** App tagline shown under the CGPA PILOT wordmark (defaults to the built-in). */
+  tagline?: string;
   /** Default Save-as-PDF file name (browser print dialog). */
   fileName?: string;
 }
@@ -68,44 +73,44 @@ function brandingHtml(b: PrintBranding): string {
   // resolveAssetUrl: logos may be asset:<key> refs (R2) or data URLs.
   const appLogoUrl = b.appLogo ? resolveAssetUrl(b.appLogo) : undefined;
   const instLogoUrl = b.institutionLogo ? resolveAssetUrl(b.institutionLogo) : undefined;
+  const schoolLogoUrl = b.schoolLogo ? resolveAssetUrl(b.schoolLogo) : undefined;
   const appLogo = appLogoUrl
-    ? `<img src="${esc(appLogoUrl)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
+    ? `<img src="${esc(appLogoUrl)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:7px;">`
     : '';
   const instLogo = instLogoUrl
-    ? `<img src="${esc(instLogoUrl)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
+    ? `<img src="${esc(instLogoUrl)}" alt="" style="width:26px;height:26px;object-fit:contain;border-radius:6px;">`
     : '';
-  const metaLine = [
-    b.programmeName ? esc(b.programmeName) : '',
-    b.curriculumVersion ? `Curriculum ${esc(b.curriculumVersion)}` : '',
-    date,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  // RUNNING HEADER: `position: fixed` elements are repeated on EVERY printed
-  // page by the browser, so page 2+ also carries the app + institution
-  // identity. It is height-deterministic (fixed 28px logos, single-line
-  // text, overflow hidden — ~10mm total) and the @page top margin (18mm)
-  // keeps every page's content clear of it, so it can never overlap the
-  // main info.
+  const schoolLogo = schoolLogoUrl
+    ? `<img src="${esc(schoolLogoUrl)}" alt="" style="width:26px;height:26px;object-fit:contain;border-radius:6px;">`
+    : '';
+  const taglineText = b.tagline?.trim() || DEFAULT_TAGLINE;
+  // Branded letterhead. RUNNING HEADER + FOOTER: `position: fixed` elements
+  // repeat on EVERY printed page, so page 2+ still carries the full brand,
+  // the institution identity, the document title/date, and the footer line.
+  // Both are height-deterministic (fixed-size logos, single-line ellipsised
+  // text, overflow hidden) and the @page top/bottom margins keep every page's
+  // content clear of them, so they can never overlap the main info.
   return `
-    <div class="print-header" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 2px 6px;border-bottom:2px solid #0f172a;overflow:hidden;">
+    <div class="print-header" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 2px 6px;border-bottom:2px solid #0f172a;overflow:hidden;background:#fff;">
       <div style="display:flex;align-items:center;gap:8px;min-width:0;">
         ${appLogo}
         <div style="min-width:0;">
           <div style="font-size:13px;font-weight:900;letter-spacing:0.5px;line-height:1.15;">
             CGPA <span style="color:#4f46e5;">PILOT</span>
           </div>
-          <div style="font-size:9.5px;font-weight:700;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.title)}</div>
+          <div style="font-size:8.5px;font-weight:700;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(taglineText)}</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;min-width:0;">
         <div style="min-width:0;text-align:right;">
           ${b.institutionLabel ? `<div style="font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.institutionLabel)}</div>` : ''}
-          <div style="font-size:9px;color:#64748b;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${metaLine}</div>
+          <div style="font-size:10.5px;font-weight:900;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.title)}</div>
+          <div style="font-size:8.5px;color:#64748b;line-height:1.25;">${date}</div>
         </div>
-        ${instLogo}
+        ${schoolLogo}${instLogo}
       </div>
-    </div>`;
+    </div>
+    <div class="print-footer" style="position:fixed;bottom:0;left:0;right:0;z-index:50;text-align:center;padding:3px 0 5px;border-top:1px solid #cbd5e1;font-size:8.5px;color:#64748b;background:#fff;">Generated with CGPA PILOT</div>`;
 }
 
 function disclaimerHtml(b?: string): string {
