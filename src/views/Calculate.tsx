@@ -382,8 +382,19 @@ function CurrentStanding() {
 
   const status: StandingStatus = b.standing ?? 'released';
 
-  // Admin-configured courses for the currently selected semester.
-  const semCourses = curriculumSemesterCourses(d.curriculum, b.levelIndex, b.semesterIndex);
+  // Admin-configured courses for the semester whose results the typed CGPA
+  // covers. For Released that is the selected semester itself; for
+  // Just started it is the confirmed/previous semester (the baseline semester
+  // is still ahead, so its courses can't have pending results yet).
+  const tagPos = d.confirmedPosition ?? {
+    levelIndex: b.levelIndex,
+    semesterIndex: b.semesterIndex,
+  };
+  const semCourses = curriculumSemesterCourses(
+    d.curriculum,
+    tagPos.levelIndex,
+    tagPos.semesterIndex
+  );
   const pendingIds = b.pendingCourseIds ?? [];
   const tagged = useMemo(() => new Set(pendingIds), [pendingIds]);
   const hasSemCourses = semCourses.length > 0;
@@ -409,11 +420,14 @@ function CurrentStanding() {
     const sum = semCourses
       .filter((c) => next.has(c.id))
       .reduce((s, c) => s + (c.creditHours || 0), 0);
+    // Preserve the standing the student chose (Released OR Just started). A
+    // Just-started student with some immediate results out must NOT be forced
+    // to Released just because they tagged a few courses.
     dispatch({
       type: 'setBaseline',
       patch: {
-        standing: 'released',
-        justEntered: false,
+        standing: status,
+        justEntered: status !== 'released',
         pendingCourseIds: [...next],
         pendingCreditHours: sum,
       },
@@ -499,8 +513,12 @@ function CurrentStanding() {
           )}
         </p>
 
-        {/* Single Advanced control — shown when the standing is Released */}
-        {status === 'released' && (
+        {/* Single Advanced control — shown when results are partially out.
+            A "Just started" student may already have some immediate results
+            released while others are still pending, so they need the same
+            per-course tagging as Released (they cannot pick "Not released"
+            because that assumes the WHOLE semester is still pending). */}
+        {(status === 'released' || status === 'justStarted') && (
           <>
             <div className="mt-3 flex items-center gap-2">
               <button
@@ -525,8 +543,8 @@ function CurrentStanding() {
               <div className="mt-3">
                 {hasSemCourses ? (
                   <AdvancedCoursePanel
-                    level={b.levelIndex}
-                    sem={b.semesterIndex}
+                    level={tagPos.levelIndex}
+                    sem={tagPos.semesterIndex}
                     courses={semCourses}
                     taggedIds={pendingIds}
                     onTagged={(ids) => setTagged(new Set(ids))}
@@ -571,9 +589,9 @@ function CurrentStanding() {
             {status === 'justStarted' ? (
               <>
                 Your confirmed CGPA is based on the semester you just finished. The
-                planning tools now target <strong>finishing this semester</strong> —
-                write its exams at the end, then come back and set this to{' '}
-                <strong>Released</strong> to add those results.
+                planning tools now target <strong>finishing this semester</strong>. If
+                some immediate results are already out while others aren’t, use{' '}
+                <strong>⚙️ Advanced</strong> to mark the ones still not released.
               </>
             ) : (
               <>
@@ -661,11 +679,21 @@ function HistoryMode() {
     }
   }
 
-  // ── Advanced: under "Released", let the user tag specific not-released
-  //    courses of the CURRENT (selected) level. These are attached to that
-  //    level's history entry as pending courses so the engine excludes their
-  //    credits and reports them as a projection.
-  const semCourses = curriculumSemesterCourses(d.curriculum, b.levelIndex, b.semesterIndex);
+  // ── Advanced: under "Released" or "Just started", let the user tag specific
+  //    not-released courses of the CURRENT (selected) level. These are attached
+  //    to that level's history entry as pending courses so the engine excludes
+  //    their credits and reports them as a projection. For Just started the
+  //    level's entry represents the confirmed first semester, so we tag THAT
+  //    semester's courses (not the ahead semester the student is now in).
+  const tagPos = d.confirmedPosition ?? {
+    levelIndex: b.levelIndex,
+    semesterIndex: b.semesterIndex,
+  };
+  const semCourses = curriculumSemesterCourses(
+    d.curriculum,
+    tagPos.levelIndex,
+    tagPos.semesterIndex
+  );
   const hasSemCourses = semCourses.length > 0;
   const currentLevelSemester = state.semesters.find((s) => s.levelIndex === b.levelIndex);
   const curPendingIds = (currentLevelSemester?.courses ?? [])
@@ -699,13 +727,25 @@ function HistoryMode() {
         pending: pendingEntries,
       });
     } else if (ids.length > 0) {
-      dispatch({ type: 'addSemesterAt', levelIndex: b.levelIndex, semesterIndex: b.semesterIndex });
+      dispatch({
+        type: 'addSemesterAt',
+        levelIndex: tagPos.levelIndex,
+        semesterIndex: tagPos.semesterIndex,
+      });
       // apply after the entry exists (component re-renders with the entry)
     }
-    // Keep baseline flags in sync for a consistent label.
+    // Keep baseline flags in sync for a consistent label. Preserve the
+    // standing the student chose (Released OR Just started) — a Just-started
+    // history student with some immediate results out must not be forced to
+    // Released just because a few courses are tagged.
     dispatch({
       type: 'setBaseline',
-      patch: { standing: 'released', pendingCourseIds: ids, pendingCreditHours: pendingSum },
+      patch: {
+        standing: status,
+        justEntered: status !== 'released',
+        pendingCourseIds: ids,
+        pendingCreditHours: pendingSum,
+      },
     });
   }
 
@@ -786,8 +826,15 @@ function HistoryMode() {
           })}
         </div>
 
-        {/* Released → Advanced: tag not-released courses of the current level */}
-        {status === 'released' && (
+        {/* Released / Just started → Advanced: tag not-released courses of the
+            current level. A "Just started" history student may already have
+            some immediate results out while others are still pending, so they
+            get the same per-course tagging (they cannot pick "Not released"
+            because that assumes the whole level is still pending). We only show
+            it when the current level actually has an entry to attach pending
+            courses to ('none' means there is nothing entered yet). */}
+        {(status === 'released' ||
+          (status === 'justStarted' && (d.historyEntryKind ?? null) !== 'none')) && (
           <>
             <div className="mt-3 flex items-center gap-2">
               <button
@@ -811,8 +858,8 @@ function HistoryMode() {
               <div className="mt-3">
                 {hasSemCourses ? (
                   <AdvancedCoursePanel
-                    level={b.levelIndex}
-                    sem={b.semesterIndex}
+                    level={tagPos.levelIndex}
+                    sem={tagPos.semesterIndex}
                     courses={semCourses}
                     taggedIds={curPendingIds}
                     onTagged={setHistoryTagged}

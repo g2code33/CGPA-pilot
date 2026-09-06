@@ -295,7 +295,9 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
     if (r.ok) {
       setPreview(null);
       // Always say how much was published (v1.0.20) — not just when oversize.
-      const publishedBytes = new Blob([JSON.stringify(target)]).size;
+      // Use the server's actual persist (R2 auto-migration may have slimmed it).
+      const shipped = r.catalog ?? target;
+      const publishedBytes = new Blob([JSON.stringify(shipped)]).size;
       onToast(
         `✅ ${isDraft ? 'Draft published' : 'Published'} — catalog v${r.adminVersion} / student config v${r.publishedVersion} is live on every device (next open). Published size: ${humanBytes(publishedBytes)}.`
       );

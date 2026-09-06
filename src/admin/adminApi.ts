@@ -67,6 +67,12 @@ export interface PublishResult {
   updatedAt?: string;
   error?: string;
   issues?: string[];
+  /**
+   * The catalog that was actually persisted. When R2 auto-migration ran this
+   * is the slimmed version (asset:<key> refs), so the caller can store it and
+   * not send the same base64 bytes again.
+   */
+  catalog?: AdminCatalog;
 }
 
 export interface PullResult {
@@ -462,9 +468,22 @@ export async function publishCatalog(
   // call and name the exact images to shrink (instead of a round-trip 413).
   // Both stored values are checked, exactly like the server does.
   const jsonBytes = (v: unknown) => new Blob([JSON.stringify(v)]).size;
-  const biggest = Math.max(jsonBytes(catalog), jsonBytes(buildDistribution(catalog)));
+  let biggest = Math.max(jsonBytes(catalog), jsonBytes(buildDistribution(catalog)));
+  // R2 auto-migration: when an otherwise-valid catalog is over the D1 limit
+  // only because of legacy embedded images, move those images to R2 first and
+  // publish the slimmed catalog. Without this the admin has to click "Move
+  // catalog images to R2" and then publish again — the exact friction that
+  // made publishing appear broken even after R2 was set up.
+  let target = catalog;
   if (biggest > D1_VALUE_SAFE_BYTES) {
-    return { ok: false, error: oversizeCatalogMessage(biggest, catalogAssetList(catalog)) };
+    const migrated = await migrateCatalogToAssets(catalog, deps);
+    if (migrated.ok && migrated.catalog) {
+      target = migrated.catalog;
+      biggest = Math.max(jsonBytes(target), jsonBytes(buildDistribution(target)));
+    }
+  }
+  if (biggest > D1_VALUE_SAFE_BYTES) {
+    return { ok: false, error: oversizeCatalogMessage(biggest, catalogAssetList(target)) };
   }
   const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return { ok: false, error: 'No network available in this environment.' };
@@ -477,7 +496,7 @@ export async function publishCatalog(
       method: 'POST',
       cache: 'no-store',
       headers: { ...headers(deps), 'content-type': 'application/json' },
-      body: JSON.stringify({ catalog, note: deps.note ?? null }),
+      body: JSON.stringify({ catalog: target, note: deps.note ?? null }),
     });
     const doc = (await safeJson(res)) as {
       ok?: boolean;
@@ -487,6 +506,7 @@ export async function publishCatalog(
       publishedVersion?: number;
       updatedAt?: string;
       message?: string;
+      catalog?: AdminCatalog;
     } | null;
     if (res.status === 401) {
       return { ok: false, error: 'Your admin session has expired (or the token was rejected). Sign in again.' };
@@ -513,6 +533,9 @@ export async function publishCatalog(
       adminVersion: doc.adminVersion,
       publishedVersion: doc.publishedVersion,
       updatedAt: doc.updatedAt,
+      // Prefer the server's persisted catalog (R2-refs when it auto-migrated);
+      // fall back to the local target so the caller always has what shipped.
+      catalog: doc.catalog ?? target,
     };
   } catch {
     return { ok: false, error: 'Could not reach the backend. Check your connection and try again.' };

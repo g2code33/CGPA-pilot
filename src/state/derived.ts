@@ -147,10 +147,14 @@ export function useDerived() {
         : null;
 
     // Pending load reported to the CGPA engine. For Not Released this is the
-    // whole completed-but-unreleased semester; for Released it is any advanced
-    // "not released" course credits the user tagged.
+    // whole completed-but-unreleased semester; for Released AND Just started it
+    // is any advanced "not released" course credits the user tagged (a student
+    // who just started can already have some immediate results out and some
+    // still pending).
     const advancedPending =
-      state.mode === 'current' && semesterRole === 'next-semester' && standing === 'released'
+      state.mode === 'current' &&
+      (semesterRole === 'next-semester' || semesterRole === 'finish-current') &&
+      (standing === 'released' || standing === 'justStarted')
         ? state.baseline.pendingCreditHours || 0
         : 0;
     const pendingLoad =

@@ -515,11 +515,32 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
 
       const catalog = doc.catalog as AdminCatalog;
 
+      // R2 auto-migration (v1.0.24): if the Worker has R2 bound and the
+      // catalog still carries legacy embedded data-URL images, move them to
+      // R2 FIRST and publish the slimmed catalog. This removes the "database
+      // limit ~2 MB" wall without requiring the separate manual "Move
+      // catalog images to R2" click. Content-addressed keys make re-runs a
+      // free no-op, and the returned catalog lets the admin device store the
+      // refs so it never re-uploads the same bytes again.
+      let catalogToPublish = catalog;
+      if (env.R2_ASSETS && catalogAssetList(catalog).length > 0) {
+        try {
+          const migrated = await migrateCatalogAssets(env.R2_ASSETS, catalog);
+          catalogToPublish = migrated.catalog;
+        } catch (e) {
+          // Migration is best-effort: fall through so an explicit over-limit
+          // (or validation) error below still names the offending images.
+          const detail = e instanceof Error ? e.message : String(e);
+          console.error(`asset-migration-failed: ${detail}`);
+        }
+      }
+
       // SIZE PRE-CHECK (runs BEFORE validation): D1 rejects bound values
       // above ~2 MB with a cryptic error that used to surface as a blank
       // 500. Catch it here and tell the admin exactly what to shrink.
-      const catalogBytes = jsonByteLength(catalog);
-      const distributionBytes = catalogBytes >= 0 ? jsonByteLength(buildDistribution(catalog)) : -1;
+      const catalogBytes = jsonByteLength(catalogToPublish);
+      const distributionBytes =
+        catalogBytes >= 0 ? jsonByteLength(buildDistribution(catalogToPublish)) : -1;
       const biggest = Math.max(catalogBytes, distributionBytes);
       if (catalogBytes < 0 || distributionBytes < 0) {
         return json({ ok: false, error: 'not-serializable', message: 'The catalog cannot be converted to JSON — check for broken (non-serializable) fields.' }, 400);
@@ -531,14 +552,14 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
           {
             ok: false,
             error: 'payload-too-large',
-            message: oversizeCatalogMessage(biggest, catalogAssetList(catalog)),
+            message: oversizeCatalogMessage(biggest, catalogAssetList(catalogToPublish)),
           },
           413
         );
       }
 
       // Server-side validation (same shared rules as the client).
-      const validation = validateAdminCatalogForPublish(catalog);
+      const validation = validateAdminCatalogForPublish(catalogToPublish);
       if (!validation.ok) {
         return json({ ok: false, error: 'validation', issues: validation.issues }, 400);
       }
@@ -548,7 +569,7 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
 
       let result;
       try {
-        result = await publishAll(env.CONFIG_DB, catalog, note);
+        result = await publishAll(env.CONFIG_DB, catalogToPublish, note);
       } catch (e) {
         // Surface the REAL database error (sanitized) instead of the old
         // blank "Unexpected server error." — this is what let a broken
@@ -578,6 +599,10 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         adminVersion: result.adminVersion,
         publishedVersion: result.publishedVersion,
         updatedAt: result.updatedAt,
+        // The exact catalog that was persisted. When R2 auto-migration ran,
+        // this is the slimmed version (image values are asset:<key> refs) so
+        // the admin device can store it and never re-upload the same bytes.
+        catalog: catalogToPublish,
       });
     }
 

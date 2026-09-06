@@ -151,9 +151,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     setSyncing('publishing');
     const r = await publishCatalog(c, { note });
     if (r.ok) {
+      // R2 auto-migration may have slimmed the catalog (asset:<key> refs).
+      // Persist THAT version locally so the next publish is tiny and the
+      // working catalog never re-sends the same base64 bytes again.
+      const shipped = r.catalog ?? c;
+      if (shipped !== c) {
+        writeAdminCatalog(shipped);
+        catalogRef.current = shipped;
+        setCatalogState(shipped);
+      }
       // The catalog we just sent is now what students see → refresh the
       // preview snapshot so "Preview changes" diffs against THIS publish.
-      writePublishedSnapshot(c, r.adminVersion ?? null);
+      writePublishedSnapshot(shipped, r.adminVersion ?? null);
       setBackend((b) => ({
         ...b,
         adminVersion: r.adminVersion ?? b.adminVersion,

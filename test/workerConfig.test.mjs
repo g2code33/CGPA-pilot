@@ -16,17 +16,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { __resetLatestAppVersionCache } from '../worker/src/index.ts';
 import { createD1Stub } from './helpers/d1Stub.mjs';
+import { createR2Stub } from './helpers/r2Stub.mjs';
 import { makeValidCatalog } from './helpers/fixtures.mjs';
 import { validateDistributionDocument } from '../src/admin/catalogValidation.ts';
 
 const TOKEN = 'test-admin-token';
 const BASE = 'https://cfg.example.test';
 
-function env({ db = true, token = TOKEN } = {}) {
+function env({ db = true, token = TOKEN, r2 = false } = {}) {
   return {
     CONFIG_DB: db ? createD1Stub() : undefined,
     ADMIN_TOKEN: token,
     ASSETS: undefined,
+    R2_ASSETS: r2 ? createR2Stub() : undefined,
   };
 }
 
@@ -244,6 +246,53 @@ test('publish: a catalog that would exceed the D1 value limit is 413 with an act
   assert.match(doc.message, /Largest images: App icon \(1\.5 MB\)/);
   // Nothing was stored.
   assert.equal((await worker.fetch(req('/api/config/meta'), e)).status, 404);
+});
+
+test('publish: auto-migrates legacy embedded images to R2 when the catalog is over the D1 limit', async () => {
+  // R2 is configured but the admin is still carrying two 1.7 MB base64 icons
+  // from the pre-R2 days. Save & Publish must migrate them to R2 and ship the
+  // slimmed catalog instead of answering the old "413 / shrink your images".
+  const e = env({ r2: true });
+  const hugeIcon = 'data:image/png;base64,' + 'A'.repeat(2_000_000); // ~2 MB in JSON
+  const catalog = {
+    ...makeValidCatalog(),
+    appearance: {
+      appIcon: { emoji: '🧭', image: hugeIcon },
+      icons: {
+        ai: { emoji: '🤖', image: hugeIcon },
+        'admin-aisettings': { emoji: '🛠️', image: hugeIcon },
+      },
+    },
+  };
+  const res = await publish(e, catalog);
+  assert.equal(res.status, 200, (await res.clone().json().catch(() => ({})))?.message ?? 'publish should succeed');
+  const doc = await res.json();
+  assert.equal(doc.ok, true);
+  assert.equal(doc.publishedVersion, 1);
+  // The persisted catalog on the admin device is the slimmed version.
+  assert.equal(doc.catalog.appearance.appIcon.image.startsWith('asset:catalog/'), true);
+  assert.equal(doc.catalog.appearance.icons.ai.image.startsWith('asset:catalog/'), true);
+  // The student config is live (same D1 environment that was published).
+  const latest = await worker.fetch(req('/api/config/latest'), e);
+  assert.equal(latest.status, 200);
+  let latestDoc;
+  try {
+    latestDoc = await latest.json();
+  } catch {
+    latestDoc = null;
+  }
+  assert.equal(latestDoc?.format, 'cgpa-pilot-config');
+});
+
+test('publish: still refuses an over-limit catalog with data-URL images when R2 is not bound', async () => {
+  const e = env({ r2: false });
+  const hugeIcon = 'data:image/png;base64,' + 'A'.repeat(2_000_000);
+  const catalog = { ...makeValidCatalog(), appearance: { appIcon: { emoji: '🧭', image: hugeIcon } } };
+  const res = await publish(e, catalog);
+  assert.equal(res.status, 413);
+  const doc = await res.json();
+  assert.equal(doc.error, 'payload-too-large');
+  assert.match(doc.message, /limit/i);
 });
 
 test('publish: a database write failure is surfaced with the real detail (not a blank 500)', async () => {

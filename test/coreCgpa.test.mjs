@@ -272,6 +272,41 @@ test('current mode falls back to manually entered credits when curriculum has no
   assert.equal(rec.fromCurriculum, false);
 });
 
+test('just started + advanced: tagged not-released credits are excluded from the confirmed base', () => {
+  // A student who "just started" L200 S2 has confirmed credits through the
+  // immediate past semester (L200 S1 = 16), and tags 6 of those immediate
+  // results as still not released. The typed CGPA is over the released part.
+  const baseline = {
+    levelIndex: 2,
+    semesterIndex: 2,
+    cgpa: 3.4,
+    creditHours: 0,
+    pendingCreditHours: 6,
+  };
+  const rec = core.currentModeRecord(baseline, 16);
+  assert.equal(rec.creditHours, 10);
+  assert.ok(Math.abs(rec.qualityPoints - 3.4 * 10) < 1e-12);
+  assert.equal(rec.cgpa, 3.4);
+});
+
+test('just started + advanced: pending credits are reported as pending', () => {
+  const state = {
+    mode: 'current',
+    baseline: {
+      levelIndex: 2,
+      semesterIndex: 2,
+      cgpa: 3.4,
+      creditHours: 0,
+      pendingCreditHours: 6,
+    },
+    semesters: [],
+  };
+  const snap = core.computeSnapshot(state, uccGrading, { curriculumCompletedCredits: 16 });
+  assert.equal(snap.creditHours, 10);
+  assert.equal(snap.pendingCreditHours, 6);
+  assert.equal(snap.pendingCount, 1);
+});
+
 // ── 5. Curriculum structure ────────────────────────────────────────────────
 
 function curriculumWithCredits() {

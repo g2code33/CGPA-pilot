@@ -131,23 +131,25 @@ test('largestAssetsSummary: top-N only', () => {
 
 // ── The client pre-check: refused BEFORE any network call ────────────────
 
-test('publishCatalog: an over-limit catalog is refused locally, naming the images (no network call)', async () => {
+test('publishCatalog: an over-limit catalog attempts R2 migration, then is refused locally if it still cannot slim', async () => {
   const huge = b64Of(2_200_000); // ~2.2 MB inside the stored JSON
   const catalog = {
     ...makeValidCatalog(),
     appearance: { appIcon: { emoji: '🧭', image: huge } },
   };
-  let fetchCalled = false;
+  let calls = 0;
   const r = await publishCatalog(catalog, {
     baseOverride: 'https://unused.example',
     tokenOverride: 'test-token',
     fetchImpl: () => {
-      fetchCalled = true;
-      throw new Error('the network must NOT be called for an over-limit catalog');
+      calls += 1;
+      throw new Error('migration unreachable');
     },
   });
   assert.equal(r.ok, false);
-  assert.equal(fetchCalled, false, 'size pre-check must run before any fetch');
+  // R2 auto-migration is attempted first; when the migration is unreachable
+  // the original actionable oversize message is what the admin sees.
+  assert.equal(calls, 1, 'one migrate-assets attempt before refusing');
   assert.match(r.error, /2\.[0-9] MB as stored JSON/);
   assert.match(r.error, /Largest images: App icon \(2\.2 MB\)/);
   assert.match(r.error, /~2 MB per record/);
