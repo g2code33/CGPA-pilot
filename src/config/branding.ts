@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { AppAppearance, AppIcon } from './types';
+import { resolveAssetUrl } from './assets';
 
 export type IconGroup = 'identity' | 'tools' | 'game';
 
@@ -100,14 +101,20 @@ export function iconGlyph(icon: AppIcon | undefined, fallbackEmoji: string): str
  */
 export function applyBrandFavicon(appearance: AppAppearance | undefined): void {
   if (typeof document === 'undefined') return;
-  const logo = appLogoImage(appearance);
+  const logo = appLogoImage(appearance); // resolved: data URL or /api/assets/… URL
   if (!logo) return;
   const link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
   if (!link) return;
-  link.setAttribute(
-    'type',
-    logo.startsWith('data:image/jpeg') || logo.startsWith('data:image/jpg') ? 'image/jpeg' : 'image/png'
-  );
+  // Only data URLs carry a known type; for asset references let the browser
+  // sniff from the served content-type (we set it on the Worker response).
+  if (logo.startsWith('data:')) {
+    link.setAttribute(
+      'type',
+      logo.startsWith('data:image/jpeg') || logo.startsWith('data:image/jpg') ? 'image/jpeg' : 'image/png'
+    );
+  } else {
+    link.removeAttribute('type');
+  }
   link.setAttribute('href', logo);
 }
 
@@ -121,7 +128,7 @@ export const DEFAULT_TAGLINE = 'Navigate Your Academic Future.';
  * the bundled ./icon-512.png).
  */
 export function appLogoImage(appearance: AppAppearance | undefined): string | undefined {
-  return appearance?.logo ?? appearance?.appIcon?.image;
+  return resolveAssetUrl(appearance?.logo) ?? resolveAssetUrl(appearance?.appIcon?.image);
 }
 
 /**
@@ -165,7 +172,8 @@ export function iconElement(
   fallbackEmoji: string,
   cls = ''
 ): { type: 'img' | 'emoji'; src?: string; alt?: string; text?: string; cls?: string; sizePx?: number } {
-  const src = icon?.image;
+  // resolveAssetUrl: data URL (legacy) as-is, asset:<key> → Worker URL (R2).
+  const src = resolveAssetUrl(icon?.image);
   if (src) {
     const sizePx =
       typeof icon?.size === 'number' && Number.isFinite(icon.size) && icon.size > 0 ? icon.size : undefined;

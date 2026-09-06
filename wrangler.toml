@@ -37,6 +37,16 @@ binding = "CONFIG_DB"
 database_name = "cgpa-pilot-config"
 database_id = "c6f5f8ca-e6d8-4fb0-9e09-f8b5874107a1"
 
+# R2: admin images (v1.0.20). The catalog stores tiny `asset:<key>` refs;
+# the pixels live here. ONE-TIME: create the bucket BEFORE deploying, or
+# the deploy fails with a clear "bucket not found" (the admin console's
+# Storage view has the same 3-step guide):
+#   npx wrangler r2 bucket create cgpa-pilot-assets
+# (or dashboard → R2 object storage → Create bucket). Region: default.
+[[r2_buckets]]
+binding = "R2_ASSETS"
+bucket_name = "cgpa-pilot-assets"
+
 # Single-origin mode (optional): re-add to serve the site from this Worker
 # too (then the app needs no VITE_CONFIG_API_BASE):
 # [assets]

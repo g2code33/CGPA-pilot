@@ -12,6 +12,8 @@
 // (name, ID, email, phone, account) are collected or included.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { resolveAssetUrl } from '../config/assets';
+
 export interface PrintBranding {
   title: string;
   institutionLabel?: string;
@@ -63,11 +65,14 @@ function brandingHtml(b: PrintBranding): string {
     month: 'long',
     day: 'numeric',
   });
-  const appLogo = b.appLogo
-    ? `<img src="${esc(b.appLogo)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
+  // resolveAssetUrl: logos may be asset:<key> refs (R2) or data URLs.
+  const appLogoUrl = b.appLogo ? resolveAssetUrl(b.appLogo) : undefined;
+  const instLogoUrl = b.institutionLogo ? resolveAssetUrl(b.institutionLogo) : undefined;
+  const appLogo = appLogoUrl
+    ? `<img src="${esc(appLogoUrl)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
     : '';
-  const instLogo = b.institutionLogo
-    ? `<img src="${esc(b.institutionLogo)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
+  const instLogo = instLogoUrl
+    ? `<img src="${esc(instLogoUrl)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;">`
     : '';
   const metaLine = [
     b.programmeName ? esc(b.programmeName) : '',

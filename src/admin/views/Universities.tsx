@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useAdmin } from '../adminStore';
 import type { Programme, School, University } from '../../config/types';
 import { AssetSizeBadge, CatalogSizeBanner, assetBytes } from '../components/catalogSizeUi';
-import { humanBytes } from '../catalogSize';
+import { uploadImageForCatalog } from '../assetUpload';
+import { resolveAssetUrl } from '../../config/assets';
 import {
   addUniversity,
   updateUniversity,
@@ -328,10 +329,11 @@ function SchoolRow({
 }
 
 /**
- * Logo picker for an institution/school: a straight image-file upload (read as
- * a data URL so it works fully offline) OR a URL/path field, with a live
- * thumbnail preview. Whatever is set is stored on the `logo` field and shown
- * nicely to students via the same logo lookup.
+ * Logo picker for an institution/school: an image-file upload (R2 when the
+ * Worker has a bucket — catalog stores a tiny asset:<key> ref; otherwise a
+ * base64 data URL fallback so it works fully offline) OR a URL/path field,
+ * with a live thumbnail preview. Whatever is set is stored on the `logo`
+ * field and shown to students via the same logo lookup (resolveAssetUrl).
  */
 function LogoField({
   value,
@@ -343,30 +345,22 @@ function LogoField({
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState('');
 
-  function handleFile(file?: File | null) {
+  async function handleFile(file?: File | null) {
     setErr('');
     if (!file) return;
-    if (file.size > 2_000_000) {
-      setErr(
-        `This image is ${humanBytes(file.size)} — too big. The whole catalog must stay under ~2 MB to publish; use an image under ~300 KB (resize to ~512×512, save as JPEG).`
-      );
+    const r = await uploadImageForCatalog(file);
+    if (!r.ok) {
+      setErr(r.message);
       return;
     }
-    if (!/^image\//.test(file.type)) {
-      setErr('Please choose an image file.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => onValue(typeof reader.result === 'string' ? reader.result : '');
-    reader.onerror = () => setErr('Could not read that file.');
-    reader.readAsDataURL(file);
+    onValue(r.image.value);
   }
 
   return (
     <div className="flex items-center gap-2 rounded-xl bg-white p-1.5 ring-1 ring-slate-200">
       {value ? (
         <img
-          src={value}
+          src={resolveAssetUrl(value)}
           alt=""
           className="h-9 w-9 shrink-0 rounded-lg bg-slate-100 object-contain ring-1 ring-slate-200"
         />
@@ -401,7 +395,9 @@ function LogoField({
           <input
             className="input w-40 py-1 text-xs"
             placeholder="…or paste an image URL"
-            value={value.startsWith('data:') ? '' : value}
+            // data URLs (long base64) and asset:<key> refs (R2) are managed
+            // values, not pasteable URLs — show them blank in this field.
+            value={value.startsWith('data:') || value.startsWith('asset:') ? '' : value}
             onChange={(e) => {
               setErr('');
               onValue(e.target.value);

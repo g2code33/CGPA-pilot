@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAdmin } from './adminStore';
 import { appLogoImage } from '../config/branding';
 import type { AppAppearance } from '../config/types';
 import { preflightPublish, fetchBackendCatalog, saveRemoteDraft } from './adminApi';
+import { D1_VALUE_SAFE_BYTES, humanBytes } from './catalogSize';
 import {
   writeAdminCatalog,
   readPublishedSnapshot,
@@ -27,6 +28,7 @@ import { IconManager } from './views/IconManager';
 import { StudentPreview } from './views/StudentPreview';
 import { AiSettings } from './views/AiSettings';
 import { AiMonitor } from './views/AiMonitor';
+import { StorageMonitor } from './views/StorageMonitor';
 import { PublishPreview } from './components/PublishPreview';
 import { DraftsPanel } from './components/DraftsPanel';
 
@@ -40,6 +42,7 @@ type ViewName =
   | 'appearance'
   | 'aisettings'
   | 'aimonitor'
+  | 'storage'
   | 'recycle'
   | 'previewapp'
   | 'testlab'
@@ -57,6 +60,7 @@ const NAV: { id: View['name']; label: string; icon: string }[] = [
   { id: 'appearance', label: 'Icons & Branding', icon: '🎨' },
   { id: 'aisettings', label: 'AI Assistant', icon: '🤖' },
   { id: 'aimonitor', label: 'AI Monitor', icon: '🩺' },
+  { id: 'storage', label: 'Storage', icon: '📦' },
   { id: 'recycle', label: 'Recycle Bin', icon: '🗑️' },
   { id: 'previewapp', label: 'Student Preview', icon: '📱' },
   { id: 'testlab', label: 'Test Lab', icon: '🧪' },
@@ -134,6 +138,7 @@ export function AdminApp() {
             <AiSettings toast={flashSave} onNavigate={(v) => setView({ name: v as View['name'] })} />
           )}
           {view.name === 'aimonitor' && <AiMonitor toast={flashSave} />}
+          {view.name === 'storage' && <StorageMonitor />}
           {view.name === 'recycle' && <RecycleBin />}
           {view.name === 'previewapp' && <StudentPreview />}
           {view.name === 'testlab' && <TestLab />}
@@ -248,6 +253,12 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
   const [draftName, setDraftName] = useState('');
   const [draftBusy, setDraftBusy] = useState(false);
 
+  // The exact size this publish would send — ALWAYS visible (v1.0.20), not
+  // only when over the limit. R2-backed catalogs stay small because images
+  // are tiny asset:<key> refs; data-URL catalogs show their real weight.
+  const publishBytes = useMemo(() => new Blob([JSON.stringify(catalog)]).size, [catalog]);
+  const overLimit = publishBytes > D1_VALUE_SAFE_BYTES;
+
   // Lifted preview state: the Preview modal must survive SaveButtons unmount
   // (mobile nav), so it renders here too.
   const [preview, setPreview] = useState<PreviewState | null>(null);
@@ -281,8 +292,10 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
     const r = await publish(undefined, catalogToPublish);
     if (r.ok) {
       setPreview(null);
+      // Always say how much was published (v1.0.20) — not just when oversize.
+      const publishedBytes = new Blob([JSON.stringify(target)]).size;
       onToast(
-        `✅ ${isDraft ? 'Draft published' : 'Published'} — catalog v${r.adminVersion} / student config v${r.publishedVersion} is live on every device (next open).`
+        `✅ ${isDraft ? 'Draft published' : 'Published'} — catalog v${r.adminVersion} / student config v${r.publishedVersion} is live on every device (next open). Published size: ${humanBytes(publishedBytes)}.`
       );
     } else {
       onToast(`⛔ ${r.issues?.[0] ?? r.error ?? 'Publish failed — is the backend reachable?'}`);
@@ -375,6 +388,7 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
               {publishing ? 'Publishing…' : '🚀 Save & Publish'}
             </button>
           </div>
+          <PublishSizeChip bytes={publishBytes} over={overLimit} compact />
           <div className="flex gap-2">
             {previewBtn}
             {draftBtn}
@@ -390,6 +404,7 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
           >
             {publishing ? 'Publishing…' : '🚀 Save & Publish'}
           </button>
+          <PublishSizeChip bytes={publishBytes} over={overLimit} />
           {previewBtn}
           <div className="flex gap-1.5">
             {draftBtn}
@@ -455,6 +470,28 @@ function SaveButtons({ onToast, compact = false }: { onToast: (m: string) => voi
         toast={onToast}
       />
     </>
+  );
+}
+
+/**
+ * Always-on publish size readout (v1.0.20): exactly how large the current
+ * catalog is as stored JSON, against the ~2 MB database record limit.
+ * R2-backed catalogs read a few KB (images are asset:<key> refs); legacy
+ * data-URL catalogs read their real weight — and turn red near the limit.
+ */
+function PublishSizeChip({ bytes, over, compact = false }: { bytes: number; over: boolean; compact?: boolean }) {
+  return (
+    <span
+      title={`Catalog size: ${humanBytes(bytes)} as stored JSON — the database limit is ~2 MB per record. ${
+        over ? 'Publishing will be refused until it is smaller.' : 'Fits the publish limit.'
+      }`}
+      className={`flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-[10px] font-black tabular-nums ring-1 ${
+        over ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+      } ${compact ? '' : 'w-full'}`}
+    >
+      <span>📦 Publishing {humanBytes(bytes)}</span>
+      <span className="opacity-70">{over ? 'OVER ~2 MB limit' : 'of ~2 MB limit'}</span>
+    </span>
   );
 }
 

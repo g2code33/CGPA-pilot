@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import type { AdminCatalog } from '../adminStorage';
 import { diffCatalogs, humanizePath, type CatalogDiffReport, type EntityDiff, type FieldChange } from '../catalogDiff';
 import type { AppAppearance } from '../../config/types';
+import { ASSET_REF_PREFIX, isAssetRef, resolveAssetUrl } from '../../config/assets';
 import { Wordmark } from '../../components/Wordmark';
 import { LiveStudentPreview } from './LiveStudentPreview';
 
@@ -302,8 +303,10 @@ function CourseCol({ title, tone, courses }: { title: string; tone: 'emerald' | 
 function BrandingSection({ before, after, changes }: { before?: AppAppearance; after?: AppAppearance; changes: FieldChange[] }) {
   if (!changes.length) return null;
   const img = (u: string | undefined) =>
-    u && typeof u === 'string' && u.startsWith('data:image/') ? (
-      <img src={u} alt="" className="h-14 w-14 rounded-xl bg-slate-50 object-contain p-0.5 ring-1 ring-slate-200" />
+    u &&
+    typeof u === 'string' &&
+    (u.startsWith('data:image/') || u.startsWith(ASSET_REF_PREFIX) || u.startsWith('http')) ? (
+      <img src={resolveAssetUrl(u)} alt="" className="h-14 w-14 rounded-xl bg-slate-50 object-contain p-0.5 ring-1 ring-slate-200" />
     ) : (
       <span className="grid h-14 w-14 place-items-center rounded-xl bg-slate-100 text-lg text-slate-300 ring-1 ring-slate-200">—</span>
     );
@@ -342,7 +345,8 @@ function BrandingSection({ before, after, changes }: { before?: AppAppearance; a
 }
 
 export function ChangeRow({ c }: { c: FieldChange }) {
-  const isImage = (v: unknown) => typeof v === 'string' && v.startsWith('data:image/');
+  // asset:<key> refs (R2) render too — resolveAssetUrl turns them into a Worker URL.
+  const isImage = (v: unknown) => typeof v === 'string' && (v.startsWith('data:image/') || isAssetRef(v));
   return (
     <div className="flex items-start gap-2 rounded-lg bg-slate-50/80 px-2.5 py-1.5 ring-1 ring-slate-100">
       <span
@@ -354,13 +358,13 @@ export function ChangeRow({ c }: { c: FieldChange }) {
         <p className="truncate text-[10px] font-black uppercase tracking-wide text-slate-400">{humanizePath(c.path)}</p>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold">
           {isImage(c.before) ? (
-            <img src={String(c.before)} alt="before" className="h-8 w-8 rounded-md bg-white object-contain ring-1 ring-slate-200" />
+            <img src={resolveAssetUrl(String(c.before))} alt="before" className="h-8 w-8 rounded-md bg-white object-contain ring-1 ring-slate-200" />
           ) : (
             <span className="break-words text-red-500 line-through decoration-red-300">{formatValue(c.before)}</span>
           )}
           <span className="text-slate-300">→</span>
           {isImage(c.after) ? (
-            <img src={String(c.after)} alt="after" className="h-8 w-8 rounded-md bg-white object-contain ring-1 ring-emerald-200" />
+            <img src={resolveAssetUrl(String(c.after))} alt="after" className="h-8 w-8 rounded-md bg-white object-contain ring-1 ring-emerald-200" />
           ) : (
             <span className="break-words text-emerald-700">{formatValue(c.after)}</span>
           )}

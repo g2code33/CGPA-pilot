@@ -217,6 +217,9 @@ export function ensureExtraTables(db: D1Database): Promise<void> {
       db.prepare(
         'CREATE TABLE IF NOT EXISTS ai_errors (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT NOT NULL, code TEXT, status INTEGER, provider TEXT, model TEXT, key_label TEXT, detail TEXT)'
       ),
+      db.prepare(
+        'CREATE TABLE IF NOT EXISTS admin_storage (id INTEGER PRIMARY KEY CHECK (id = 1), creds_json TEXT, updated_at TEXT)'
+      ),
     ])
     .then(() => undefined);
   globalThis.__cgpaEnsureExtra = p.catch(() => {
@@ -326,6 +329,39 @@ export async function readAiSettingsJson(db: D1Database): Promise<AiSettingsRow 
 
 export async function writeAiSettingsJson(db: D1Database, json: string, updatedAt: string): Promise<void> {
   await db.prepare(UPSERT_AI).bind(json, updatedAt).run();
+}
+
+// ── Storage-monitor credentials (single row) ─────────────────────────────
+// The OPTIONAL Cloudflare API token + account id the admin supplies so the
+// Storage monitor can report account-wide R2 usage (all projects). Like the
+// AI keys, this lives ONLY in D1 — never in the published student config.
+
+const SELECT_STORAGE_CREDS = 'SELECT id, creds_json, updated_at FROM admin_storage WHERE id = 1';
+const UPSERT_STORAGE_CREDS =
+  'INSERT INTO admin_storage (id, creds_json, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET creds_json = excluded.creds_json, updated_at = excluded.updated_at';
+const DELETE_STORAGE_CREDS = 'DELETE FROM admin_storage WHERE id = ?';
+
+export interface StorageCredsRow {
+  credsJson: string;
+  updatedAt: string;
+}
+
+export async function readStorageCreds(db: D1Database): Promise<StorageCredsRow | null> {
+  const row = (await db.prepare(SELECT_STORAGE_CREDS).first()) as {
+    id: number;
+    creds_json: string;
+    updated_at: string;
+  } | null;
+  if (!row) return null;
+  return { credsJson: row.creds_json, updatedAt: row.updated_at };
+}
+
+export async function writeStorageCreds(db: D1Database, json: string, updatedAt: string): Promise<void> {
+  await db.prepare(UPSERT_STORAGE_CREDS).bind(json, updatedAt).run();
+}
+
+export async function deleteStorageCreds(db: D1Database): Promise<void> {
+  await db.prepare(DELETE_STORAGE_CREDS).bind(1).run();
 }
 
 // ── Drafts ────────────────────────────────────────────────────────────────

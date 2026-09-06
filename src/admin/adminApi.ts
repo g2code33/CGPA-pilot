@@ -874,4 +874,180 @@ export async function deleteRemoteDraft(id: string, deps: AdminApiDeps = {}): Pr
   }
 }
 
+// ── Image assets (R2) + storage monitor — v1.0.20 ─────────────────────────
+
+export type AssetUploadResult =
+  | { ok: true; ref: string; key: string; bytes: number }
+  | { ok: false; error: string; message?: string };
+
+/**
+ * Upload an admin image to the Worker's R2 bucket. Returns the catalog
+ * reference to store (`asset:<key>`). `error: 'r2-not-configured'` (HTTP 503)
+ * means the Worker is still in legacy mode — the caller falls back to
+ * storing a data URL in the catalog.
+ */
+export async function uploadAdminAsset(file: File, deps: AdminApiDeps = {}): Promise<AssetUploadResult> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first — uploading images needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/assets'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    const doc = (await safeJson(res)) as {
+      ok?: boolean;
+      key?: string;
+      ref?: string;
+      bytes?: number;
+      error?: string;
+      message?: string;
+    } | null;
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 503 || doc?.error === 'r2-not-configured') {
+      return { ok: false, error: 'r2-not-configured', message: doc?.message ?? 'R2 is not set up on the Worker yet.' };
+    }
+    if (res.status === 413) return { ok: false, error: 'asset-too-large', message: doc?.message ?? 'Image is too large.' };
+    if (!res.ok || !doc || doc.ok !== true || typeof doc.ref !== 'string') {
+      return { ok: false, error: doc?.error ?? 'http', message: doc?.message ?? `Upload failed (HTTP ${res.status}).` };
+    }
+    return { ok: true, ref: doc.ref, key: typeof doc.key === 'string' ? doc.key : '', bytes: typeof doc.bytes === 'number' ? doc.bytes : file.size };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+export interface MigrateAssetsResult {
+  ok: boolean;
+  moved?: number;
+  bytesMoved?: number;
+  catalogBytes?: number;
+  slimmedBytes?: number;
+  catalog?: AdminCatalog;
+  error?: string;
+  message?: string;
+}
+
+/**
+ * One-click legacy migration: moves every base64 image in the given catalog
+ * into R2 and returns the SAME catalog with image values swapped for
+ * `asset:<key>` refs (unsaved edits preserved — nothing is clobbered).
+ * The caller loads the result into the working catalog, then Save & Publish
+ * makes it permanent. Content-addressed keys make re-runs a free no-op.
+ */
+export async function migrateCatalogToAssets(catalog: AdminCatalog, deps: AdminApiDeps = {}): Promise<MigrateAssetsResult> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first — migration needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/migrate-assets'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: JSON.stringify(catalog),
+    });
+    const doc = (await safeJson(res)) as MigrateAssetsResult | null;
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (res.status === 503) return { ok: false, error: 'r2-not-configured', message: doc?.message ?? 'R2 is not set up on the Worker yet.' };
+    if (!res.ok || !doc || doc.ok !== true || !doc.catalog) {
+      return { ok: false, error: doc?.error ?? 'http', message: doc?.message ?? `Migration failed (HTTP ${res.status}).` };
+    }
+    return doc;
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+export interface StorageBucketUsage {
+  configured: boolean;
+  usage?: { payloadBytes: number; objectCount: number };
+  freeTierBytes: number;
+}
+
+export interface StorageReport {
+  ok: true;
+  bucket: StorageBucketUsage;
+  account:
+    | { ok: true; totalBytes: number; buckets: { name: string; bytes: number; objects: number }[] }
+    | { ok: false; message: string }
+    | null;
+  hasCreds: boolean;
+}
+
+/** App-bucket usage + (optional) whole-account R2 usage. */
+export async function getStorageReport(deps: AdminApiDeps = {}): Promise<StorageReport | { ok: false; error: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first — the storage monitor needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/storage'), { method: 'GET', cache: 'no-store', headers: headers(deps) });
+    const doc = (await safeJson(res)) as StorageReport | null;
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (!res.ok || !doc || doc.ok !== true) {
+      return { ok: false, error: (doc as { error?: string } | null)?.error ?? 'http', message: (doc as { message?: string } | null)?.message ?? `Storage report failed (HTTP ${res.status}).` };
+    }
+    return doc;
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+/**
+ * Save (and validate) the Cloudflare API token + account id used for the
+ * whole-account R2 usage report. Returns `error: 'creds-invalid'` when the
+ * token cannot read R2 usage.
+ */
+export async function saveStorageCreds(cfToken: string, cfAccountId: string, deps: AdminApiDeps = {}): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first — saving storage credentials needs a valid session.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/storage'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: JSON.stringify({ cf_token: cfToken, cf_account_id: cfAccountId }),
+    });
+    const doc = (await safeJson(res)) as { ok?: boolean; error?: string; message?: string } | null;
+    // The server reuses 401 for BOTH an expired admin session and a
+    // Cloudflare-rejected token (creds-invalid) — the body decides which.
+    if (res.status === 401 && doc?.error !== 'creds-invalid') {
+      return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    }
+    if (!res.ok || !doc || doc.ok !== true) {
+      return { ok: false, error: doc?.error ?? 'http', message: doc?.message ?? `Saving credentials failed (HTTP ${res.status}).` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
+export async function clearStorageCreds(deps: AdminApiDeps = {}): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const f = deps.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return { ok: false, error: 'unreachable', message: 'No network available.' };
+  const credential = currentCredential(deps);
+  if (!credential) return { ok: false, error: 'unauthorized', message: 'Sign in first.' };
+  try {
+    const res = await f(urlFor(deps, '/api/admin/storage'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { ...headers(deps), 'content-type': 'application/json' },
+      body: JSON.stringify({ clear: true }),
+    });
+    const doc = (await safeJson(res)) as { ok?: boolean; error?: string; message?: string } | null;
+    if (res.status === 401) return { ok: false, error: 'unauthorized', message: 'Sign in again — your admin session expired.' };
+    if (!res.ok || !doc || doc.ok !== true) return { ok: false, error: doc?.error ?? 'http', message: doc?.message ?? `Clearing credentials failed (HTTP ${res.status}).` };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'unreachable', message: 'Backend unreachable (offline, or API not deployed at this URL).' };
+  }
+}
+
 export { MIN_PASSCODE_LENGTH, MAX_PASSCODE_LENGTH };

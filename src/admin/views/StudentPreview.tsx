@@ -6,6 +6,7 @@ import { SkySplash } from '../../components/SkySplash';
 import { AppGlyph } from '../../components/AppGlyph';
 import { Wordmark, Tagline } from '../../components/Wordmark';
 import { appLogoImage, appName, tagline } from '../../config/branding';
+import { resolveAssetUrl } from '../../config/assets';
 
 /**
  * A faithful, interactive preview of the STUDENT app, driven entirely by the
@@ -287,8 +288,8 @@ function Field({ label, dark, children }: { label: string; dark?: boolean; child
 /** Institution + department logos shown directly under the caption. */
 function LogoStrip({ university, department }: { university?: University; department?: School }) {
   const items: { src?: string; emoji: string; name: string }[] = [];
-  if (university) items.push({ src: university.logo, emoji: '🏛️', name: university.shortName || university.name });
-  if (department) items.push({ src: department.logo, emoji: '🏢', name: department.name });
+  if (university) items.push({ src: resolveAssetUrl(university.logo), emoji: '🏛️', name: university.shortName || university.name });
+  if (department) items.push({ src: resolveAssetUrl(department.logo), emoji: '🏢', name: department.name });
   if (items.length === 0) return null;
   return (
     <div className="mt-3 flex flex-wrap items-start justify-center gap-3">

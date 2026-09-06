@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { appLogoImage, appName, iconGlyph } from '../config/branding';
+import { resolveAssetUrl } from '../config/assets';
 import type { AppAppearance } from '../config/types';
 
 /**
@@ -355,7 +356,7 @@ export function SkySplash({
           >
             {hasStarImg ? (
               <img
-                src={starOverride?.image}
+                src={resolveAssetUrl(starOverride?.image)}
                 alt=""
                 style={starOverride?.size ? { width: starOverride.size, height: starOverride.size } : undefined}
                 className="pointer-events-none h-[30px] w-[30px] object-contain"
@@ -391,7 +392,7 @@ export function SkySplash({
         >
           {hasPlaneImg ? (
             <img
-              src={planeOverride?.image}
+              src={resolveAssetUrl(planeOverride?.image)}
               alt="plane"
               style={planeOverride?.size ? { width: planeOverride.size, height: planeOverride.size } : undefined}
               className="pointer-events-none h-16 w-16 object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.35)]"
@@ -423,7 +424,7 @@ export function SkySplash({
               // Admin-set size honoured (default 64 px); the image is centred
               // (mx-auto) so it grows in place about the overlay's centre.
               <img
-                src={landingOverride?.image}
+                src={resolveAssetUrl(landingOverride?.image)}
                 alt=""
                 className="mx-auto object-contain drop-shadow"
                 style={

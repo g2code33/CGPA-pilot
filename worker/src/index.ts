@@ -25,8 +25,15 @@
 //     configuration. Student academic data has no place in this service.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { D1Database, Fetcher } from '@cloudflare/workers-types';
+import type { D1Database, Fetcher, R2Bucket } from '@cloudflare/workers-types';
 import type { AdminCatalog } from '../../src/admin/catalogTypes';
+import {
+  MAX_ASSET_BYTES,
+  bucketUsage,
+  getAccountR2Usage,
+  migrateCatalogAssets,
+  storeAsset,
+} from './assets';
 import {
   validateAdminCatalogForPublish,
   validateDistributionDocument,
@@ -57,6 +64,9 @@ import {
   writeAiSettingsJson,
   writeDraft,
   deleteDraft,
+  readStorageCreds,
+  writeStorageCreds,
+  deleteStorageCreds,
 } from './db';
 import {
   aiPublicStatus,
@@ -91,6 +101,13 @@ export interface Env {
   ADMIN_TOKEN?: string;
   /** Static site binding (dist/) when the Worker also hosts the app. */
   ASSETS?: Fetcher;
+  /**
+   * R2 bucket for admin images (v1.0.20). When bound, uploads + the one-click
+   * migration store images here and the catalog keeps only `asset:<key>`
+   * references. When absent, the app runs in legacy mode (base64 in catalog)
+   * and the admin UI shows the 3-step setup guide instead of failing.
+   */
+  R2_ASSETS?: R2Bucket;
   /** Test hook: session lifetime in ms (default 30 days). */
   SESSION_TTL_MS?: string;
 }
@@ -327,6 +344,29 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
     });
   }
 
+  // ── Public image assets (R2) — v1.0.20 ──────────────────────────────────
+  // Serves admin images by content-addressed key (e.g. catalog/<sha16>.png).
+  // No auth: keys are sha256-derived (unguessable) and the images are the
+  // same logos/icons students already receive inside the public config.
+  // Immutable caching — content-addressed means the key never changes.
+  if (method === 'GET' && path.startsWith('/api/assets/')) {
+    const key = decodeURIComponent(path.slice('/api/assets/'.length));
+    if (!env.R2_ASSETS) {
+      return json({ ok: false, error: 'r2-not-configured', message: 'R2_ASSETS is not bound to this Worker.' }, 503);
+    }
+    const obj = await env.R2_ASSETS.get(key);
+    if (!obj) return json({ ok: false, error: 'not-found' }, 404);
+    return new Response(obj.body, {
+      status: 200,
+      headers: {
+        'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+        'content-length': String(obj.size),
+        'cache-control': 'public, max-age=31536000, immutable',
+        'access-control-allow-origin': '*',
+      },
+    });
+  }
+
   // ── Admin: single-passcode authentication ──────────────────────────────
   // Minimal, unauthenticated state probe so the login screen can show
   // "sign in" vs "first-time setup" (discloses nothing else).
@@ -413,7 +453,7 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
   }
 
   // ── Admin: authorized write/read endpoints ─────────────────────────────
-  const ADMIN_PATHS = ['status', 'catalog', 'publish'] as const;
+  const ADMIN_PATHS = ['status', 'catalog', 'publish', 'assets', 'migrate-assets', 'storage'] as const;
   const adminName = ADMIN_PATHS.find((n) => path === `/api/admin/${n}`);
   if (adminName) {
     const guarded = await guardAdmin(req, env);
@@ -539,6 +579,171 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
         publishedVersion: result.publishedVersion,
         updatedAt: result.updatedAt,
       });
+    }
+
+    // ── Image assets (R2) — v1.0.20 ────────────────────────────────────────
+    // Upload an admin image to R2; the response key is what gets stored in
+    // the catalog (asset:<key>). Without an R2_ASSETS binding the app runs in
+    // legacy mode: clients store base64 and this answers 503 with a
+    // machine-readable code so the UI can switch to the data-URL fallback.
+    if (adminName === 'assets' && method === 'POST') {
+      const guarded = await guardAdmin(req, env);
+      if (guarded !== true) return guarded;
+      if (!env.R2_ASSETS) {
+        return json(
+          { ok: false, error: 'r2-not-configured', message: 'R2_ASSETS is not bound to this Worker — store the image as a data URL.' },
+          503
+        );
+      }
+      const len = Number(req.headers.get('content-length') ?? 0);
+      if (len > MAX_ASSET_BYTES) {
+        return json(
+          { ok: false, error: 'asset-too-large', message: `Images over ${MAX_ASSET_BYTES / (1024 * 1024)} MB are rejected (R2 mode).` },
+          413
+        );
+      }
+      const contentType = req.headers.get('content-type') ?? 'application/octet-stream';
+      if (!/^image\//.test(contentType)) {
+        return json({ ok: false, error: 'not-an-image', message: 'Only image/* uploads are accepted.' }, 400);
+      }
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      if (bytes.byteLength > MAX_ASSET_BYTES) {
+        return json({ ok: false, error: 'asset-too-large', message: `Images over ${MAX_ASSET_BYTES / (1024 * 1024)} MB are rejected (R2 mode).` }, 413);
+      }
+      try {
+        const stored = await storeAsset(env.R2_ASSETS, bytes, contentType);
+        return json({ ok: true, key: stored.key, ref: stored.ref, url: stored.url, bytes: stored.bytes, storedBytes: stored.bytes });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Upload failed.';
+        return json({ ok: false, error: msg.includes('limit') ? 'asset-too-large' : 'upload-failed', message: msg }, msg.includes('limit') ? 413 : 400);
+      }
+    }
+
+    // One-click legacy migration: move every base64 image in a catalog into
+    // R2 and return the slimmed catalog for the admin to save.
+    //
+    // The ADMIN DEVICE sends its own working catalog in the body (so unsaved
+    // edits are preserved — the returned catalog is that same catalog with
+    // image values swapped for asset:<key> refs). With an empty body it
+    // falls back to the stored catalog (keeps the endpoint useful standalone).
+    // Content-addressed keys make re-runs a free no-op (0 moved).
+    if (adminName === 'migrate-assets' && method === 'POST') {
+      const guarded = await guardAdmin(req, env);
+      if (guarded !== true) return guarded;
+      if (!env.R2_ASSETS) {
+        return json(
+          { ok: false, error: 'r2-not-configured', message: 'R2_ASSETS is not bound to this Worker — nothing to migrate to.' },
+          503
+        );
+      }
+      let catalog: AdminCatalog | null = null;
+      const raw = await req.text().catch(() => '');
+      if (raw.trim()) {
+        try {
+          const parsed = JSON.parse(raw) as AdminCatalog;
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.universities)) catalog = parsed;
+        } catch {
+          return json({ ok: false, error: 'invalid-body', message: 'Could not parse the catalog JSON.' }, 400);
+        }
+      }
+      if (!catalog) {
+        let doc;
+        try {
+          doc = await readAdminCatalogDoc(env.CONFIG_DB);
+        } catch {
+          return json({ ok: false, error: 'database-read-failed', message: 'Could not read the stored catalog.' }, 500);
+        }
+        if (!doc) {
+          return json({ ok: false, error: 'no-catalog', message: 'No catalog to migrate — publish one first.' }, 404);
+        }
+        catalog = doc.catalog;
+      }
+      const migrated = await migrateCatalogAssets(env.R2_ASSETS, catalog);
+      const before = new TextEncoder().encode(JSON.stringify(catalog)).length;
+      const after = new TextEncoder().encode(JSON.stringify(migrated.catalog)).length;
+      return json({
+        ok: true,
+        moved: migrated.moved,
+        bytesMoved: migrated.bytesMoved,
+        catalogBytes: before,
+        slimmedBytes: after,
+        catalog: migrated.catalog,
+      });
+    }
+
+    // ── Storage monitor — v1.0.20 ─────────────────────────────────────────
+    // GET: app bucket usage (from R2) + optional account-wide R2 usage
+    // (from the saved Cloudflare API token). POST: save/clear those creds.
+    if (adminName === 'storage' && method === 'GET') {
+      const guarded = await guardAdmin(req, env);
+      if (guarded !== true) return guarded;
+      const bucket = env.R2_ASSETS
+        ? {
+            configured: true,
+            usage: await bucketUsage(env.R2_ASSETS),
+            freeTierBytes: 10 * 1024 * 1024 * 1024,
+          }
+        : { configured: false, freeTierBytes: 10 * 1024 * 1024 * 1024 };
+      const creds = await readStorageCreds(env.CONFIG_DB);
+      let account:
+        | { ok: true; totalBytes: number; buckets: { name: string; bytes: number; objects: number }[] }
+        | { ok: false; message: string }
+        | null = null;
+      if (creds) {
+        try {
+          const { cf_token, cf_account_id } = JSON.parse(creds.credsJson) as {
+            cf_token?: unknown;
+            cf_account_id?: unknown;
+          };
+          if (typeof cf_token === 'string' && typeof cf_account_id === 'string' && cf_token && cf_account_id) {
+            const u = await getAccountR2Usage(cf_token, cf_account_id);
+            account = {
+              ok: true,
+              totalBytes: u.totalBytes,
+              buckets: u.buckets.map((b) => ({ name: b.name, bytes: b.payloadBytes, objects: b.objectCount })),
+            };
+          } else {
+            account = { ok: false, message: 'Saved credentials are incomplete (token or account id missing).' };
+          }
+        } catch (e) {
+          account = { ok: false, message: e instanceof Error ? e.message : 'Could not read saved credentials.' };
+        }
+      }
+      return json({ ok: true, bucket, account, hasCreds: Boolean(creds) });
+    }
+
+    if (adminName === 'storage' && method === 'POST') {
+      const guarded = await guardAdmin(req, env);
+      if (guarded !== true) return guarded;
+      const body = await parseJsonBody(req);
+      if (!body.ok) return body.response;
+      if (body.value.clear) {
+        await deleteStorageCreds(env.CONFIG_DB);
+        return json({ ok: true, hasCreds: false });
+      }
+      const token = body.value.cf_token;
+      const accountId = body.value.cf_account_id;
+      if (typeof token !== 'string' || typeof accountId !== 'string' || !token.trim() || !accountId.trim()) {
+        return json(
+          { ok: false, error: 'invalid-body', message: 'Expected { cf_token: string, cf_account_id: string } (or { clear: true }).' },
+          400
+        );
+      }
+      // Validate before persisting — never store creds that cannot read.
+      try {
+        await getAccountR2Usage(token.trim(), accountId.trim());
+      } catch (e) {
+        return json(
+          { ok: false, error: 'creds-invalid', message: e instanceof Error ? e.message : 'Cloudflare rejected those credentials.' },
+          401
+        );
+      }
+      await writeStorageCreds(
+        env.CONFIG_DB,
+        JSON.stringify({ cf_token: token.trim(), cf_account_id: accountId.trim() }),
+        new Date().toISOString()
+      );
+      return json({ ok: true, hasCreds: true });
     }
 
     return json({ ok: false, error: 'method-not-allowed' }, 405);

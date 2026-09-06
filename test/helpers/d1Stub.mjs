@@ -27,6 +27,7 @@ export function createD1Stub() {
     admin_catalog: new Map(),
     admin_auth: new Map(),
     ai_settings: new Map(),
+    admin_storage: new Map(), // single row id=1: storage-monitor credentials
     admin_drafts: new Map(), // multi-row: string id → row
     ai_errors: new Map(), // multi-row: numeric autoincrement id → row
   };
@@ -140,6 +141,10 @@ export function createD1Stub() {
         }
         if (s.includes('settings_json')) {
           tables[t].set(1, { id: 1, settings_json: args[0], updated_at: args[1] });
+          return { changes: 1 };
+        }
+        if (s.includes('creds_json')) {
+          tables[t].set(1, { id: 1, creds_json: args[0], updated_at: args[1] });
           return { changes: 1 };
         }
         if (t === 'ai_errors') {

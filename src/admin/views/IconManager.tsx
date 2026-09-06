@@ -12,7 +12,8 @@ import {
   type IconGroup,
 } from '../../config/branding';
 import { Wordmark, Tagline } from '../../components/Wordmark';
-import { readImageFile } from '../appearanceEdit';
+import { uploadImageForCatalog, r2FallbackNote } from '../assetUpload';
+import { resolveAssetUrl } from '../../config/assets';
 import { AssetSizeBadge, CatalogSizeBanner, assetBytes } from '../components/catalogSizeUi';
 
 export function IconManager() {
@@ -37,8 +38,10 @@ export function IconManager() {
         <h1 className="text-xl font-black text-slate-900">Icons &amp; branding</h1>
       </header>
 
-      {/* Every image below is stored INSIDE the publish record (base64) —
-          the banner keeps the whole catalog under the ~2 MB database limit. */}
+      {/* v1.0.20: uploads go to R2 (catalog keeps tiny asset:<key> refs);
+          when R2 is not set up yet they fall back to base64 inside the
+          record — the banner tracks the whole catalog's stored size either
+          way, against the ~2 MB database limit. */}
       <CatalogSizeBanner catalog={catalog} />
 
       {toast && (
@@ -124,7 +127,7 @@ export function IconManager() {
             <span className="relative flex h-32 w-32 shrink-0 items-center justify-center rounded-2xl bg-slate-50 ring-1 ring-slate-200">
               {appearance?.logo ? (
                 <img
-                  src={appearance.logo}
+                  src={resolveAssetUrl(appearance.logo)}
                   alt="custom app logo"
                   className="relative max-w-none object-contain"
                   style={{ width: appearance.logoSize ?? 80, height: appearance.logoSize ?? 80 }}
@@ -137,13 +140,13 @@ export function IconManager() {
               <ImageButton
                 label="⬆️ Upload app logo (PNG / JPEG)"
                 onFile={async (f) => {
-                  try {
-                    const dataUrl = await readImageFile(f);
-                    commit((a) => ({ ...a, logo: dataUrl }));
-                    flash('App logo updated.');
-                  } catch (e) {
-                    flash(e instanceof Error ? e.message : 'Could not read that image.');
+                  const r = await uploadImageForCatalog(f);
+                  if (!r.ok) {
+                    flash(r.message);
+                    return;
                   }
+                  commit((a) => ({ ...a, logo: r.image.value }));
+                  flash(r.image.r2NotConfigured ? `App logo updated. ${r2FallbackNote()}` : 'App logo updated.');
                 }}
               />
               {appearance?.logo && (
@@ -319,11 +322,12 @@ function SlotEditor({
           small
           label="⬆️ Image"
           onFile={async (f) => {
-            try {
-              onChange({ image: await readImageFile(f), emoji: emojiInput.trim() || fallbackEmoji });
-            } catch (e) {
-              alert(e instanceof Error ? e.message : 'Could not read that image.');
+            const r = await uploadImageForCatalog(f);
+            if (!r.ok) {
+              alert(r.message);
+              return;
             }
+            onChange({ image: r.image.value, emoji: emojiInput.trim() || fallbackEmoji });
           }}
         />
         {(value?.emoji || value?.image) && (
@@ -435,11 +439,12 @@ function BrandTextControls({
               small
               label={image ? '⬆️ Replace image' : '🖼️ Use an image instead'}
               onFile={async (f) => {
-                try {
-                  onImage(await readImageFile(f));
-                } catch (e) {
-                  alert(e instanceof Error ? e.message : 'Could not read that image.');
+                const r = await uploadImageForCatalog(f);
+                if (!r.ok) {
+                  alert(r.message);
+                  return;
                 }
+                onImage(r.image.value);
               }}
             />
             {image && (

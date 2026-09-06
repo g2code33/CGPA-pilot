@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Card } from './ui';
+import { resolveAssetUrl } from '../config/assets';
 import { useInstitution } from '../state/institutionSelection';
 import {
   getUniversity,
@@ -34,7 +35,7 @@ export function InstitutionSelector({ compact = false }: { compact?: boolean }) 
         <div className="shrink-0">
           {university?.logo && (
             <img
-              src={university.logo}
+              src={resolveAssetUrl(university.logo)}
               alt={`${university.name} logo`}
               className="h-12 w-12 rounded-xl object-contain shadow-sm ring-1 ring-slate-200"
             />
@@ -53,7 +54,7 @@ export function InstitutionSelector({ compact = false }: { compact?: boolean }) 
                 <>
                   {s?.logo && (
                     <img
-                      src={s.logo}
+                      src={resolveAssetUrl(s.logo)}
                       alt="Department logo"
                       className="inline-block h-4 w-4 rounded-sm object-contain align-text-bottom mr-1"
                     />

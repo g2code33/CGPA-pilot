@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { appName, brandFontStack, tagline } from '../config/branding';
+import { resolveAssetUrl } from '../config/assets';
 import type { AppAppearance, TextBrandStyle } from '../config/types';
 
 /**
@@ -45,7 +46,7 @@ export function Wordmark({
   className?: string;
 }) {
   const s = appearance?.appNameStyle;
-  const img = appearance?.appImage;
+  const img = resolveAssetUrl(appearance?.appImage);
   if (img) {
     return (
       <img
@@ -88,7 +89,7 @@ export function Tagline({
   className?: string;
 }) {
   const s = appearance?.taglineStyle;
-  const img = appearance?.taglineImage;
+  const img = resolveAssetUrl(appearance?.taglineImage);
   if (img) {
     return (
       <img
