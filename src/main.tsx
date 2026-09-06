@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { StoreProvider } from './state/store';
 import { InstitutionProvider } from './state/institutionSelection';
 import { ErrorBoundary } from './ErrorBoundary';
+import { AppDialogProvider } from './components/appDialog';
 import App from './App';
 import {
   bootStudentConfig,
@@ -74,11 +75,13 @@ async function main() {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <StoreProvider>
-          <InstitutionProvider>
-            <App />
-          </InstitutionProvider>
-        </StoreProvider>
+        <AppDialogProvider>
+          <StoreProvider>
+            <InstitutionProvider>
+              <App />
+            </InstitutionProvider>
+          </StoreProvider>
+        </AppDialogProvider>
       </ErrorBoundary>
     </React.StrictMode>
   );

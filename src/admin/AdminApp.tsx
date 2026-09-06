@@ -31,6 +31,7 @@ import { AiMonitor } from './views/AiMonitor';
 import { StorageMonitor } from './views/StorageMonitor';
 import { PublishPreview } from './components/PublishPreview';
 import { DraftsPanel } from './components/DraftsPanel';
+import { appConfirm } from '../components/appDialog';
 
 type ViewName =
   | 'overview'
@@ -544,7 +545,9 @@ function LogoutButton() {
   return (
     <button
       onClick={() => {
-        if (confirm('Log out of the admin console?')) logout();
+        void appConfirm('Log out of the admin console?').then((ok) => {
+          if (ok) logout();
+        });
       }}
       className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-red-50 hover:text-red-600"
     >

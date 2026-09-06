@@ -15,6 +15,7 @@ import {
 } from '../services/aiHistory';
 import type { AiChatMessage, AiPublicStatus } from '../admin/aiSettings';
 import { permissionOn } from '../permissions';
+import { appConfirm } from '../components/appDialog';
 import { fmt2 } from '../util/format';
 import { AppGlyph } from '../components/AppGlyph';
 import { Info } from '../components/ui';
@@ -539,10 +540,12 @@ export function AiAssistant({
                       </button>
                       <button
                         onClick={() => {
-                          if (confirm('Delete this conversation?')) {
-                            setHistory(deleteConversation(history, c.id));
-                            setError(null);
-                          }
+                          void appConfirm('Delete this conversation?').then((ok) => {
+                            if (ok) {
+                              setHistory(deleteConversation(history, c.id));
+                              setError(null);
+                            }
+                          });
                         }}
                         className="shrink-0 rounded-lg px-1.5 py-1 text-[11px] font-black text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                         title="Delete conversation"

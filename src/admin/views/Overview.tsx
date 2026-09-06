@@ -9,6 +9,7 @@ import {
   writeApiToken,
 } from '../adminStorage';
 import { MIN_PASSCODE_LENGTH, preflightPublish } from '../adminApi';
+import { appConfirm } from '../../components/appDialog';
 import { writeCachedConfig } from '../../services/configCache';
 import { STUDENT_PERMISSIONS } from '../../permissions';
 
@@ -124,7 +125,7 @@ export function Overview({
         flash('That file is not a valid CGPA PILOT configuration document.');
         return;
       }
-      if (!confirm('Import this configuration? It will replace the current admin catalog.')) return;
+      if (!(await appConfirm('Import this configuration? It will replace the current admin catalog.'))) return;
       setCatalog({
         universities: doc.universities,
         curricula: doc.curricula,
@@ -290,7 +291,9 @@ export function Overview({
               <p>⚠️ Your admin session has expired (or the token was rejected). Sign in again.</p>
               <button
                 onClick={() => {
-                  if (confirm('Return to the sign-in screen? Your unsaved catalog stays on this device.')) logout();
+                  void appConfirm('Return to the sign-in screen? Your unsaved catalog stays on this device.').then((ok) => {
+                    if (ok) logout();
+                  });
                 }}
                 className="shrink-0 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-bold hover:bg-white/25"
               >

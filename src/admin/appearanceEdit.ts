@@ -1,15 +1,14 @@
 // Admin-only helpers to read an uploaded image file into a data URL so it can
 // be stored on the non-personal catalog (appearance / logos) without a server.
 
-import { fileToDataUrl, isImageFile, MAX_IMAGE_BYTES } from './fileImage';
+import { fileToDataUrl, prepareImageForCatalog } from './fileImage';
 
-/** Validate + read an uploaded image file into a data URL (rejects > ~2 MB). */
+/**
+ * Validate + read an uploaded image file into a data URL. Large/oversized
+ * images are automatically resized to a publish-safe size, so adding a logo
+ * never bounces on the old ~2 MB wall.
+ */
 export async function readImageFile(f: File): Promise<string> {
-  if (!isImageFile(f)) {
-    throw new Error('Please choose a PNG or JPEG image.');
-  }
-  if (f.size > MAX_IMAGE_BYTES) {
-    throw new Error('That image is too large — keep it under ~2 MB.');
-  }
-  return fileToDataUrl(f);
+  const prepared = await prepareImageForCatalog(f);
+  return fileToDataUrl(prepared.file);
 }

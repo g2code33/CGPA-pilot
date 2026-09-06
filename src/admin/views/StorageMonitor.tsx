@@ -25,6 +25,7 @@ import {
 import { humanBytes } from '../catalogSize';
 import { r2FallbackNote } from '../assetUpload';
 import { accountIdLooksValid, credsProbeHint } from '../credsHint';
+import { appConfirm } from '../../components/appDialog';
 
 const FREE_TIER_BYTES = 10 * 1024 * 1024 * 1024; // R2 free tier: 10 GB (account-wide)
 
@@ -241,7 +242,7 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
   }
 
   async function doClear() {
-    if (!confirm('Remove the saved Cloudflare credentials?')) return;
+    if (!(await appConfirm('Remove the saved Cloudflare credentials?'))) return;
     setBusy(true);
     const r = await clearStorageCreds();
     setBusy(false);

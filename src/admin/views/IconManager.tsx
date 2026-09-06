@@ -14,6 +14,7 @@ import {
 import { Wordmark, Tagline } from '../../components/Wordmark';
 import { uploadImageForCatalog, r2FallbackNote } from '../assetUpload';
 import { resolveAssetUrl } from '../../config/assets';
+import { appAlert } from '../../components/appDialog';
 import { AssetSizeBadge, CatalogSizeBanner, assetBytes } from '../components/catalogSizeUi';
 
 export function IconManager() {
@@ -146,7 +147,11 @@ export function IconManager() {
                     return;
                   }
                   commit((a) => ({ ...a, logo: r.image.value }));
-                  flash(r.image.r2NotConfigured ? `App logo updated. ${r2FallbackNote()}` : 'App logo updated.');
+                  flash(
+                    r.image.r2NotConfigured
+                      ? `App logo updated${r.image.resized ? ' (resized to fit)' : ''}. ${r2FallbackNote()}`
+                      : `App logo updated${r.image.resized ? ' (resized to fit)' : ''}.`
+                  );
                 }}
               />
               {appearance?.logo && (
@@ -324,7 +329,7 @@ function SlotEditor({
           onFile={async (f) => {
             const r = await uploadImageForCatalog(f);
             if (!r.ok) {
-              alert(r.message);
+              void appAlert(r.message, 'Could not add that image');
               return;
             }
             onChange({ image: r.image.value, emoji: emojiInput.trim() || fallbackEmoji });
@@ -441,7 +446,7 @@ function BrandTextControls({
               onFile={async (f) => {
                 const r = await uploadImageForCatalog(f);
                 if (!r.ok) {
-                  alert(r.message);
+                  void appAlert(r.message, 'Could not add that image');
                   return;
                 }
                 onImage(r.image.value);

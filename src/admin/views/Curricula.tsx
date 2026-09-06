@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAdmin } from '../adminStore';
 import { confirmThen } from '../confirm';
+import { appAlert } from '../../components/appDialog';
 import {
   findProgramme,
   createCurriculum,
@@ -214,7 +215,7 @@ export function Curricula({ onOpen }: { onOpen: (id: string) => void }) {
                       () => {
                         const res = deleteCurriculum(catalog, c.id);
                         if (!res.ok) {
-                          alert(res.reason);
+                          void appAlert(res.reason ?? 'Could not delete that version.', 'Delete');
                         } else {
                           apply(() => res.catalog);
                         }

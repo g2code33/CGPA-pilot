@@ -6,6 +6,7 @@ import {
   purgeTrashItem,
   restoreTrashItem,
 } from '../adminConfigService';
+import { appConfirm } from '../../components/appDialog';
 import { trashOf, type TrashEntry } from '../adminStorage';
 
 const KIND_META: Record<TrashEntry['kind'], { label: string; icon: string }> = {
@@ -35,25 +36,25 @@ export function RecycleBin() {
     }
   }
 
-  function handlePurge(entry: TrashEntry) {
-    if (
-      !confirm(
-        `Permanently delete ${KIND_META[entry.kind].label.toLowerCase()} “${entry.label}”? This cannot be undone.`
-      )
-    )
-      return;
+  async function handlePurge(entry: TrashEntry) {
+    const ok = await appConfirm({
+      message: `Permanently delete ${KIND_META[entry.kind].label.toLowerCase()} “${entry.label}”? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     apply((c) => purgeTrashItem(c, entry.id));
     flash('Item permanently deleted.');
   }
 
-  function handleEmpty() {
+  async function handleEmpty() {
     if (trash.length === 0) return;
-    if (
-      !confirm(
-        `Permanently delete all ${trash.length} item(s) in the recycle bin? This cannot be undone.`
-      )
-    )
-      return;
+    const ok = await appConfirm({
+      message: `Permanently delete all ${trash.length} item(s) in the recycle bin? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Empty bin',
+    });
+    if (!ok) return;
     apply((c) => clearTrash(c));
     flash('Recycle bin emptied.');
   }

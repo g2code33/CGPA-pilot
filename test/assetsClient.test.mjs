@@ -31,6 +31,7 @@ globalThis.FileReader = FileReaderPolyfill;
 
 const assets = await import('../src/config/assets.ts');
 const assetUpload = await import('../src/admin/assetUpload.ts');
+const fileImage = await import('../src/admin/fileImage.ts');
 const adminApi = await import('../src/admin/adminApi.ts');
 const storage = await import('../src/admin/adminStorage.ts');
 
@@ -122,6 +123,23 @@ test('uploadImageForCatalog: not signed in → error (no silent fallback)', asyn
   const r = await assetUpload.uploadImageForCatalog(file, { fetchImpl: f, baseOverride: '' });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'unauthorized');
+});
+
+test('prepareImageForCatalog: small image passes through (no DOM decode needed)', async () => {
+  const small = new File([PNG_BYTES], 'logo.png', { type: 'image/png' });
+  const r = await fileImage.prepareImageForCatalog(small);
+  assert.equal(r.file, small);
+  assert.equal(r.resized, false);
+  assert.equal(r.originalBytes, small.size);
+});
+
+test('prepareImageForCatalog: oversized image is a typed too-large error outside the browser', async () => {
+  const big = new File([new Uint8Array(3 * 1024 * 1024)], 'big.png', { type: 'image/png' });
+  await assert.rejects(() => fileImage.prepareImageForCatalog(big), (e) => {
+    assert.equal(e instanceof fileImage.ImageFileError, true);
+    assert.equal(e.code, 'too-large');
+    return true;
+  });
 });
 
 test('uploadImageForCatalog: wrong file type / oversize are refused before any network call', async () => {

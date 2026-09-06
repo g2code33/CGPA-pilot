@@ -18,6 +18,7 @@ import {
   listRemoteDrafts,
   type DraftMeta,
 } from '../adminApi';
+import { appConfirm } from '../../components/appDialog';
 
 interface DraftsPanelProps {
   open: boolean;
@@ -107,7 +108,12 @@ export function DraftsPanel({ open, onClose, onRestore, onPreview, toast }: Draf
   }
 
   async function remove(meta: DraftMeta, local?: LocalDraft) {
-    if (!confirm(`Delete the draft “${meta.name}”? This cannot be undone.`)) return;
+    const ok = await appConfirm({
+      message: `Delete the draft “${meta.name}”? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     setBusy(meta.id);
     try {
       // Backend copy (when present) + the local mirror.

@@ -23,6 +23,7 @@ import {
   type AiErrorEntry,
   type DiagnosticCheck,
 } from '../adminApi';
+import { appConfirm } from '../../components/appDialog';
 
 type Toast = (m: string) => void;
 
@@ -125,7 +126,7 @@ export function AiMonitor({ toast }: { toast: Toast }) {
   }
 
   async function clearErrors() {
-    if (!window.confirm('Clear the whole AI error log?')) return;
+    if (!(await appConfirm('Clear the whole AI error log?'))) return;
     const r = await clearAiErrors();
     if (r.ok) {
       toast('🧹 Error log cleared.');

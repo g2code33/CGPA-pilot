@@ -13,7 +13,7 @@
 // (and the full guide lives in the Storage view).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { fileToDataUrl, isImageFile, MAX_IMAGE_BYTES } from './fileImage';
+import { fileToDataUrl, prepareImageForCatalog, ImageFileError, MAX_IMAGE_BYTES } from './fileImage';
 import { humanBytes } from './catalogSize';
 import { uploadAdminAsset, type AdminApiDeps } from './adminApi';
 
@@ -27,6 +27,10 @@ export interface StoredImage {
   bytes: number;
   /** Set when the fallback happened because R2 is not configured yet. */
   r2NotConfigured?: boolean;
+  /** Set when the original was larger than the safe limit and resized. */
+  resized?: boolean;
+  /** Original file bytes before any resize. */
+  originalBytes?: number;
 }
 
 export type ImageUploadOutcome =
@@ -39,22 +43,41 @@ export type ImageUploadOutcome =
  * required) is returned as a structured result the caller can toast.
  */
 export async function uploadImageForCatalog(file: File, deps: AdminApiDeps = {}): Promise<ImageUploadOutcome> {
-  if (!isImageFile(file)) {
-    return { ok: false, error: 'not-an-image', message: 'Please choose a PNG, JPEG or WebP image.' };
+  // Auto-resize a large/oversized image BEFORE the size gate: the admin should
+  // be able to pick a 2 MB+ logo/icon and have the app make it publish-safe
+  // (instead of a hard "keep it under 2.1 MB" system prompt). A small file is
+  // returned unchanged.
+  let prepared;
+  try {
+    prepared = await prepareImageForCatalog(file);
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof ImageFileError ? e.code : 'unreadable',
+      message: e instanceof Error ? e.message : 'Could not read that image.',
+    };
   }
-  if (file.size > MAX_IMAGE_BYTES) {
+  const fileToStore = prepared.file;
+  const originalBytes = prepared.originalBytes;
+  if (fileToStore.size > MAX_IMAGE_BYTES) {
     return {
       ok: false,
       error: 'too-large',
-      message: `This image is ${humanBytes(file.size)} — keep it under ${humanBytes(MAX_IMAGE_BYTES)}.`,
+      message: `This image is ${humanBytes(fileToStore.size)} — keep it under ${humanBytes(MAX_IMAGE_BYTES)}.`,
     };
   }
 
-  const uploaded = await uploadAdminAsset(file, deps);
+  const uploaded = await uploadAdminAsset(fileToStore, deps);
   if (uploaded.ok) {
     return {
       ok: true,
-      image: { value: uploaded.ref, isDataUrl: false, bytes: uploaded.bytes },
+      image: {
+        value: uploaded.ref,
+        isDataUrl: false,
+        bytes: uploaded.bytes,
+        resized: prepared.resized,
+        originalBytes,
+      },
     };
   }
 
@@ -67,14 +90,16 @@ export async function uploadImageForCatalog(file: File, deps: AdminApiDeps = {})
   // storage, exactly as before this version. The catalog stays a valid
   // document either way.
   try {
-    const dataUrl = await fileToDataUrl(file);
+    const dataUrl = await fileToDataUrl(fileToStore);
     return {
       ok: true,
       image: {
         value: dataUrl,
         isDataUrl: true,
-        bytes: file.size,
+        bytes: fileToStore.size,
         r2NotConfigured: uploaded.error === 'r2-not-configured',
+        resized: prepared.resized,
+        originalBytes,
       },
     };
   } catch {

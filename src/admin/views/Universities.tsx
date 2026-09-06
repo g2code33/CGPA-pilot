@@ -4,6 +4,7 @@ import type { Programme, School, University } from '../../config/types';
 import { AssetSizeBadge, CatalogSizeBanner, assetBytes } from '../components/catalogSizeUi';
 import { uploadImageForCatalog } from '../assetUpload';
 import { resolveAssetUrl } from '../../config/assets';
+import { appConfirm } from '../../components/appDialog';
 import {
   addUniversity,
   updateUniversity,
@@ -27,8 +28,8 @@ export function Universities() {
 
   const [newUni, setNewUni] = useState({ name: '', shortName: '', country: 'Ghana' });
 
-  function confirmAction(msg: string, fn: () => void) {
-    if (confirm(msg)) fn();
+  async function confirmAction(msg: string, fn: () => void) {
+    if (await appConfirm(msg)) fn();
   }
 
   return (

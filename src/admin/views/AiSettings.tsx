@@ -25,6 +25,7 @@ import {
   type AiSettings,
 } from '../aiSettings';
 import { getAiSettings, saveAiSettings, testAiKey } from '../adminApi';
+import { appConfirm } from '../../components/appDialog';
 
 type Toast = (m: string) => void;
 
@@ -115,9 +116,13 @@ export function AiSettings({ toast, onNavigate }: { toast: Toast; onNavigate: (v
     // Never overwrite the server's stored settings from a form we failed to
     // load — require an explicit "yes, I understand".
     if (loadFailed) {
-      const okc = window.confirm(
-        'The stored settings could NOT be loaded (see the red note above). Saving now will REPLACE whatever is on the server with exactly what is in this form.\n\nAre you sure you want to do that?'
-      );
+      const okc = await appConfirm({
+        title: 'Stored AI settings failed to load',
+        message:
+          'The stored settings could NOT be loaded (see the red note above). Saving now will REPLACE whatever is on the server with exactly what is in this form.\n\nAre you sure you want to do that?',
+        confirmLabel: "Yes, replace",
+        danger: true,
+      });
       if (!okc) return;
     }
     setSaving(true);
@@ -141,9 +146,13 @@ export function AiSettings({ toast, onNavigate }: { toast: Toast; onNavigate: (v
   // button needed, and students pick the change up within ~30 seconds.
   async function toggleEnabled(v: boolean) {
     if (loadFailed) {
-      const okc = window.confirm(
-        'The stored settings could NOT be loaded, so flipping this switch would REPLACE the stored settings with this (possibly empty) form.\n\nSign in again and reload first — continue anyway?'
-      );
+      const okc = await appConfirm({
+        title: 'Stored AI settings failed to load',
+        message:
+          'The stored settings could NOT be loaded, so flipping this switch would REPLACE the stored settings with this (possibly empty) form.\n\nSign in again and reload first — continue anyway?',
+        confirmLabel: 'Continue anyway',
+        danger: true,
+      });
       if (!okc) return;
     }
     const next = { ...settings, enabled: v };
@@ -369,12 +378,14 @@ export function AiSettings({ toast, onNavigate }: { toast: Toast; onNavigate: (v
                 isDefault={settings.defaultProviderId === p.id}
                 onChange={(pp) => patchProvider(p.id, pp)}
                 onRemove={() => {
-                  if (!confirm(`Remove provider “${p.label}”?`)) return;
-                  setSettings((s) => ({
-                    ...s,
-                    defaultProviderId: s.defaultProviderId === p.id ? null : s.defaultProviderId,
-                    providers: s.providers.filter((x) => x.id !== p.id),
-                  }));
+                  void appConfirm(`Remove provider “${p.label}”?`).then((ok) => {
+                    if (!ok) return;
+                    setSettings((s) => ({
+                      ...s,
+                      defaultProviderId: s.defaultProviderId === p.id ? null : s.defaultProviderId,
+                      providers: s.providers.filter((x) => x.id !== p.id),
+                    }));
+                  });
                 }}
                 onSetDefault={() => patch({ defaultProviderId: p.id })}
                 onTest={async (keyId, keyLabel) => {
