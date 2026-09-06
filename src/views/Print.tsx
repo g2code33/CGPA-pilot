@@ -77,7 +77,7 @@ export function PrintView() {
           const p = d.pending;
           const html = `${sectionHeading('📋', 'Upon release')}
             <div class="print-card">
-              <p style="margin:0 0 4px;"><strong>${m.next?.next.label ?? 'Semester'}</strong> — results pending (${p.pendingCreditHours} credits). Confirmed: ${p.confirmedCreditHours} credits at ${f(p.confirmedCgpa)}.</p>
+              <p style="margin:0 0 4px;"><strong>${m.next?.next.label ?? 'Semester'}</strong> — results pending (${p.pendingCreditHours} credits). ${p.pendingIncludedInBase ? `Already counted in your CGPA at 0: ${p.confirmedCreditHours} credits at ${f(p.confirmedCgpa)}.` : `Confirmed: ${p.confirmedCreditHours} credits at ${f(p.confirmedCgpa)}.`}</p>
               ${rowsTable(
                 [
                   ['If top grades', f(p.bestCaseCgpa), p.bestCaseClass?.label ?? '—'],

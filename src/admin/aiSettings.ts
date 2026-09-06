@@ -389,6 +389,12 @@ export interface AiStudentContext {
     courses?: { code: string; grade: string | null; credits: number; pending: boolean }[];
   }[];
   pendingCredits?: number | null;
+  /**
+   * True when the pending credits are already counted in the reported CGPA's
+   * denominator at 0 points (cumulative CGPA), so releasing them only improves
+   * the numerator — never grows the credit base.
+   */
+  pendingCreditsInBase?: boolean;
   targetCgpa?: number | null;
   plannedNextCredits?: number | null;
   hasAnyData?: boolean;

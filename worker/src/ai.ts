@@ -161,8 +161,13 @@ export function formatAiContext(ctx: AiStudentContext): string {
     `MODE: ${ctx.mode ?? 'current'}${ctx.levelIndex ? ` · LEVEL ${ctx.levelIndex} (Level ${ctx.levelIndex * 100})` : ''}${ctx.semesterIndex ? ` · semester ${ctx.semesterIndex}` : ''}`
   );
   if (ctx.confirmedCgpa != null) {
+    const baseNote = ctx.pendingCreditsInBase
+      ? ` over ${ctx.gradedCredits} total credits${ctx.pendingCredits ? ` (${ctx.pendingCredits} still awaiting release, already counted at 0)` : ''}`
+      : ctx.gradedCredits
+        ? ` over ${ctx.gradedCredits} graded credits`
+        : '';
     lines.push(
-      `CONFIRMED CGPA: ${ctx.confirmedCgpa.toFixed(2)}${ctx.gradedCredits ? ` over ${ctx.gradedCredits} graded credits` : ''}${ctx.classification ? ` · classification: ${ctx.classification}` : ''}`
+      `CONFIRMED CGPA: ${ctx.confirmedCgpa.toFixed(2)}${baseNote}${ctx.classification ? ` · classification: ${ctx.classification}` : ''}`
     );
   }
   if (Array.isArray(ctx.semesters) && ctx.semesters.length) {

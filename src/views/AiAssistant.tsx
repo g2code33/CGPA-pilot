@@ -142,6 +142,7 @@ export function AiAssistant({
         points: d.record.points,
         cgpa: historyIncomplete ? null : d.record.cgpa,
         pendingCreditHours: d.record.pendingCreditHours,
+        pendingIncludedInBase: d.record.pendingIncludedInBase,
       },
       d.classBand?.label ?? null,
       (() => {
@@ -302,8 +303,8 @@ export function AiAssistant({
     <div className="flex h-full flex-col">
       {/* ── Sticky AI header (never scrolls) ─────────────────────────────── */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">
-          <AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={15} /> {status.label}
+        <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1.5 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">
+          {status.label}
         </span>
         {chip && (
           <span
@@ -409,7 +410,7 @@ export function AiAssistant({
 
       {/* ── Fixed typing area (never scrolls) — a pure-white card so the
           input is always clearly visible against the app background ─────── */}
-      <div className="mt-2 shrink-0 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+      <div className="mt-2 shrink-0 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200" style={{ backgroundColor: '#ffffff' }}>
         {attachments.length > 0 && (
           <div className="mb-1.5 flex gap-1.5">
             {attachments.map((src, i) => (
@@ -449,6 +450,7 @@ export function AiAssistant({
             rows={1}
             placeholder={attachments.length ? 'Describe the image…' : 'Ask about your CGPA, target, next semester…'}
             className="max-h-28 min-h-[44px] flex-1 resize-none rounded-2xl border-0 bg-white px-4 py-3 text-[13px] font-medium text-slate-800 shadow-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+            style={{ backgroundColor: '#ffffff', caretColor: '#0f172a' }}
           />
           {thinking ? (
             <button

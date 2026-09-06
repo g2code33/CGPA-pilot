@@ -6,7 +6,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { AppDialogProvider } from './components/appDialog';
 import App from './App';
 import {
-  bootStudentConfig,
+  bootStudentConfigLocal,
   onConfigUpdate,
   startBackgroundConfigSync,
 } from './services/configSync';
@@ -20,11 +20,12 @@ import './index.css';
 //   1. Load the locally cached published configuration (IndexedDB → bundled
 //      seed) and set it as the runtime catalog — the app ALWAYS renders from
 //      local data first, so it works with no network at all.
-//   2. When online, make a bounded check against the config backend: if a
-//      NEWER published configuration exists it is downloaded, validated and
-//      applied BEFORE first paint (fast networks) — otherwise the app runs
-//      the local copy and a background pass finishes any interrupted update.
-//   3. Render. Student academic data is never involved in any of this.
+//   2. Render immediately. NO Cloudflare / backend fetch ever blocks first
+//      paint — the sync below runs after the UI is live.
+//   3. In the background, make a bounded check against the config backend:
+//      if a NEWER published configuration exists it is downloaded, validated
+//      and stored; the app offers a reload (or auto-reloads when nothing is
+//      entered). Student academic data is never involved in any of this.
 // ─────────────────────────────────────────────────────────────────────────
 async function main() {
   // Keep pinch-zoom out of the PWA/website (pairs with
@@ -62,10 +63,13 @@ async function main() {
     console.error('[crash] unhandled rejection:', e.reason)
   );
 
-  const outcome = await bootStudentConfig().catch(() => null);
+  // Local-only boot: IndexedDB → bundled seed. There is NO network step here,
+  // so a PWA installed from a static host opens instantly even with Cloudflare
+  // (or any config backend) unreachable.
+  await bootStudentConfigLocal().catch(() => null);
   // Defensive: boot must never block the app — on any unexpected failure the
   // runtime catalog still holds a valid (cached/seed) configuration.
-  console.info('[config]', outcome ? `boot sync: ${outcome.status}` : 'boot sync skipped (local config only)');
+  console.info('[config]', 'boot local config (network sync runs in background)');
 
   // Browser tab icon = the admin-set app logo (keeps the bundled icon when
   // the admin has not set one). PWA/desktop icon: served dynamically by the

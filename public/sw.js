@@ -15,7 +15,7 @@
 //
 // Bump `CACHE` whenever you change this file's caching rules; old caches are
 // deleted on activate so devices pick up the new rules immediately.
-const CACHE = 'cgpa-pilot-v6';
+const CACHE = 'cgpa-pilot-v7';
 
 const SHELL = [
   './',
@@ -26,9 +26,27 @@ const SHELL = [
   './app-icon',
 ];
 
+// Cache each shell item independently. `cache.addAll` is all-or-nothing: a
+// single 404 (e.g. a static host that doesn't serve the Worker-only
+// `/app-icon`) would abort the entire install and the PWA would lose its
+// offline shell. Per-item caching keeps the app offline-capable and lets a
+// missing optional assets degrade gracefully.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
+    caches
+      .open(CACHE)
+      .then((cache) =>
+        Promise.allSettled(
+          SHELL.map((url) =>
+            cache.add(url).catch((err) => {
+              // Keep the install alive; the navigation handler falls back to
+              // whichever shell assets actually cached.
+              console.warn('[sw] shell asset skipped (offline still works):', url, err?.message || err);
+            })
+          )
+        )
+      )
+      .then(() => self.skipWaiting())
   );
 });
 

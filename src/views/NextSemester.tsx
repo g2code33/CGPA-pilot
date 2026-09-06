@@ -594,7 +594,9 @@ function UponReleaseCard({
       <div className={`rounded-2xl px-4 py-3 text-xs font-semibold ring-1 ${badge.tone}`}>
         {pending.pendingCreditHours === 0
           ? `No results are pending right now — this screen shows the semester whose results are yet to be released.`
-          : `${badge.emoji} ${badge.text} — your ${nextLabel} results are pending. Once released they are added to your confirmed CGPA (${pending.confirmedCreditHours} confirmed credits).`}
+          : pending.pendingIncludedInBase
+            ? `${badge.emoji} ${badge.text} — your ${nextLabel} results are pending. They are already counted in your CGPA at 0, so releasing them only improves your CGPA (${pending.confirmedCreditHours} total credits in your CGPA).`
+            : `${badge.emoji} ${badge.text} — your ${nextLabel} results are pending. Once released they are added to your confirmed CGPA (${pending.confirmedCreditHours} confirmed credits).`}
       </div>
 
       <Card className="print-sheet">

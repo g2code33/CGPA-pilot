@@ -51,6 +51,12 @@ export interface SemesterTerm {
   source: 'gpa' | 'courses' | 'pending' | 'none';
   pendingCreditHours: number;
   pendingCount: number;
+  /**
+   * True when a typed cumulative GPA already counts the tagged pending
+   * credits inside its denominator (at 0 points) — the pending result will
+   * change the numerator only, never the denominator.
+   */
+  pendingIncludedInBase: boolean;
 }
 
 /**
@@ -99,6 +105,9 @@ export function semesterTerm(
       source: 'pending',
       pendingCreditHours: pendingCredits,
       pendingCount: 1,
+      // Whole-semester pending: the typed CGPA covers CONFIRMED results only,
+      // so these credits are NOT yet in the denominator.
+      pendingIncludedInBase: false,
     };
   }
 
@@ -129,17 +138,22 @@ export function semesterTerm(
       source: 'courses',
       pendingCreditHours,
       pendingCount,
+      // Course-derived GPA is over the graded courses only; tagged pending
+      // credits are added to the denominator when they are released.
+      pendingIncludedInBase: false,
     };
   }
 
   // 2) GPA-history mode: student entered only the semester GPA. Weight it by
   //    the configured/override credit load. Never infers course grades.
-  //    If specific courses were flagged "not released", their credits are
-  //    pulled out of the counted load (the typed GPA is over the released
-  //    portion) and reported as pending for projections.
+  //    A typed CGPA is CUMULATIVE: if specific courses were flagged "not
+  //    released", those credits are ALREADY in the denominator the student's
+  //    CGPA was reported over (at 0 points). They stay confirmed-in-base and
+  //    are reported only so the release changes the numerator, not the base.
   if (semester.gpa !== null && !Number.isNaN(semester.gpa)) {
     const grossCredits = semester.creditHoursOverride ?? configuredCredits ?? 0;
-    const credits = Math.max(0, grossCredits - pendingCreditHours);
+    const credits = Math.max(0, grossCredits);
+    const pendingInBase = pendingCreditHours > 0;
     return {
       creditHours: credits,
       qualityPoints: semester.gpa * credits,
@@ -147,6 +161,7 @@ export function semesterTerm(
       source: credits > 0 ? 'gpa' : 'none',
       pendingCreditHours,
       pendingCount,
+      pendingIncludedInBase: pendingInBase && credits > 0,
     };
   }
 
@@ -157,6 +172,7 @@ export function semesterTerm(
     source: 'none',
     pendingCreditHours,
     pendingCount,
+    pendingIncludedInBase: false,
   };
 }
 
@@ -168,6 +184,8 @@ export interface CgpaResult {
   terms: SemesterTerm[];
   pendingCreditHours: number;
   pendingCount: number;
+  /** True when any tagged pending credits are already inside the CGPA base. */
+  pendingIncludedInBase: boolean;
 }
 
 /** Credit-weighted CGPA across all entered semesters. */
@@ -192,6 +210,7 @@ export function weightedCgpa(
     terms,
     pendingCreditHours: terms.reduce((s, t) => s + t.pendingCreditHours, 0),
     pendingCount: terms.reduce((s, t) => s + t.pendingCount, 0),
+    pendingIncludedInBase: terms.some((t) => t.pendingIncludedInBase),
   };
 }
 
@@ -202,6 +221,8 @@ export interface CurrentRecord {
   qualityPoints: number;
   cgpa: number | null;
   fromCurriculum: boolean;
+  /** True when tagged pending credits are already in the CGPA base. */
+  pendingIncludedInBase: boolean;
 }
 
 export function currentModeRecord(
@@ -223,16 +244,24 @@ export function currentModeRecord(
     );
     totalCompleted = Math.max(0, totalCompleted - currentSemesterCredits);
   }
-  // Pending results within the completed period are NOT part of the CGPA the
-  // student reported — they are confirmed-excluded and projected separately.
+  // Pending results within the completed period. For an advanced "some
+  // courses not released" entry the entered CGPA is CUMULATIVE — it already
+  // counts these credits in the denominator at 0 points — so they stay in the
+  // base and the release only changes the numerator. For a whole-semester
+  // Not Released entry the CGPA is over confirmed results only, so pending
+  // credits are excluded from the confirmed base (the projection adds them).
   const pending = Math.max(0, baseline.pendingCreditHours || 0);
-  const creditHours = Math.max(0, totalCompleted - pending);
+  const pendingIncludedInBase = !!baseline.pendingIncludedInBase;
+  const creditHours = pendingIncludedInBase
+    ? Math.max(0, totalCompleted)
+    : Math.max(0, totalCompleted - pending);
   const cgpa = baseline.cgpa;
   return {
     creditHours,
     qualityPoints: cgpa !== null ? cgpa * creditHours : 0,
     cgpa: creditHours > 0 ? cgpa : null,
     fromCurriculum,
+    pendingIncludedInBase,
   };
 }
 
@@ -243,6 +272,8 @@ export interface EngineSnapshot {
   cgpa: number | null;
   pendingCreditHours: number;
   pendingCount: number;
+  /** True when tagged pending credits are already inside the CGPA base. */
+  pendingIncludedInBase: boolean;
 }
 
 /** The single entry point views use: credit-weighted CGPA for either mode. */
@@ -268,6 +299,7 @@ export function computeSnapshot(
       cgpa: rec.cgpa,
       pendingCreditHours: pendingCredits,
       pendingCount: pendingCredits > 0 ? 1 : 0,
+      pendingIncludedInBase: rec.pendingIncludedInBase,
     };
   }
   const r = weightedCgpa(
@@ -282,6 +314,7 @@ export function computeSnapshot(
     cgpa: r.cgpa,
     pendingCreditHours: r.pendingCreditHours,
     pendingCount: r.pendingCount,
+    pendingIncludedInBase: r.pendingIncludedInBase,
   };
 }
 

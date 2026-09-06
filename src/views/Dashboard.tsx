@@ -107,7 +107,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (t: Tab) => void }) {
               🏅 {journeyIncomplete ? 'History incomplete' : model.currentClassLabel ?? 'Awaiting data'}
             </p>
             <p className="text-xs text-brand-200">
-              Level {model.currentLevel * 100} · {model.creditsCompleted} graded credits
+              Level {model.currentLevel * 100} · {model.creditsCompleted}{' '}
+              {model.pendingCreditsInBase ? 'total credits' : 'graded credits'}
             </p>
           </div>
           <div className="text-right">

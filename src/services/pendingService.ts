@@ -37,6 +37,8 @@ export interface PendingProjection {
   /** Credits awaiting results (known from the configured curriculum). */
   pendingCreditHours: number;
   pendingCount: number;
+  /** True when pending credits are already in the confirmed CGPA base. */
+  pendingIncludedInBase: boolean;
 
   /** Best-case CGPA if every pending credit earns the top grade. */
   bestCaseCgpa: number | null;
@@ -78,6 +80,14 @@ interface PendingInput {
   confirmedCreditHours: number;
   pendingCreditHours: number;
   pendingCount: number;
+  /**
+   * True when `confirmedCreditHours` ALREADY includes the pending credits
+   * (the entered CGPA is cumulative, pending at 0 points). In that case the
+   * release only changes the numerator — the projection denominator stays
+   * `confirmedCreditHours`. Default false (confirmed-only base) means pending
+   * credits are added to the denominator when they arrive.
+   */
+  pendingIncludedInBase?: boolean;
   target: number | null;
 }
 
@@ -100,8 +110,15 @@ export function pendingProjection(
   const max = maxGradePoints(grading);
   const minPositive = minPositiveGradePoints(grading);
   const lowest = 0; // mathematical floor of the scale
+  const pendingIncludedInBase = !!input.pendingIncludedInBase;
 
-  const totalCredits = confirmedCreditHours + pendingCreditHours;
+  // Projection denominator. When the typed CGPA already counts the pending
+  // credits at 0 (cumulative CGPA), `confirmedCreditHours` is the TOTAL base
+  // and the release must NOT grow it. Otherwise (confirmed-only base) the
+  // pending credits are added to the denominator as they are released.
+  const totalCredits = pendingIncludedInBase
+    ? confirmedCreditHours
+    : confirmedCreditHours + pendingCreditHours;
 
   const confirmedCgpa = cgpaWith(confirmedPoints, confirmedCreditHours);
   const bestCaseCgpa = pendingCreditHours
@@ -137,6 +154,7 @@ export function pendingProjection(
     confirmedClass: classifyCgpa(confirmedCgpa, classification),
     pendingCreditHours,
     pendingCount,
+    pendingIncludedInBase,
     bestCaseCgpa,
     bestCaseClass: classifyCgpa(bestCaseCgpa, classification),
     worstCaseCgpa,

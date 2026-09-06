@@ -267,7 +267,10 @@ export function Calculate({ onProceed }: { onProceed?: () => void }) {
               </>
             ) : (
               <>
-                <p>{record.creditHours} graded credits</p>
+                <p>
+                  {record.creditHours}{' '}
+                  {record.pendingIncludedInBase ? 'total credits' : 'graded credits'}
+                </p>
                 {record.pendingCount > 0 && (
                   <p className="text-amber-300">⏳ {d.pending.pendingCreditHours} cr not released</p>
                 )}
@@ -496,10 +499,29 @@ function CurrentStanding() {
             semester out of the confirmed base). */}
         <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500 ring-1 ring-slate-100">
           {status === 'released' ? (
+            pendingSum > 0 ? (
+              <>
+                Your CGPA is <strong>cumulative</strong> — it already counts all
+                {d.progress.completedCredits} earned credits, including the{' '}
+                {pendingSum} credits you tagged as not released (they count at 0
+                until they come out). The projection below only changes the
+                numerator, never the credit base.
+              </>
+            ) : (
+              <>
+                The CGPA you type is taken over your <strong>released results to
+                date</strong> — through Level {d.confirmedPosition.levelIndex * 100} · Semester{' '}
+                {d.confirmedPosition.semesterIndex} ({d.progress.completedCredits} confirmed credits).
+              </>
+            )
+          ) : pendingSum > 0 ? (
             <>
-              The CGPA you type is taken over your <strong>released results to
-              date</strong> — through Level {d.confirmedPosition.levelIndex * 100} · Semester{' '}
-              {d.confirmedPosition.semesterIndex} ({d.progress.completedCredits} confirmed credits).
+              Your CGPA is <strong>cumulative</strong> over the confirmed position —
+              Level {d.confirmedPosition.levelIndex * 100} · Semester{' '}
+              {d.confirmedPosition.semesterIndex} ({d.progress.completedCredits} earned
+              credits), including the {pendingSum} credits you tagged as not released
+              (they count at 0 until they come out). The projection below only changes
+              the numerator, never the credit base.
             </>
           ) : (
             <>

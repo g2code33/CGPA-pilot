@@ -451,7 +451,8 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
               {d.record.creditHours > 0 ? (
                 <>
                   <span className="mx-1.5 text-brand-300">·</span>
-                  {d.record.creditHours} graded credits
+                  {d.record.creditHours}{' '}
+                  {d.record.pendingIncludedInBase ? 'total credits' : 'graded credits'}
                 </>
               ) : null}
             </p>

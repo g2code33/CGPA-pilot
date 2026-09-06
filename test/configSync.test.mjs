@@ -191,6 +191,19 @@ test('bootStudentConfig on a fresh device renders the synced config before first
   assert.equal(stored.version, 1);
 });
 
+test('bootStudentConfigLocal never touches the network — offline-first without Cloudflare', async () => {
+  freshState();
+  await persistLocal(2); // previously synced config already on disk
+  const f = makeFakeFetch(serverDocs(99)); // a "newer" backend exists, but it must NOT be called
+  const local = await sync.bootStudentConfigLocal();
+  assert.equal(local.version, 2);
+  assert.equal(getRuntimeCatalog().source, 'backend');
+  assert.equal(getRuntimeCatalog().version, 2);
+  // The point of local-first boot: zero network, even when the browser says
+  // it is online. The background sync is responsible for the remote check.
+  assert.equal(f.calls.length, 0);
+});
+
 test('second boot of the same device: meta is current → up-to-date, no re-download', async () => {
   freshState();
   const f1 = makeFakeFetch(serverDocs(1));

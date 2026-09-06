@@ -21,6 +21,8 @@ export interface AiRecord {
   points: number;
   cgpa: number | null;
   pendingCreditHours: number;
+  /** True when pending credits are already in the CGPA base (at 0 points). */
+  pendingIncludedInBase?: boolean;
 }
 
 export interface AiInstitution {
@@ -114,6 +116,7 @@ export function buildAiContext(
     classification,
     semesters,
     pendingCredits: record.pendingCreditHours,
+    pendingCreditsInBase: record.pendingIncludedInBase,
     targetCgpa: state.targetCgpa,
     plannedNextCredits: state.plannedNextCreditHours,
     hasAnyData,

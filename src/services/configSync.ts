@@ -248,6 +248,19 @@ export async function checkAndSync(
 const BOOT_DEADLINE_MS = 8000;
 
 /**
+ * Boot the student app from LOCAL DATA ONLY — no network is ever required.
+ * Loads the last cached published config (IndexedDB → bundled seed) and sets
+ * it as the running catalog. The network sync that follows runs in the
+ * background after first paint, so the app opens instantly when offline or
+ * when the config backend (e.g. Cloudflare) is unreachable.
+ */
+export async function bootStudentConfigLocal(): Promise<CachedConfig> {
+  const local = await readCachedConfigAsync();
+  setRuntimeCatalog(local);
+  return local;
+}
+
+/**
  * Boot sequence: load the local cache (fast, offline-first), set the runtime
  * catalog, then — when online — attempt a bounded remote check so a fresh or
  * outdated device runs the latest published config on its very first paint
@@ -256,8 +269,7 @@ const BOOT_DEADLINE_MS = 8000;
 export async function bootStudentConfig(
   deps: SyncDeps & { bootDeadlineMs?: number } = {}
 ): Promise<SyncOutcome> {
-  const local = await readCachedConfigAsync();
-  setRuntimeCatalog(local);
+  const local = await bootStudentConfigLocal();
   return checkAndSync(local, { ...deps, deadlineMs: deps.bootDeadlineMs ?? BOOT_DEADLINE_MS });
 }
 

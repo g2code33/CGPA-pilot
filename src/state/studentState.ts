@@ -96,10 +96,19 @@ export interface CurrentBaseline {
   creditHours: number;
   /**
    * Credits whose results are pending release within the completed period.
-   * The current CGPA reflects only released results; these credits are
-   * excluded from the confirmed position and used only in projections.
+   * When `pendingIncludedInBase` is false the current CGPA is taken over the
+   * released credits only and these credits are added to the denominator when
+   * projecting a release. When true (partial "Advanced" tagging inside the
+   * completed base) these credits are ALREADY in the base the typed CGPA is
+   * over (at 0 points), so the projection keeps the same denominator.
    */
   pendingCreditHours: number;
+  /**
+   * True when `pendingCreditHours` are already counted in the credit base the
+   * student's CGPA was reported over (0 points). Used by the pending-results
+   * projection so it does not double-count them in the denominator.
+   */
+  pendingIncludedInBase?: boolean;
   /** True when the student just entered this level/semester — completed credits exclude the current semester. */
   justEntered?: boolean;
   /**

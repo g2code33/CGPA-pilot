@@ -28,6 +28,8 @@ export interface DashboardModel {
   currentClassLabel: string | null;
   currentLevel: number;
   creditsCompleted: number;
+  pendingCredits: number;
+  pendingCreditsInBase: boolean;
 
   targetCgpa: number;
   targetClassLabel: string;
@@ -77,6 +79,10 @@ export interface DashboardInput {
   /** Semantic semester role (how the planner screen names the act-on semester). */
   semesterRole?: 'finish-current' | 'upon-release' | 'next-semester';
   standing?: 'released' | 'notReleased' | 'justStarted';
+  /** Credits awaiting release (for accurate wording). */
+  pendingCredits?: number;
+  /** True when pending credits are already counted in the CGPA base at 0. */
+  pendingCreditsInBase?: boolean;
 }
 
 /** Human noun for the semester a plan targets, driven by the semantic role. */
@@ -163,8 +169,13 @@ export function buildDashboard(i: DashboardInput): DashboardModel {
   if (i.currentCgpa === null) {
     brief.push('No graded record yet — open Calculate to enter your current CGPA or GPA history.');
   } else {
+    const creditWord = i.pendingCreditsInBase ? 'total credits' : 'graded credits';
+    const pendingNote =
+      i.pendingCreditsInBase && i.pendingCredits
+        ? ` (${i.pendingCredits} of those are still pending and already count at 0)`
+        : '';
     brief.push(
-      `Current CGPA ${i.currentCgpa.toFixed(2)}${currentClass ? ` (${currentClass.label})` : ''} at Level ${i.currentLevelIndex * 100}, over ${i.currentCredits} graded credits.`
+      `Current CGPA ${i.currentCgpa.toFixed(2)}${currentClass ? ` (${currentClass.label})` : ''} at Level ${i.currentLevelIndex * 100}, over ${i.currentCredits} ${creditWord}${pendingNote}.`
     );
     brief.push(`Target: ${i.targetCgpa.toFixed(2)}${targetClass ? ` (${targetClass.label})` : ''}.`);
     brief.push(`Flight status: ${targetAnalysis.statusLabel}.`);
@@ -190,7 +201,9 @@ export function buildDashboard(i: DashboardInput): DashboardModel {
       `Maximum possible final CGPA is ${targetAnalysis.maxFinalCgpa === null ? '—' : targetAnalysis.maxFinalCgpa.toFixed(2)}; on the planned path you project around ${projectedFinal === null ? '—' : projectedFinal.toFixed(2)} (${projectedClass?.label ?? '—'}).`
     );
     brief.push(
-      'Important assumptions: future semesters use the configured curriculum credit loads and a steady assumed average; projections are scenarios, not guaranteed outcomes, and pending results are excluded until released.'
+      i.pendingCreditsInBase
+        ? 'Important assumptions: future semesters use the configured curriculum credit loads and a steady assumed average; projections are scenarios, not guaranteed outcomes, and pending results are already counted in your CGPA at 0 until released.'
+        : 'Important assumptions: future semesters use the configured curriculum credit loads and a steady assumed average; projections are scenarios, not guaranteed outcomes, and pending results are excluded until released.'
     );
     if (i.curriculum) {
       brief.push(`Curriculum version: ${i.curriculum.versionName}${i.curriculumPublished ? '' : ' (not yet published)'}.`);
@@ -204,6 +217,8 @@ export function buildDashboard(i: DashboardInput): DashboardModel {
     currentClassLabel: currentClass?.label ?? null,
     currentLevel: i.currentLevelIndex,
     creditsCompleted: i.currentCredits,
+    pendingCredits: i.pendingCredits ?? 0,
+    pendingCreditsInBase: i.pendingCreditsInBase ?? false,
     targetCgpa: i.targetCgpa,
     targetClassLabel: targetClass?.label ?? 'your target',
     status: targetAnalysis.status,

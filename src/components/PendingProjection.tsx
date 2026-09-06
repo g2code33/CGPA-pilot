@@ -28,9 +28,20 @@ export function PendingProjectionPanel({
         </h3>
       </div>
       <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
-        These results are <strong>not graded yet</strong> — they are excluded
-        from your confirmed CGPA. The figures below are projections across the
-        possible outcomes once released; nothing is assumed or saved.
+        {pending.pendingIncludedInBase ? (
+          <>
+            These results are <strong>not graded yet</strong> — your CGPA already
+            counts their credits at 0, so releasing them only changes the
+            numerator. The figures below are projections across the possible
+            outcomes once released; nothing is assumed or saved.
+          </>
+        ) : (
+          <>
+            These results are <strong>not graded yet</strong> — they are excluded
+            from your confirmed CGPA. The figures below are projections across the
+            possible outcomes once released; nothing is assumed or saved.
+          </>
+        )}
       </p>
 
       {/* Confirmed vs. possible range */}
@@ -43,7 +54,9 @@ export function PendingProjectionPanel({
             {fmt2(pending.confirmedCgpa)}
           </p>
           <p className="text-[9px] font-semibold text-slate-500">
-            {pending.confirmedCreditHours} cr released
+            {pending.pendingIncludedInBase
+              ? `${pending.confirmedCreditHours} cr in your CGPA`
+              : `${pending.confirmedCreditHours} cr released`}
           </p>
         </div>
         <div className="rounded-xl bg-red-50 p-2.5 ring-1 ring-red-200">

@@ -154,10 +154,11 @@ test('pending semester credits fall back to the curriculum load', () => {
 
 // ── 3b. Released history level with specific pending courses ───────────────
 // A GPA-history semester that is "released" but has a few flagged not-released
-// courses: those credits are pulled OUT of the counted load (the typed GPA is
-// over the released portion) and reported as pending for projections.
+// courses: the typed GPA is CUMULATIVE, so those credits are ALREADY in the
+// denominator (at 0 points) — they are never pulled out of the counted load.
+// They are only reported as pending so the release changes the numerator.
 
-test('released GPA semester subtracts flagged not-released course credits', () => {
+test('released GPA semester keeps flagged not-released credits in the CGPA base', () => {
   const s = sem({
     gpa: 3.5,
     creditHoursOverride: null,
@@ -167,19 +168,20 @@ test('released GPA semester subtracts flagged not-released course credits', () =
       course({ id: 'cfg-pend-x', code: 'PHM111', name: 'Course A', creditHours: 6, pending: true }),
     ],
   });
-  // Configured curriculum load = 18 → 6 pending → 12 released counted.
+  // Configured curriculum load = 18, 6 pending; the CGPA already covers all 18.
   const t = core.semesterTerm(s, uccGrading, 18);
   assert.equal(t.source, 'gpa');
-  assert.equal(t.creditHours, 12);
-  assert.ok(Math.abs(t.qualityPoints - 3.5 * 12) < 1e-9);
+  assert.equal(t.creditHours, 18);
+  assert.ok(Math.abs(t.qualityPoints - 3.5 * 18) < 1e-9);
   assert.equal(t.pendingCreditHours, 6);
   assert.equal(t.pendingCount, 1);
+  assert.equal(t.pendingIncludedInBase, true);
 });
 
-test('history snapshot: pending course credits reduce the weighted CGPA', () => {
+test('history snapshot keeps pending course credits in the weighted CGPA', () => {
   const semesters = [
     sem({ gpa: 3.0, levelIndex: 1, semesterIndex: 1, creditHoursOverride: 18 }),
-    // Level 2 released overall, but 6 credits still pending in the current level.
+    // Level 2 released overall; 6 credits still pending but already counted at 0.
     sem({
       gpa: 4.0,
       levelIndex: 2,
@@ -188,10 +190,10 @@ test('history snapshot: pending course credits reduce the weighted CGPA', () => 
     }),
   ];
   const r = core.weightedCgpa(semesters, uccGrading, () => 18);
-  // Confirmed: 18cr @3.0 + (18−6=12)cr @4.0 = 30cr, points = 54 + 48 = 102.
-  assert.equal(r.totalCreditHours, 30);
+  // Confirmed: 18cr @3.0 + 18cr @4.0 = 36cr, points = 54 + 72 = 126.
+  assert.equal(r.totalCreditHours, 36);
   assert.equal(r.pendingCreditHours, 6);
-  assert.ok(Math.abs(r.cgpa - 102 / 30) < 1e-9);
+  assert.ok(Math.abs(r.cgpa - 126 / 36) < 1e-9);
 });
 
 // ── 4. Current-mode baseline with pending credits ──────────────────────────
@@ -309,6 +311,50 @@ test('classifications are attached to best/worst cases', () => {
   );
   assert.equal(p.bestCaseClass?.label, 'First Class');
   assert.equal(p.worstCaseClass?.label, 'Pass');
+});
+
+// ── 5b. Cumulative CGPA (pending already in the denominator at 0) ───────────
+
+test('best case when pending credits are already in the CGPA base keeps the denominator', () => {
+  // 73 total credits (4 already pending at 0), 219.5 points → CGPA 3.0068.
+  // Two 2-credit pending courses; top grade = A (4.0) → +16 points.
+  // New CGPA = (219.5 + 16) / 73 = 3.2260 — denominator never grows.
+  const p = pending.pendingProjection(
+    {
+      confirmedPoints: 219.5,
+      confirmedCreditHours: 73,
+      pendingCreditHours: 4,
+      pendingCount: 2,
+      pendingIncludedInBase: true,
+      target: null,
+    },
+    uccGrading,
+    uccClassification
+  );
+  assert.ok(Math.abs(p.confirmedCgpa - 219.5 / 73) < 1e-12);
+  assert.ok(Math.abs(p.bestCaseCgpa - (219.5 + 16) / 73) < 1e-12);
+  assert.ok(Math.abs(p.bestCaseCgpa - 3.2260) < 1e-4);
+  assert.ok(Math.abs(p.worstCaseCgpa - 219.5 / 73) < 1e-12);
+  assert.equal(p.pendingIncludedInBase, true);
+});
+
+test('confirmed-only base still grows the denominator on release', () => {
+  // 73 planned credits where only 69 are released (4 not in the typed base).
+  const p = pending.pendingProjection(
+    {
+      confirmedPoints: 3.0 * 69,
+      confirmedCreditHours: 69,
+      pendingCreditHours: 4,
+      pendingCount: 2,
+      pendingIncludedInBase: false,
+      target: null,
+    },
+    uccGrading,
+    uccClassification
+  );
+  assert.ok(Math.abs(p.confirmedCgpa - 3.0) < 1e-12);
+  assert.ok(Math.abs(p.bestCaseCgpa - (3.0 * 69 + 16) / 73) < 1e-12);
+  assert.equal(p.pendingIncludedInBase, false);
 });
 
 // ── 6. Target feasibility under possible outcomes ──────────────────────────

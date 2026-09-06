@@ -159,6 +159,11 @@ export function useDerived() {
         : 0;
     const pendingLoad =
       semesterRole === 'upon-release' ? model.pendingCreditHours : advancedPending;
+    // For the advanced per-course "some results not released" case the
+    // student's typed CGPA is CUMULATIVE — it already counts these credits in
+    // the denominator at 0 points. Only this case keeps them in the base;
+    // "Not Released" (whole semester) uses a confirmed-only base.
+    const pendingIncludedInBase = advancedPending > 0;
 
     // ── GPA-History journey: Level 100 → current level ───────────────────
     // The whole point of History mode is that the student's progress FROM
@@ -192,6 +197,7 @@ export function useDerived() {
               ...state.baseline,
               justEntered: false,
               pendingCreditHours: pendingLoad,
+              pendingIncludedInBase,
             },
           }
         : state.mode === 'history'
@@ -224,6 +230,7 @@ export function useDerived() {
       cgpa: snapshot.cgpa,
       pendingCount: snapshot.pendingCount,
       pendingCreditHours: snapshot.pendingCreditHours,
+      pendingIncludedInBase: snapshot.pendingIncludedInBase,
     };
 
     const semesters = state.semesters.map((semester) => {
@@ -251,6 +258,7 @@ export function useDerived() {
         confirmedCreditHours: snapshot.creditHours,
         pendingCreditHours: snapshot.pendingCreditHours,
         pendingCount: snapshot.pendingCount,
+        pendingIncludedInBase: snapshot.pendingIncludedInBase,
         target: state.targetCgpa,
       },
       grading,
@@ -287,6 +295,8 @@ export function useDerived() {
       // Let the dashboard/print text reflect the same role as the UI.
       semesterRole,
       standing,
+      pendingCredits: snapshot.pendingCreditHours,
+      pendingCreditsInBase: snapshot.pendingIncludedInBase,
     });
 
     return {
