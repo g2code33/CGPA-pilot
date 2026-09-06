@@ -17,7 +17,7 @@ test('7003 "could not route" → points at the token type (S3-only tokens)', () 
   );
   assert.match(hint, /R2 'Object Read Only'/);
   assert.match(hint, /S3 API/);
-  assert.match(hint, /Admin Read/);
+  assert.match(hint, /Read all resources/);
   assert.doesNotMatch(hint, /Account ID is the 32-character/);
 });
 
@@ -33,7 +33,7 @@ test('a "cfk_…" value in the message → points at the wrong Account ID first'
 });
 
 test('unauthorized / authentication error → token hint', () => {
-  assert.match(credsProbeHint('10000 Unauthorized'), /Admin Read/);
+  assert.match(credsProbeHint('10000 Unauthorized'), /Read all resources/);
   assert.match(credsProbeHint('10000 Authentication error'), /S3 API/);
 });
 

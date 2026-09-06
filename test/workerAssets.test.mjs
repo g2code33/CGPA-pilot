@@ -205,9 +205,13 @@ function fakeCfFetch(routes) {
   return { f, calls };
 }
 
-test('getAccountR2Usage: sums per-bucket payloadSize across the account', async () => {
+test('getAccountR2Usage: real API shape { result: { buckets: [...] } } sums per-bucket payloadSize', async () => {
   const { f, calls } = fakeCfFetch([
-    ['/r2/buckets', 200, { success: true, result: [{ name: 'proj-a' }, { name: 'proj b' }] }],
+    ['/r2/buckets?per_page=1000', 200, {
+      success: true,
+      result: { buckets: [{ name: 'proj-a' }, { name: 'proj b' }] },
+      result_info: { per_page: 1000 },
+    }],
     ['/r2/buckets/proj-a/usage', 200, { success: true, result: { payloadSize: '1000000', objectCount: '10' } }],
     ['/r2/buckets/proj%20b/usage', 200, { success: true, result: { payloadSize: '2500000', objectCount: '3' } }],
   ]);
@@ -221,9 +225,44 @@ test('getAccountR2Usage: sums per-bucket payloadSize across the account', async 
   assert.ok(String(calls[2]).includes('proj%20b'), 'bucket name is URL-encoded');
 });
 
+test('getAccountR2Usage: asks for per_page=1000 (default 20 would truncate big accounts)', async () => {
+  const { f, calls } = fakeCfFetch([
+    ['/r2/buckets?per_page=1000', 200, { success: true, result: { buckets: [] } }],
+  ]);
+  await getAccountR2Usage('tok', 'acct-1', f);
+  assert.ok(String(calls[0]).includes('per_page=1000'));
+});
+
+test('getAccountR2Usage: a bare-array result (legacy shape) still works', async () => {
+  const { f } = fakeCfFetch([
+    ['/r2/buckets?per_page=1000', 200, { success: true, result: [{ name: 'a' }, { name: 'b' }] }],
+    ['/r2/buckets/a/usage', 200, { success: true, result: { payloadSize: '42', objectCount: '1' } }],
+    ['/r2/buckets/b/usage', 200, { success: true, result: { payloadSize: '7', objectCount: '1' } }],
+  ]);
+  const u = await getAccountR2Usage('tok', 'acct-1', f);
+  assert.equal(u.buckets.length, 2);
+  assert.equal(u.totalBytes, 49);
+});
+
+test('getAccountR2Usage: an unexpected result shape is a clear error, not an iterator crash', async () => {
+  const { f } = fakeCfFetch([
+    ['/r2/buckets?per_page=1000', 200, { success: true, result: { something_else: true } }],
+  ]);
+  await assert.rejects(() => getAccountR2Usage('tok', 'acct-1', f), /unexpected format/);
+});
+
+test('getAccountR2Usage: an empty bucket list is a valid zero-usage result', async () => {
+  const { f } = fakeCfFetch([
+    ['/r2/buckets?per_page=1000', 200, { success: true, result: { buckets: [] } }],
+  ]);
+  const u = await getAccountR2Usage('tok', 'acct-1', f);
+  assert.equal(u.buckets.length, 0);
+  assert.equal(u.totalBytes, 0);
+});
+
 test('getAccountR2Usage: a dead bucket is skipped, the rest is kept', async () => {
   const { f } = fakeCfFetch([
-    ['/r2/buckets', 200, { success: true, result: [{ name: 'a' }, { name: 'b' }] }],
+    ['/r2/buckets?per_page=1000', 200, { success: true, result: { buckets: [{ name: 'a' }, { name: 'b' }] } }],
     ['/r2/buckets/a/usage', 500, { success: false, errors: [] }],
     ['/r2/buckets/b/usage', 200, { success: true, result: { payloadSize: '42', objectCount: '1' } }],
   ]);
@@ -235,7 +274,7 @@ test('getAccountR2Usage: a dead bucket is skipped, the rest is kept', async () =
 
 test('getAccountR2Usage: rejects with the Cloudflare error detail on 403', async () => {
   const { f } = fakeCfFetch([
-    ['/r2/buckets', 403, { success: false, errors: [{ code: 10000, message: 'Authentication error' }] }],
+    ['/r2/buckets?per_page=1000', 403, { success: false, errors: [{ code: 10000, message: 'Authentication error' }] }],
   ]);
   await assert.rejects(() => getAccountR2Usage('bad', 'acct-1', f), /10000 Authentication error/);
 });
@@ -378,7 +417,7 @@ test('POST /api/admin/storage: validates creds before storing them', async () =>
   const e = envWithR2();
   await withFakeCfFetch(
     [
-      ['/r2/buckets', 200, { success: true, result: [{ name: 'b' }] }],
+      ['/r2/buckets?per_page=1000', 200, { success: true, result: { buckets: [{ name: 'b' }] } }],
       ['/r2/buckets/b/usage', 200, { success: true, result: { payloadSize: '10', objectCount: '1' } }],
     ],
     async () => {
@@ -408,7 +447,7 @@ test('POST /api/admin/storage: validates creds before storing them', async () =>
 test('POST /api/admin/storage: 401 creds-invalid when Cloudflare rejects the token', async () => {
   const e = envWithR2();
   await withFakeCfFetch(
-    [['/r2/buckets', 403, { success: false, errors: [{ code: 10000, message: 'Authentication error' }] }]],
+    [['/r2/buckets?per_page=1000', 403, { success: false, errors: [{ code: 10000, message: 'Authentication error' }] }]],
     async () => {
       const res = await worker.fetch(
         req('/api/admin/storage', { method: 'POST', token: TOKEN, body: { cf_token: 'bad', cf_account_id: 'acct-1' } }),
@@ -431,7 +470,7 @@ test('POST /api/admin/storage: invalid body is 400; clear wipes the row', async 
   // Store valid creds first (validating fetch), then clear.
   await withFakeCfFetch(
     [
-      ['/r2/buckets', 200, { success: true, result: [] }],
+      ['/r2/buckets?per_page=1000', 200, { success: true, result: { buckets: [] } }],
     ],
     async () => {
       await worker.fetch(req('/api/admin/storage', { method: 'POST', token: TOKEN, body: { cf_token: 'cf-tok', cf_account_id: 'a1' } }), e);

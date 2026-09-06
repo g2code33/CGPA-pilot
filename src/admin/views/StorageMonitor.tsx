@@ -126,8 +126,8 @@ export function StorageMonitor() {
 
         {account === null && (
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">
-            No account credentials saved yet — add them below (a read-only “Admin Read” API token + your 32-hex
-            Account ID).
+            No account credentials saved yet — add them below (a read-only “Read all resources” API token + your
+            32-hex Account ID).
           </p>
         )}
         {account && !account.ok && (
@@ -279,7 +279,7 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
             <input
               type="password"
               className="input mt-1 w-full text-xs"
-              placeholder="•••• (an “Admin Read” token — read-only)"
+              placeholder="•••• (a “Read all resources” token — read-only)"
               value={token}
               onChange={(e) => setToken(e.target.value)}
               autoComplete="off"
@@ -301,10 +301,11 @@ function CredsForm({ hasCreds, onSaved }: { hasCreds: boolean; onSaved: () => vo
             </p>
           )}
           <p className="text-[10px] leading-relaxed text-slate-500">
-            Create the token in the dashboard: <strong>My Profile → API Tokens → Create token → template “Admin
-            Read”</strong> — it is read-only and can’t change anything. ⚠️ Don’t use R2’s “Object Read Only” token
-            (from R2 → Manage R2 API Tokens): those only work with the S3 API, not this usage view. It is verified
-            before being stored, and only the Worker (D1) ever sees it — never the student config.
+            Create the token in the dashboard: <strong>My Profile → API Tokens → Create token → template “Read all
+            resources”</strong> (a.k.a. “Admin Read”) — it is read-only and can’t change anything. ⚠️ Don’t use R2’s
+            “Object Read Only” token (from R2 → Manage R2 API Tokens): those only work with the S3 API, not this
+            usage view. It is verified before being stored, and only the Worker (D1) ever sees it — never the
+            student config.
           </p>
           <div className="flex gap-2">
             <button

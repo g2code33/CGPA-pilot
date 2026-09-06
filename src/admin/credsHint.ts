@@ -20,7 +20,7 @@ const TOKEN_HINT =
   "That token can't reach the Cloudflare API — R2 'Object Read Only' / 'Object Read & Write' tokens " +
   "(created in R2 → Manage R2 API Tokens) only work with the S3 API, not this usage view. " +
   "Make a read-only account token instead: My Profile (avatar) → API Tokens → Create token → " +
-  "template 'Admin Read'. It can only read — it can't change anything.";
+  "template 'Read all resources' (a.k.a. 'Admin Read'). It can only read — it can't change anything.";
 
 const ACCOUNT_NOT_FOUND_HINT =
   "Cloudflare couldn't find that Account ID. Use the 32-character hex code from your Account Home " +

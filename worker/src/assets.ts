@@ -211,13 +211,28 @@ export async function getAccountR2Usage(
   f: typeof fetch = fetch
 ): Promise<AccountR2Usage> {
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
-  const list = await f(`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets`, { headers });
-  const listDoc = (await list.json()) as { success?: boolean; result?: { name: string }[]; errors?: { code?: number; message?: string }[] };
+  // per_page=1000 (max): the default is 20, which would silently truncate
+  // any account with more than 20 buckets.
+  const list = await f(`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets?per_page=1000`, { headers });
+  const listDoc = (await list.json()) as {
+    success?: boolean;
+    result?: { name: string }[] | { buckets?: { name: string }[] | null } | null;
+    errors?: { code?: number; message?: string }[];
+  };
   if (!list.ok || !listDoc.success) {
     throw new Error(cfErrorDetail(listDoc) || `Cloudflare API ${list.status}`);
   }
+  // The real API wraps the list: { result: { buckets: [...] } }. A bare-array
+  // result is accepted too, but anything else is a loud, actionable error —
+  // never an "object is not iterable" crash, never a silently empty list.
+  const raw = listDoc.result;
+  const names = Array.isArray(raw) ? raw : raw && Array.isArray(raw.buckets) ? raw.buckets : null;
+  if (names === null) {
+    throw new Error('Cloudflare answered, but the bucket list had an unexpected format. Try saving the credentials again.');
+  }
   const buckets: CfBucketUsage[] = [];
-  for (const b of listDoc.result ?? []) {
+  for (const b of names) {
+    if (!b?.name) continue;
     try {
       const u = await f(`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${encodeURIComponent(b.name)}/usage`, { headers });
       const uDoc = (await u.json()) as { success?: boolean; result?: { payloadSize?: string; objectCount?: string } };
