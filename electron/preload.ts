@@ -14,7 +14,7 @@ const api = {
     ipcRenderer.invoke('updater:check'),
   downloadUpdate: (): Promise<{ ok: boolean; message?: string }> =>
     ipcRenderer.invoke('updater:download'),
-  installUpdate: (): Promise<{ ok: boolean }> =>
+  installUpdate: (): Promise<{ ok: boolean; message?: string }> =>
     ipcRenderer.invoke('updater:install'),
   onUpdaterStatus: (callback: (status: UpdaterStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: UpdaterStatus) =>

@@ -137,10 +137,19 @@ export function UpdateButton() {
     }
   }
 
-  function restart() {
+  async function restart() {
     wipeDeviceStorage();
-    if (desktop) window.cgpaPilot?.installUpdate();
-    else window.location.reload();
+    if (!desktop) {
+      window.location.reload();
+      return;
+    }
+    // The main process can refuse to install (nothing downloaded yet, or the
+    // update is still in flight) — say so instead of silently doing nothing.
+    const res = await window.cgpaPilot?.installUpdate();
+    if (res && !res.ok) {
+      setPhase('error');
+      setDetail(res.message ?? 'Could not install the update');
+    }
   }
 
   const chip = 'grid h-8 w-8 shrink-0 place-items-center rounded-lg text-base ring-1 transition';

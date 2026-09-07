@@ -56,7 +56,12 @@ export function UpdateBanner() {
         <span>✅ Update v{status.version} ready — restart to install.</span>
         <button
           className="rounded-lg bg-white/20 px-3 py-1 font-semibold hover:bg-white/30"
-          onClick={() => window.cgpaPilot?.installUpdate()}
+          onClick={async () => {
+            const res = await window.cgpaPilot?.installUpdate();
+            if (res && !res.ok) {
+              setStatus({ status: 'error', message: res.message ?? 'Could not install the update' });
+            }
+          }}
         >
           Restart now
         </button>

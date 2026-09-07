@@ -86,6 +86,12 @@ npm run mobile:sync    # build web + cap sync android
 - **Linux** → `cgpa-pilot-<v>-x64.deb` + `.AppImage` + `latest-linux.yml`
 - **Android** → Capacitor `cgpa-pilot-<v>.apk`
 
+> **Desktop packaging rules** (why `productName` is `CGPA-Pilot`, why `dist/` is
+> never `asarUnpack`ed, how the Linux/Windows icons are wired): `docs/DESKTOP-LINUX.md`.
+> If an installed app "does nothing" on Linux — `LaunchProcess: failed to execvp`,
+> a `FATAL:zygote_host_impl_linux.cc` trap, a blank window or a missing logo —
+> that file has the cause and the repair; `npm test` guards all of it.
+
 Pushing to `main` triggers the GitHub Actions workflow
 (`docs/workflow-build-desktop.yml` → install at `.github/workflows/`) which
 builds all desktop artifacts **and** the APK and publishes them to a GitHub

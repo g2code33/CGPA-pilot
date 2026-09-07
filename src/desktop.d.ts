@@ -21,7 +21,7 @@ export interface CgpaPilotApi {
   getVersion: () => Promise<string>;
   checkForUpdates: () => Promise<UpdaterStatus>;
   downloadUpdate: () => Promise<{ ok: boolean; message?: string }>;
-  installUpdate: () => Promise<{ ok: boolean }>;
+  installUpdate: () => Promise<{ ok: boolean; message?: string }>;
   onUpdaterStatus: (
     callback: (status: UpdaterStatus) => void
   ) => () => void;

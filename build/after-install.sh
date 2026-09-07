@@ -1,63 +1,92 @@
 #!/bin/bash
-# Runs after `dpkg -i cgpa-pilot_*.deb`.
+# Runs as root after `dpkg -i cgpa-pilot_*.deb`.
+#
+# NOTE: electron-builder runs this file through its macro renderer (the same
+# one used for its own after-install template) and replaces every dollar-brace
+# identifier with the matching build option — executable, sanitizedProductName,
+# productFilename. Anything else in that syntax aborts the build with
+# "Macro X is not defined", so shell variables here are written without braces.
 set -e
 
-INSTALL_DIR="/opt/CGPA Pilot"
-REAL_BIN="$INSTALL_DIR/cgpa-pilot"
-LAUNCHER="/usr/bin/cgpa-pilot"
+APP="${executable}"                              # cgpa-pilot
+INSTALL_DIR="/opt/${sanitizedProductName}"       # /opt/CGPA-Pilot  (never a space — see docs/DESKTOP-LINUX.md)
+LAUNCHER="/usr/bin/$APP"
+REAL_BIN="$INSTALL_DIR/$APP"
+SANDBOX_HELPER="$INSTALL_DIR/chrome-sandbox"
 
-# Electron's SUID sandbox helper must be root-owned with mode 4755 or the
-# app refuses to launch ("chrome-sandbox is owned by root and has mode 4755").
-# Some systems unpack the .deb without preserving the setuid bit, so enforce
-# it here (postinst runs as root).
-if [ -f "$INSTALL_DIR/chrome-sandbox" ]; then
-  chown root:root "$INSTALL_DIR/chrome-sandbox" 2>/dev/null || true
-  chmod 4755 "$INSTALL_DIR/chrome-sandbox" 2>/dev/null || true
+# ── 1. Retire the pre-1.0.25 install ──────────────────────────────────────
+# v1.0.24 and older installed under "/opt/CGPA Pilot" (productName contained a
+# space). Chromium re-execs that path through a whitespace-split command line,
+# so the zygote received "/opt/CGPA" and the app died with
+#   FATAL:zygote_host_impl_linux.cc(207)] Check failed: . : Invalid argument (22)
+# before a window was ever created. The package manager already removes the
+# files it owns; this also clears the leftovers it could not.
+if [ -d "/opt/CGPA Pilot" ]; then
+  rm -rf "/opt/CGPA Pilot" 2>/dev/null || true
 fi
 
-# Install a real `cgpa-pilot` command on PATH. The packaged executable lives
-# under /opt/CGPA Pilot (a path with a space), which is not on the user's PATH
-# and cannot be typed from the terminal. This launcher also retries with
-# `--no-sandbox` if the first launch exits immediately (common on Ubuntu 24+
-# where the Electron setuid sandbox is blocked by AppArmor/user namespaces),
-# so the app opens reliably from both the menu and the terminal.
+# A hand-written wrapper from v1.0.24 may also still be on PATH; section 3
+# replaces it (a stale one would point at the deleted /opt/CGPA Pilot).
+
+# ── 2. Chromium's SUID sandbox helper ─────────────────────────────────────
+# Unprivileged user namespaces work → the helper must NOT be setuid (0755).
+# They don't (hardened kernels, AppArmor-restricted Ubuntu 24.04+) → the helper
+# must be root:root mode 4755 or Electron refuses to start. dpkg does not always
+# preserve the setuid bit, so set it here.
+USERNS_OK=1
+if ! { [ -L /proc/self/ns/user ] && unshare --user true; } 2>/dev/null; then
+  USERNS_OK=0
+fi
+if [ -f "$SANDBOX_HELPER" ]; then
+  if [ "$USERNS_OK" = 1 ]; then
+    chmod 0755 "$SANDBOX_HELPER" 2>/dev/null || true
+  else
+    chown root:root "$SANDBOX_HELPER" 2>/dev/null || true
+    chmod 4755 "$SANDBOX_HELPER" 2>/dev/null || true
+  fi
+fi
+
+# ── 3. `cgpa-pilot` on PATH ────────────────────────────────────────────────
+# A tiny wrapper (rather than a bare symlink) for two reasons: the packaged
+# binary lives under /opt and is not on PATH, and a terminal user gets the real
+# error instead of "command not found". It never relaunches the app behind the
+# user's back — `exec` replaces the shell, so one command = one process.
 if [ -x "$REAL_BIN" ]; then
+  # Replace whatever is there (a stale symlink from an older build would be
+  # written *through* otherwise).
+  rm -f "$LAUNCHER" 2>/dev/null || true
   cat > "$LAUNCHER" <<'LAUNCH'
-#!/usr/bin/env bash
-REAL="/opt/CGPA Pilot/cgpa-pilot"
-if [ ! -x "$REAL" ]; then
-  echo "CGPA Pilot is not installed correctly. Reinstall the .deb." >&2
-  exit 1
+#!/bin/sh
+# CGPA Pilot launcher, written by the .deb's post-install hook.
+REAL="/opt/${sanitizedProductName}/${executable}"
+HELPER="/opt/${sanitizedProductName}/chrome-sandbox"
+[ -x "$REAL" ] || { echo "CGPA Pilot is not installed correctly — reinstall the .deb." >&2; exit 1; }
+# Only fall back to an unsandboxed renderer when this system offers neither
+# user namespaces nor a working setuid helper; otherwise Electron exits with a
+# "SUID sandbox helper" error and the app just looks dead.
+EXTRA=""
+if [ -f "$HELPER" ] && ! { [ -L /proc/self/ns/user ] && unshare --user true; } 2>/dev/null; then
+  MODE=$(stat -c '%a %U' "$HELPER" 2>/dev/null || echo "0 root")
+  [ "$MODE" = "4755 root" ] || EXTRA="--no-sandbox"
 fi
-# Try the normal launch first. If the app exits immediately (non-zero),
-# retry once with Chromium sandbox disabled for this launch — this covers
-# kernels/distros that block the setuid chrome-sandbox helper.
-if "$REAL" "$@"; then
-  exit 0
-fi
-exec "$REAL" --no-sandbox "$@"
+exec "$REAL" $EXTRA "$@"
 LAUNCH
   chown root:root "$LAUNCHER" 2>/dev/null || true
   chmod 0755 "$LAUNCHER"
 fi
 
-# Point the desktop launcher at the PATH command instead of the spaced
-# /opt path. This also keeps the menu entry working after a shell refresh.
-DESKTOP=""
-# electron-builder names it `<package-name>.desktop` (e.g. cgpa-pilot.desktop),
-# so match that first, then fall back to the app identity fields.
-for f in /usr/share/applications/cgpa-pilot.desktop /usr/share/applications/cgpa_pilot.desktop /usr/share/applications/CGPA-*.desktop /usr/share/applications/*.desktop; do
-  [ -f "$f" ] || continue
-  if grep -q "StartupWMClass=CGPA Pilot" "$f" 2>/dev/null || grep -q "Exec=.*CGPA Pilot.*cgpa-pilot" "$f" 2>/dev/null || grep -q "Name=CGPA Pilot" "$f" 2>/dev/null; then
-    DESKTOP="$f"
-    break
-  fi
-done
-if [ -n "$DESKTOP" ]; then
-  sed -i 's|^Exec=.*|Exec=/usr/bin/cgpa-pilot %U|' "$DESKTOP" 2>/dev/null || true
+# ── 4. Desktop database + icon caches ─────────────────────────────────────
+# The hicolor theme only serves the sizes listed in its index.theme, which is
+# why the package now ships one PNG per size (build/icons/*.png) instead of a
+# single 1024px file. Rebuilding the caches makes the logo appear without a
+# logout.
+if [ -d /usr/share/icons/hicolor ]; then
+  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
 fi
-
-# Refresh the desktop menu/database.
-update-desktop-database -q /usr/share/applications 2>/dev/null || true
-gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q /usr/share/applications 2>/dev/null || true
+fi
+if command -v update-mime-database >/dev/null 2>&1; then
+  update-mime-database /usr/share/mime 2>/dev/null || true
+fi
 exit 0

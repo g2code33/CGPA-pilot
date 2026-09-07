@@ -1,12 +1,12 @@
 {
   "name": "cgpa-pilot",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "private": true,
   "author": {
     "name": "CGPA Pilot",
     "email": "g2code33@users.noreply.github.com"
   },
-  "description": "CGPA Pilot — your offline GPA & CGPA tracker, target planner and what-if calculator (Electron + Android + web).",
+  "description": "Offline GPA & CGPA tracker, target planner and what-if calculator. No account, nothing stored.",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -65,32 +65,35 @@
   },
   "build": {
     "appId": "com.cgpapilot.app",
-    "productName": "CGPA Pilot",
+    "productName": "CGPA-Pilot",
     "directories": {
       "output": "release"
     },
     "npmRebuild": false,
     "asar": true,
-    "asarUnpack": [
-      "dist/**/*",
-      "build/**/*"
-    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "build/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icons/256x256.png",
+        "to": "icon.png"
+      }
     ],
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.png",
+      "icon": "build/icons/256x256.png",
       "artifactName": "CGPA-Pilot-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "CGPA Pilot",
+      "uninstallDisplayName": "CGPA Pilot"
     },
     "linux": {
       "target": [
@@ -98,13 +101,13 @@
         "deb"
       ],
       "category": "Education",
-      "icon": "build/icon.png",
+      "icon": "build/icons",
       "executableName": "cgpa-pilot",
       "maintainer": "g2code33",
       "artifactName": "cgpa-pilot-${version}-${arch}.${ext}",
       "desktop": {
         "Name": "CGPA Pilot",
-        "Comment": "GPA & CGPA tracker, target planner and what-if calculator"
+        "StartupWMClass": "cgpa-pilot"
       }
     },
     "deb": {
