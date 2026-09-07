@@ -147,6 +147,25 @@ async function logoBytes(value) {
 
 // ── 3. rasterizing with ImageMagick ────────────────────────────────────────
 
+/**
+ * Minimal PNG header read (no dependency): signature + IHDR. Returns the square
+ * edge and colour type, or null when the bytes are not a PNG at all — the only
+ * shape a copy-without-resizing can safely stand in for.
+ */
+function pngSquareInfo(buf) {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (buf.length < 24 || !buf.subarray(0, 8).equals(PNG)) return null;
+  if (buf.toString('ascii', 12, 16) !== 'IHDR') return null;
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  const colorType = buf[25];
+  if (width !== height) return null;
+  // 0 grey, 2 RGB, 3 palette, 4 grey+alpha, 6 RGBA. Anything else (e.g. the
+  // high-bit-depth 48/64 variants with an sBIT chunk) is not worth guessing.
+  if (![0, 2, 3, 4, 6].includes(colorType)) return null;
+  return { size: width, colorType };
+}
+
 /** 'magick' (v7, sub-commands) or 'convert' (v6, standalone binaries) or null. */
 function detectTool() {
   for (const bin of ['magick', 'convert']) {
@@ -372,16 +391,31 @@ async function main() {
 
     TOOL = detectTool();
     if (!TOOL) {
-      // No rasterizer: only refresh what a consumer can scale itself. Android
-      // (density dims, masked layers) and iOS (exact 1024, no alpha) must keep
-      // the committed artwork rather than receive a wrong-sized file.
+      // No rasterizer. Copying the raw upload is only ever safe for the few
+      // targets whose consumer resizes the file itself, and only when the bytes
+      // really are a square PNG: the manifest declares image/png, Android needs
+      // exact density dims and iOS forbids alpha, so anything else keeps the
+      // committed artwork instead of receiving a broken icon.
+      const png = pngSquareInfo(bytes);
+      if (!png) {
+        warn(
+          'ImageMagick not found and the admin logo is not a square PNG — the shipped icon ' +
+            'artwork is left as committed (install ImageMagick on the build host to refresh it).'
+        );
+        return;
+      }
+      const targets = ['public/icon-512.png'];
+      // electron-builder only ever resizes DOWN for the .ico / hicolor set, so a
+      // source smaller than a target would ship a blurred icon — skip those.
+      if (png.size >= 512) targets.push('build/icons/512x512.png');
+      if (png.size >= 256) targets.push('build/icons/256x256.png');
       let n = 0;
-      for (const rel of ['public/icon-512.png', 'build/icons/512x512.png', 'build/icons/256x256.png']) {
+      for (const rel of targets) {
         if (writeIfChanged(path.join(ROOT, rel), bytes)) n += 1;
       }
       warn(
-        `ImageMagick not found — copied the logo to ${n} file(s) without resizing; ` +
-          'the remaining installer icon sets keep the committed artwork.'
+        `ImageMagick not found — copied the ${png.size}x${png.size} logo to ${n} file(s) as-is; ` +
+          'the Android/iOS icon sets and the resized hicolor sizes keep the committed artwork.'
       );
       return;
     }

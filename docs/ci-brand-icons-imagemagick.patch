@@ -1,0 +1,113 @@
+commit e97ba8671314fb78f9ddd36920e331fabe71a1bb
+Author: g2code33 <269358183+g2code33@users.noreply.github.com>
+Date:   Mon Sep 7 14:16:11 2026 +0000
+
+    ci(build): give every packaging leg a rasterizer, and refuse unsafe copies
+    
+    Follow-up to the branding fix, so the shipped icons are actually refreshed on all
+    three install targets, not only on Linux:
+    
+    • scripts/refresh-brand-icons.mjs only copies raw upload bytes when they really
+      are a SQUARE PNG (IHDR parsed inline — no new dependency), and only into the
+      targets whose consumer resizes: the manifest promises image/png, Android wants
+      exact density dims, iOS forbids alpha and electron-builder can only shrink, so
+      a JPEG or a 600×300 wordmark is now refused with an actionable warning instead
+      of being renamed into an installer icon. A 512 slot additionally requires a
+      source of at least 512px.
+    • .github/workflows/build-desktop.yml installs ImageMagick on the Windows and
+      macOS legs (choco / brew, PATH re-exported because a job's environment is fixed
+      at job start); ubuntu-latest already ships it. Both steps are
+      continue-on-error: a failed install degrades that build's branding, it must
+      never fail a release.
+    
+    Verified the three fallback paths against fixtures (square PNG → 3 copies,
+    non-square → nothing, JPEG → nothing), and with ImageMagick present a 600×600
+    JPEG still refreshes all 37 files. npm test 541 pass.
+    
+    Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+
+diff --git a/.github/workflows/build-desktop.yml b/.github/workflows/build-desktop.yml
+index 8ac7e27..7d13b89 100644
+--- a/.github/workflows/build-desktop.yml
++++ b/.github/workflows/build-desktop.yml
+@@ -54,6 +54,32 @@ jobs:
+       - name: Type-check
+         run: npm run typecheck
+ 
++      # Branding is part of the shipped artwork. scripts/refresh-brand-icons.mjs
++      # (run by build:web below) rasterizes the administrator's PUBLISHED logo into
++      # public/icon-512.png, build/icons — which is what becomes the Windows .ico and
++      # the Linux hicolor set — the Android mipmap buckets and the iOS AppIcon.
++      # Without a rasterizer the script degrades to a warning and the committed
++      # artwork ships, so this install step is a quality-of-build improvement, never
++      # a requirement: continue-on-error keeps branding from breaking packaging.
++      - name: Ensure ImageMagick (brand icon refresh)
++        if: matrix.os == 'ubuntu-latest'
++        continue-on-error: true
++        run: |
++          if command -v convert >/dev/null 2>&1; then echo "ImageMagick present"; exit 0; fi
++          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
++
++      - name: Ensure ImageMagick (brand icon refresh)
++        if: matrix.os == 'windows-latest'
++        continue-on-error: true
++        shell: pwsh
++        run: |
++          if (Get-Command convert -ErrorAction SilentlyContinue) { "ImageMagick present"; exit 0 }
++          choco install imagemagick --no-progress -y
++          # choco updates the machine PATH, which this job's later steps do not
++          # inherit — export the directory ourselves.
++          $dir = Get-ChildItem 'C:\Program Files\ImageMagick-*' -Directory | Sort-Object Name -Descending | Select-Object -First 1
++          if ($dir) { $dir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding ascii -Append }
++
+       - name: Build renderer (web build)
+         run: npm run build:web
+ 
+@@ -139,6 +165,32 @@ jobs:
+       - name: Type-check
+         run: npm run typecheck
+ 
++      # Branding is part of the shipped artwork. scripts/refresh-brand-icons.mjs
++      # (run by build:web below) rasterizes the administrator's PUBLISHED logo into
++      # public/icon-512.png, build/icons — which is what becomes the Windows .ico and
++      # the Linux hicolor set — the Android mipmap buckets and the iOS AppIcon.
++      # Without a rasterizer the script degrades to a warning and the committed
++      # artwork ships, so this install step is a quality-of-build improvement, never
++      # a requirement: continue-on-error keeps branding from breaking packaging.
++      - name: Ensure ImageMagick (brand icon refresh)
++        if: matrix.os == 'ubuntu-latest'
++        continue-on-error: true
++        run: |
++          if command -v convert >/dev/null 2>&1; then echo "ImageMagick present"; exit 0; fi
++          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
++
++      - name: Ensure ImageMagick (brand icon refresh)
++        if: matrix.os == 'windows-latest'
++        continue-on-error: true
++        shell: pwsh
++        run: |
++          if (Get-Command convert -ErrorAction SilentlyContinue) { "ImageMagick present"; exit 0 }
++          choco install imagemagick --no-progress -y
++          # choco updates the machine PATH, which this job's later steps do not
++          # inherit — export the directory ourselves.
++          $dir = Get-ChildItem 'C:\Program Files\ImageMagick-*' -Directory | Sort-Object Name -Descending | Select-Object -First 1
++          if ($dir) { $dir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding ascii -Append }
++
+       - name: Build renderer (web build)
+         run: npm run build:web
+ 
+@@ -225,6 +277,14 @@ jobs:
+         with: { node-version: 22, cache: npm }
+       - run: npm ci
+       - run: npm run typecheck
++      # Same reason as the desktop jobs: the shipped AppIcon is regenerated from the
++      # published logo, and macOS runners ship no ImageMagick. Best effort only.
++      - name: Ensure ImageMagick (brand icon refresh)
++        continue-on-error: true
++        run: |
++          if command -v convert >/dev/null 2>&1; then echo "ImageMagick present"; exit 0; fi
++          brew install imagemagick || brew install imagemagick@6 || true
++          brew link --force imagemagick@6 2>/dev/null || true
+       - run: npm run build:web
+       - run: |
+           if [ ! -d ios ]; then npm run mobile:add:ios; fi

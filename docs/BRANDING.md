@@ -150,9 +150,26 @@ branding rather than hoped to be current. Wired into `build:web` right after
 Failures are warnings by design — no rasterizer, no network, no admin logo, an
 unreadable image all leave the committed artwork in place, because branding must
 never be able to break packaging. `CGPA_BRAND_ICONS=0` skips it entirely (a
-reproducible or fully offline build). When ImageMagick is missing the script copies
-the logo to the two targets whose consumers scale it themselves and says so, rather
-than emitting wrong-sized Android/iOS icons.
+reproducible or fully offline build).
+
+> **Keeping CI able to rasterize:** the Ubuntu runner ships ImageMagick, the
+> Windows and macOS ones do not, so those two legs would fall back to the copy-only
+> path above. The steps that install it live in
+> `docs/ci-brand-icons-imagemagick.patch` — apply them with
+> `git apply docs/ci-brand-icons-imagemagick.patch` (this repo keeps
+> `.github/workflows` edits as patches, like `docs/ci-ios-upload-fix.patch`, because
+> the automation token has no `workflows` scope). They are `continue-on-error`, so
+> even unapplied the release still builds — only the installer artwork lags.
+
+Without ImageMagick the script limits itself to copying a **square PNG** into the
+three targets whose consumers resize for themselves (`public/icon-512.png` and, when
+the source is big enough, `build/icons/{256,512}`), and refuses everything else:
+renaming a JPEG to `.png` or writing a 600×300 wordmark into a density-mipmap or an
+iOS AppIcon would be worse than the artwork already in the repo. That fallback is
+why `.github/workflows/build-desktop.yml` installs ImageMagick on the Windows and
+macOS legs (Ubuntu runners ship it) — with `continue-on-error`, so a failed install
+degrades the *branding* of that build instead of failing the release. If a Windows
+`.exe` ever ships the old logo, check that step's log for "ImageMagick not found".
 
 ## Checking a device
 

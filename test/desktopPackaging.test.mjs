@@ -207,6 +207,18 @@ test('the shipped installer artwork is regenerated from the published branding',
   assert.match(src, /png:color-type=\$\{colorType\}/, 'opaque masters must be forced to RGB');
 });
 
+test('without a rasterizer the refresh refuses to write an unsafe icon', () => {
+  const src = readFileSync(`${root}/scripts/refresh-brand-icons.mjs`, 'utf8');
+  // Copying raw upload bytes is only safe for a SQUARE PNG, and only into
+  // targets whose consumer resizes: the manifest declares image/png, Android
+  // needs exact density dims, iOS forbids alpha, and electron-builder can only
+  // shrink — so a JPEG or an odd-sized logo must be skipped, not renamed.
+  assert.match(src, /function pngSquareInfo/, 'the PNG header must actually be checked');
+  assert.match(src, /not a square PNG/, 'and refused with an actionable warning');
+  assert.match(src, /if \(png\.size >= 512\)/, 'a 512 target must not be filled by a smaller logo');
+  assert.match(src, /width !== height/, 'non-square sources are never stretched');
+});
+
 test('every icon path electron-builder and Capacitor read is covered by the refresh', () => {
   const src = readFileSync(`${root}/scripts/refresh-brand-icons.mjs`, 'utf8');
   const covered = [
