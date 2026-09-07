@@ -281,3 +281,29 @@ test('the web manifest and the PWA icon entry point stay wired to the admin logo
   assert.doesNotMatch(fn, /cache-control[^\n]*immutable/i, 'an immutable copy pins the first logo forever');
   assert.match(fn, /max-age=\$\{ICON_TTL_SECONDS\}[\s\S]*Response\.redirect/, 'the fallback stays behind the short-TTL path');
 });
+
+test('a block comment never contains a glob that closes it early', () => {
+  // `dist/**/*` inside a JSDoc comment ends the comment (the `*` + `/` sequence),
+  // which silently turns the rest of the doc block into code. This bit the desktop
+  // sources twice while documenting the asar rule, so the shape is now asserted.
+  const dirs = ['electron', 'scripts', 'worker/src', 'src/config', 'src/services'];
+  const files = dirs.flatMap((dir) => {
+    const abs = `${root}/${dir}`;
+    if (!existsSync(abs)) return [];
+    return readdirSync(abs)
+      .filter((f) => /\.(ts|mjs|js)$/.test(f) && !f.endsWith('.d.ts'))
+      .map((f) => `${abs}/${f}`);
+  });
+  assert.ok(files.length > 10, 'the scan should cover the sources that matter');
+  const offenders = [];
+  for (const file of files) {
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      const st = line.trim();
+      if (!st.startsWith('*') || st.startsWith('*/')) return;
+      const body = st.endsWith('*/') ? st.slice(0, -2) : st;
+      if (body.includes('*/')) offenders.push(`${file.replace(root + '/', '')}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [], `comment lines with a stray */ (write such globs in // comments instead): ${offenders.join(' ')}`);
+});

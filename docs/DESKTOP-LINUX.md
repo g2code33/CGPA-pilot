@@ -79,6 +79,17 @@ So both halves are required, and neither alone is enough:
 If nothing is readable the window shows a diagnostic page (searched paths, the
 active launch mode, the reinstall command) instead of an empty rectangle.
 
+**And a third layer, so a packaging slip can never become a blank window again:** if
+the only renderer the resolver finds is *inside* the archive, `electron/rendererExtract.ts`
+copies `app.asar/dist` out to `<userData>/renderer/dist` (through Node's asar-aware
+`fs`, which can read there) and loads the real copy, logging that the build should
+have shipped `asarUnpack` of the dist tree. The copy is planned by comparing sizes
+*and* contents, so a current extraction costs one stat per file; and the walk is
+bounded (files, bytes, depth) — an incomplete tree is refused rather than half-copied,
+which is what lets the launch ladder take over instead of showing a broken app.
+`npm run verify:branding -- --install …` reports that directory if it exists, because
+on a healthy 1.0.27 install it should never be created.
+
 `nativeImage.createFromPath()` has the same limitation as Chromium here — that is
 why the window icon is read from bytes: `readFileSync` (asar-aware) →
 `createFromBuffer` (see `windowIcon()`).

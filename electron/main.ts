@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { installDesktopEntry, installLauncherIcon, writeIfChanged, type BrandInstallOptions } from './brandInstall';
+import { copyRendererTree } from './rendererExtract';
 import {
   indexOfEntry,
   insideArchive,
@@ -254,6 +255,37 @@ function rendererEntryCandidates(): string[] {
   });
 }
 
+/**
+ * Last resort before a blank window: when the only renderer in the package lives
+ * inside the archive — which is precisely what Chromium's `file://` loader cannot
+ * read — copy it out to `<userData>/renderer/dist` and load the real file. Node's
+ * `fs` in Electron reads through the archive, so the bytes are reachable even
+ * though the URL is not. Nothing is written when the copy is already up to date,
+ * and a failure here just means the launch ladder takes over.
+ *
+ * This is a safety net, not a substitute: unpacking the dist tree at build time is
+ * the fix, and the log line says so.
+ */
+function rescueRendererFromArchive(): string | null {
+  try {
+    const appAsar = app.getAppPath();
+    if (!/app\.asar$/i.test(appAsar)) return null; // dev or a loose app dir: nothing to rescue
+    const fs2 = { readdirSync, statSync, readFileSync, existsSync, mkdirSync, writeFileSync };
+    const dst = path.join(app.getPath('userData'), 'renderer', 'dist');
+    const out = copyRendererTree(path.join(appAsar, 'dist'), dst, fs2, fs2);
+    if (!out) return null;
+    loaderError = null;
+    console.warn(
+      '[cgpa-pilot] the package kept the renderer inside app.asar, which Chromium cannot read.\n' +
+        `              Extracted ${out.copied} file(s) (${out.unchanged} already current) to ${dst}.\n` +
+        '              This build should ship asarUnpack: ["dist/**/*"] — please update it.'
+    );
+    return out.file;
+  } catch {
+    return null;
+  }
+}
+
 /** Which of the candidates this process is on — a retry advances it. */
 let rendererEntryIndex = 0;
 
@@ -280,7 +312,15 @@ function resolveRendererEntry(fromIndex = 0): string | null {
   );
   if (found) {
     rendererEntryIndex = Math.max(0, indexOfEntry(ordered, found));
+    // An archive path is a guarantee of failure, not a possibility: the only way
+    // to load it is to make it real first.
+    if (insideArchive(found)) return rescueRendererFromArchive() ?? found;
     return found;
+  }
+  const rescued = rescueRendererFromArchive();
+  if (rescued) {
+    rendererEntryIndex = Math.max(0, indexOfEntry(ordered, found ?? ordered[0] ?? ''));
+    return rescued;
   }
   // Nothing carried the marker: load the first candidate anyway rather than
   // guarantee a white screen, but say why.

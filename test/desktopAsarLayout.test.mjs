@@ -19,9 +19,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import * as nodeFsModule from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { insideArchive, orderRendererCandidates, pickRendererEntry, rendererCandidatePaths } from '../electron/rendererPath.ts';
+import { collectTree, copyRendererTree, planRendererCopy } from '../electron/rendererExtract.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const build = JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).build;
@@ -172,3 +174,141 @@ test('the dev layout resolves to the loose dist directory', (t) => {
   assert.equal(chosen, path.join(dir, 'dist', 'index.html'));
   assert.ok(chromiumReadable(chosen), 'npm run dev:desktop must not depend on asar at all');
 });
+
+// ── the archive-rescue fallback (electron/rendererExtract.ts) ──────────────
+//
+// When a package puts the renderer back inside app.asar, the loader cannot read it
+// but Node can — so the last thing to try before a blank window is to copy the tree
+// out and load the real copy. These run against a real archive, read through a shim
+// that emulates Electron's patched fs (which is exactly what makes the bug invisible).
+
+test('collectTree walks a renderer tree with bounds', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'cgpa-tree-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const nodeFs = { ...requireFs(), existsSync: (f) => existsSync(f) };
+  mkdirSync(path.join(dir, 'assets', 'deep'), { recursive: true });
+  writeFileSync(path.join(dir, 'index.html'), RENDERER);
+  writeFileSync(path.join(dir, 'assets', 'main.js'), 'a'.repeat(100));
+  writeFileSync(path.join(dir, 'assets', 'deep', 'x.js'), 'b');
+  const tree = collectTree(dir, nodeFs);
+  assert.deepEqual(tree.map((f) => f.relative).sort(), ['assets/deep/x.js', 'assets/main.js', 'index.html']);
+  assert.equal(tree.find((f) => f.relative === 'assets/main.js').size, 100);
+  assert.deepEqual(collectTree(dir, nodeFs, { maxFiles: 1 }), [], 'a tree too big to copy in full is refused, not half-copied');
+  assert.equal(collectTree(dir, nodeFs, { maxBytes: 10 }).length, 0, 'over budget → nothing half-copied');
+  assert.deepEqual(collectTree(dir, nodeFs, { maxDepth: 1 }), [], 'a directory it will not enter means an incomplete tree, so nothing at all');
+  assert.deepEqual(collectTree(path.join(dir, 'nope'), nodeFs), [], 'a missing root is empty, not an exception');
+});
+
+test('the copy plan rewrites only what is not byte-identical', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'cgpa-plan-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const fs2 = requireFs();
+  const src = path.join(dir, 'dist');
+  const dst = path.join(dir, 'userData', 'renderer', 'dist');
+  mkdirSync(path.join(src, 'assets'), { recursive: true });
+  writeFileSync(path.join(src, 'index.html'), RENDERER);
+  writeFileSync(path.join(src, 'assets', 'main.js'), 'a'.repeat(200));
+
+  assert.equal(planRendererCopy(src, dst, fs2, fs2).copy.length, 2, 'first run copies everything');
+  copyRendererTree(src, dst, fs2, fs2);
+  const second = planRendererCopy(src, dst, fs2, fs2);
+  assert.equal(second.copy.length, 0, 'a current copy is left alone');
+  assert.equal(second.unchanged, 2);
+  assert.equal(second.incomplete, false);
+
+  // Same size, different bytes — the case a size-only check would miss forever.
+  writeFileSync(path.join(dst, 'assets', 'main.js'), 'b'.repeat(200));
+  const third = planRendererCopy(src, dst, fs2, fs2);
+  assert.deepEqual(third.copy.map((c) => c.to), [path.join(dst, 'assets', 'main.js')], 'a stale copy is rewritten');
+  assert.equal(third.unchanged, 1);
+
+  // Nothing to copy and no entry point → the caller must not pretend it worked.
+  const empty = path.join(dir, 'empty');
+  mkdirSync(empty, { recursive: true });
+  assert.equal(planRendererCopy(empty, path.join(dir, 'nowhere'), fs2, fs2).incomplete, true);
+  assert.equal(copyRendererTree(empty, path.join(dir, 'nowhere'), fs2, fs2), null);
+});
+
+test('the rescue turns an archive-only renderer into a real loadable file', async (t) => {
+  if (!asar) return t.skip('@electron/asar not installed');
+  const { appAsar } = await packApp(t, { unpack: null }); // the 1.0.25 layout
+  const fs2 = requireFs();
+  const read = asarReadShim(appAsar);
+
+  // Nothing outside the archive is loadable…
+  const ordered = orderRendererCandidates(rendererCandidatePaths(appAsar, path.join(appAsar, 'dist-electron')), (f) => existsSync(f));
+  assert.equal(pickRendererEntry(ordered, (f) => !insideArchive(f) && existsSync(f)), null);
+  // …while an asar-aware reader (Node, in Electron) sees the file and its size.
+  assert.ok(read.existsSync(path.join(appAsar, 'dist', 'index.html')), 'the bytes are reachable');
+
+  const dst = path.join(path.dirname(appAsar), 'userData', 'renderer', 'dist');
+  const out = copyRendererTree(path.join(appAsar, 'dist'), dst, read, fs2);
+  assert.ok(out, 'the rescue produced a real tree');
+  assert.equal(out.file, path.join(dst, 'index.html'));
+  assert.equal(out.copied, 2, 'index.html and its asset are both written');
+  assert.ok(!insideArchive(out.file) && existsSync(out.file), 'now it is a real file Chromium can open');
+  assert.equal(readFileSync(out.file, 'utf8'), RENDERER);
+  assert.equal(readFileSync(path.join(dst, 'assets', 'main.js'), 'utf8'), 'console.log("ui")');
+  // And it would be chosen by the same resolver the app uses.
+  const after = pickRendererEntry([out.file], (f) => {
+    try {
+      return fs2.readFileSync(f, 'utf8').includes('<div id="root">');
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(after, out.file);
+  // A second launch copies nothing.
+  assert.equal(copyRendererTree(path.join(appAsar, 'dist'), dst, read, fs2).copied, 0);
+  assert.ok(!existsSync(path.join(dst, 'dist-electron')), 'only the renderer tree is rescued, never the main process');
+  return undefined;
+});
+
+test('main.ts actually calls the rescue before it gives up', () => {
+  const main = requireFs().readFileSync(path.join(root, 'electron/main.ts'), 'utf8');
+  assert.match(main, /rescueRendererFromArchive\(\)/, 'wired into the resolver');
+  assert.match(main, /if \(insideArchive\(found\)\) return rescueRendererFromArchive\(\) \?\? found;/, 'an archive path is never accepted silently');
+  assert.match(main, /Extracted \$\{out\.copied\} file\(s\)/, 'and it is logged loudly, with the real fix');
+});
+
+/** node:fs as one object, for the injected-fs APIs. */
+function requireFs() {
+  const fs = nodeFsModule;
+  return {
+    readdirSync: fs.readdirSync,
+    statSync: fs.statSync,
+    readFileSync: fs.readFileSync,
+    existsSync: fs.existsSync,
+    mkdirSync: fs.mkdirSync,
+    writeFileSync: fs.writeFileSync,
+  };
+}
+
+/**
+ * Emulate Electron's patched fs over an archive: `…/app.asar/dist/index.html` is a
+ * readable "file" to it, which is the illusion the real bug lives inside.
+ */
+function asarReadShim(archive) {
+  const raw = asar.getRawHeader(archive).header;
+  const header = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const relOf = (file) => path.relative(archive, file).split(path.sep).join('/');
+  const nodeAt = (rel) =>
+    rel.split('/').filter(Boolean).reduce((node, part) => (node && node.files ? node.files[part] : undefined), header);
+  const readFileSync = (file) => asar.extractFile(archive, relOf(file));
+  return {
+    existsSync: (file) => nodeAt(relOf(file)) !== undefined,
+    readdirSync: (dir) => {
+      const node = nodeAt(relOf(dir));
+      if (!node || !node.files) throw new Error(`ENOTDIR: ${dir}`);
+      return Object.keys(node.files);
+    },
+    statSync: (file) => {
+      const node = nodeAt(relOf(file));
+      if (!node) throw new Error(`ENOENT: ${file}`);
+      return node.files
+        ? { isDirectory: () => true, size: 0 }
+        : { isDirectory: () => false, size: node.size };
+    },
+    readFileSync: (file) => Buffer.from(readFileSync(file)),
+  };
+}

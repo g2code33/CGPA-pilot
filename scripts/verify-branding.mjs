@@ -357,6 +357,18 @@ function verifyInstall(dir) {
   }
 
   const home = os.homedir();
+  // The renderer the app had to extract from the archive itself (see
+  // electron/rendererExtract.ts). Its presence means the package is fine enough to
+  // run but was built without dist unpacked — worth telling the user, because it is
+  // the signature of an old or hand-assembled install.
+  const rescued = path.join(home, '.config', 'cgpa-pilot', 'renderer', 'dist', 'index.html');
+  if (existsSync(rescued)) {
+    warn(
+      'extracted renderer',
+      `${rescued} exists — the app had to copy its own renderer out of app.asar`,
+      'harmless, but it means the package was built without dist unpacked; reinstall the current .deb'
+    );
+  }
   const brand = path.join(home, '.config', 'cgpa-pilot', 'brand', 'icon.png');
   const stateFile = path.join(home, '.config', 'cgpa-pilot', 'launch-mode.json');
   if (existsSync(brand)) {
