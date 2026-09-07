@@ -108,7 +108,8 @@
       }
     },
     "deb": {
-      "afterInstall": "build/after-install.sh"
+      "afterInstall": "build/after-install.sh",
+      "afterRemove": "build/after-remove.sh"
     },
     "publish": [
       {
