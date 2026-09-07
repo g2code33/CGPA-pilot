@@ -67,6 +67,26 @@ test('resolveAssetUrl: asset refs become the Worker asset endpoint', () => {
   assert.equal(assets.resolveAssetUrl('asset:catalog/ab12.png'), '/api/assets/catalog/ab12.png');
 });
 
+test('safeLogoUrl: prefers local/data URLs and skips remote refs offline (desktop/native)', () => {
+  // Web-like runtime (no file://): remote asset/URL is usable.
+  assert.equal(assets.safeLogoUrl('https://example.com/logo.png'), 'https://example.com/logo.png');
+  assert.equal(assets.safeLogoUrl(undefined, 'data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA');
+
+  // Simulate the packaged Electron/native runtime.
+  const prev = globalThis.window;
+  globalThis.window = { localStorage: ls, location: { protocol: 'file:' } };
+  try {
+    // Remote refs are skipped so callers can fall back to the bundled icon.
+    assert.equal(assets.safeLogoUrl('https://example.com/logo.png'), undefined);
+    assert.equal(assets.safeLogoUrl('asset:catalog/zz.png'), undefined);
+    // Local and data URLs still win.
+    assert.equal(assets.safeLogoUrl('./icon-512.png'), './icon-512.png');
+    assert.equal(assets.safeLogoUrl('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA');
+  } finally {
+    globalThis.window = prev;
+  }
+});
+
 // ── uploadImageForCatalog: R2 first, data-URL fallback ────────────────────
 
 const PNG_BYTES = new Uint8Array([1, 2, 3, 4, 5]);

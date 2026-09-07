@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { resolveContext, institutionLabel } from './config/context';
 import { appLogoImage, appName, effectiveSlotIcon, iconElement } from './config/branding';
-import { resolveAssetUrl } from './config/assets';
+import { resolveAssetUrl, safeLogoUrl } from './config/assets';
 import type { AppAppearance } from './config/types';
 import { getRuntimeCatalog } from './config/runtime';
 import {
@@ -972,11 +972,11 @@ function NavItem({ label, icon, active, onClick }: { label: string; icon: string
 
 function Brand({ compact = false, appearance }: { compact?: boolean; appearance?: AppAppearance }) {
   const ctx = resolveContext();
-  // resolveAssetUrl: institution logos may be asset:<key> refs (R2) or data URLs.
+  // Resolve the header logo offline-safely: desktop/native apps must not show
+  // a broken image when a published logo is a remote asset reference that
+  // needs the network — they fall back to the bundled icon instead.
   const logoUrl =
-    resolveAssetUrl(ctx.school?.logo) ??
-    resolveAssetUrl(ctx.university?.logo) ??
-    appLogoImage(appearance) ??
+    safeLogoUrl(ctx.school?.logo, ctx.university?.logo, appearance?.logo, appearance?.appIcon?.image) ??
     './icon-512.png';
   const clicks = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);

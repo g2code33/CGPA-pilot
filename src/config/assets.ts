@@ -37,6 +37,53 @@ export function assetRef(key: string): string {
   return `${ASSET_REF_PREFIX}${key}`;
 }
 
+/** True when the app is running from a packaged offline runtime (desktop
+ *  Electron `file://` or a native Capacitor app) where remote `http(s)` asset
+ *  URLs cannot be relied upon and would appear as a broken logo offline. */
+export function isOfflineRuntime(): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    if (window.location?.protocol === 'file:') return true;
+    if (window.Capacitor?.isNativePlatform?.()) return true;
+  } catch {
+    /* non-browser / test contexts */
+  }
+  return false;
+}
+
+/** True for absolute remote URLs (not data URLs or relative asset paths). */
+export function isRemoteHttpUrl(value: string | undefined): value is string {
+  return typeof value === 'string' && /^https?:\/\//i.test(value);
+}
+
+/** True when a URL can be loaded from the local app bundle (data / relative).
+ *  In an offline desktop/native runtime root-relative `/api/...` and absolute
+ *  `http(s)://...` URLs need the network and would appear as broken images. */
+function isOfflineLocalUrl(value: string): boolean {
+  if (value.startsWith('data:')) return true;
+  if (value.startsWith('./') || value.startsWith('../')) return true;
+  if (!value.startsWith('/') && !isRemoteHttpUrl(value)) return true;
+  return false;
+}
+
+/**
+ * Pick the first usable display URL for a logo, honouring the current runtime.
+ * In an offline desktop/native app remote `http(s)` and root-relative asset
+ * refs are skipped so the caller can fall back to the bundled icon
+ * (`./icon-512.png`) instead of showing a broken image. Data URLs and relative
+ * paths always win.
+ */
+export function safeLogoUrl(...candidates: (string | null | undefined)[]): string | undefined {
+  const offline = isOfflineRuntime();
+  for (const c of candidates) {
+    const url = resolveAssetUrl(c);
+    if (!url) continue;
+    if (offline && !isOfflineLocalUrl(url)) continue;
+    return url;
+  }
+  return undefined;
+}
+
 /**
  * Turn ANY stored image value (data URL, asset reference or external URL)
  * into a URL the browser can load right now. The single chokepoint every

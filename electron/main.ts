@@ -2,6 +2,13 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 
+// Packaged renders load the Vite build from `file://` (loadFile). Chromium
+// treats `file://` as an opaque origin and can block ES-module scripts and
+// local assets with a CORS error, which leaves a blank window on installed
+// builds. This switch allows bundled `file://` files to load normally while
+// keeping the rest of Chromium's security intact.
+app.commandLine.appendSwitch('allow-file-access-from-files');
+
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 let mainWindow: BrowserWindow | null = null;
 

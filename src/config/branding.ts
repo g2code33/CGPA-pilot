@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { AppAppearance, AppIcon } from './types';
-import { resolveAssetUrl } from './assets';
+import { resolveAssetUrl, safeLogoUrl } from './assets';
 
 export type IconGroup = 'identity' | 'tools' | 'game' | 'admin';
 
@@ -209,7 +209,7 @@ export const DEFAULT_TAGLINE = 'Navigate Your Academic Future.';
  * the bundled ./icon-512.png).
  */
 export function appLogoImage(appearance: AppAppearance | undefined): string | undefined {
-  return resolveAssetUrl(appearance?.logo) ?? resolveAssetUrl(appearance?.appIcon?.image);
+  return safeLogoUrl(appearance?.logo, appearance?.appIcon?.image);
 }
 
 /**
