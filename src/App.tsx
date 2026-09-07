@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { resolveContext, institutionLabel } from './config/context';
-import { appLogoImage, appName, iconElement } from './config/branding';
+import { appLogoImage, appName, effectiveSlotIcon, iconElement } from './config/branding';
 import { resolveAssetUrl } from './config/assets';
 import type { AppAppearance } from './config/types';
 import { getRuntimeCatalog } from './config/runtime';
@@ -249,7 +249,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   // Institution selection
   if (!institutionSelected) {
     return (
-      <div className={`${rootH} bg-gradient-to-b from-brand-900 via-brand-800 to-brand-600 flex flex-col items-center justify-center px-5 overflow-y-auto`}>
+      <div className={`app-root ${rootH} bg-gradient-to-b from-brand-900 via-brand-800 to-brand-600 flex flex-col items-center justify-center px-5 overflow-y-auto`}>
         {/* Replay the Sky Dash opening mini-game from the very top */}
         <button
           onClick={playGameAgain}
@@ -292,7 +292,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   // Mode selection
   if (!modeSelected) {
     return (
-      <div className={`${rootH} bg-gradient-to-b from-brand-50 to-white flex flex-col items-center justify-center px-5 overflow-y-auto`}>
+      <div className={`app-root ${rootH} bg-gradient-to-b from-brand-50 to-white flex flex-col items-center justify-center px-5 overflow-y-auto`}>
         <div className="w-full max-w-sm py-8 text-center">
           <h2 className="text-2xl font-black text-slate-800">How do you want to start?</h2>
           <p className="mt-1 text-sm text-slate-500">You can change this later at any time.</p>
@@ -387,7 +387,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
         title="CGPA Pilot AI — ask anything about your academics"
         className={`no-print fixed z-30 ${pos} grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-indigo-700 text-2xl text-white shadow-xl shadow-brand-900/40 ring-2 ring-white/50 transition hover:scale-105 active:scale-95`}
       >
-        <AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={26} />
+        <AppGlyph appearance={appearance} slot="ai" location="fab" fallback="🤖" size={26} />
         <span
           className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-white"
           aria-hidden
@@ -528,7 +528,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
                   shifting the tile, the row or the label. */}
               <span className="relative h-9 w-9 shrink-0 text-2xl leading-none">
                 <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                  <SlotGlyph appearance={appearance} slot={t.id} location="tile" fallback={t.icon} imgCls="h-7 w-7" />
                 </span>
               </span>
               <span className="min-w-0 flex-1">
@@ -565,7 +565,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
         {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
         <span className="relative h-5 w-5 shrink-0 text-base">
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
+            <SlotGlyph appearance={appearance} slot="privacy" location="tile" fallback="🔒" imgCls="h-5 w-5 object-contain" />
           </span>
         </span>
         <span className="flex-1 text-[11px] font-bold text-emerald-800">
@@ -589,7 +589,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   // flow below stays exactly as it is.
   if (view === 'desktop') {
     return (
-      <div className={`${rootH} flex flex-col bg-slate-100`}>
+      <div className={`app-root ${rootH} flex flex-col bg-slate-100`}>
         <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/80 px-4 py-2 backdrop-blur">
           <Brand appearance={appearance} />
           <div className="flex shrink-0 items-center gap-1.5">
@@ -628,7 +628,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
                       icon alone grows, centred in place (no shift). */}
                   <span className="relative h-9 w-9 shrink-0 text-2xl leading-none">
                     <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                      <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                      <SlotGlyph appearance={appearance} slot={t.id} location="nav" fallback={t.icon} imgCls="h-7 w-7" />
                     </span>
                   </span>
                   <span className="min-w-0 flex-1">
@@ -658,7 +658,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
               {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
               <span className="relative h-9 w-9 shrink-0 text-xl leading-none">
                 <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-6 w-6" />
+                  <SlotGlyph appearance={appearance} slot="privacy" location="nav" fallback="🔒" imgCls="h-6 w-6" />
                 </span>
               </span>
               <span className="min-w-0 flex-1">
@@ -705,6 +705,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
                               <SlotGlyph
                                 appearance={appearance}
                                 slot={screen}
+                                location="header"
                                 fallback={SCREEN_TITLES[screen]!.icon}
                                 imgCls="h-5 w-5 object-contain"
                               />
@@ -743,7 +744,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
     const navTitle = (tool: { id: string; title: string } | null) =>
       tool && tool.id === 'next' ? toolNameFor(d.semesterRole) : tool?.title ?? '';
     return (
-      <div className={`${rootH} flex flex-col bg-slate-50`}>
+      <div className={`app-root ${rootH} flex flex-col bg-slate-50`}>
         <header className="no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
           <button
             onClick={() => setScreen('home')}
@@ -760,7 +761,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             <h1 className="flex min-w-0 items-center gap-1 text-[13px] font-extrabold text-slate-900">
               {meta && (
                 <span className="grid min-h-4 min-w-4 shrink-0 place-items-center rounded bg-white/80 ring-1 ring-slate-200">
-                  <SlotGlyph appearance={appearance} slot={screen} fallback={meta.icon} imgCls="h-4 w-4 object-contain" />
+                  <SlotGlyph appearance={appearance} slot={screen} location="header" fallback={meta.icon} imgCls="h-4 w-4 object-contain" />
                 </span>
               )}
               <span className="min-w-0 truncate">{screenTitle}</span>
@@ -849,7 +850,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
 
   // ── HOME HUB (mobile view — the layout most students use) ─────────────
   return (
-    <div className={`${rootH} flex flex-col bg-gradient-to-b from-brand-50 to-white`}>
+    <div className={`app-root ${rootH} flex flex-col bg-gradient-to-b from-brand-50 to-white`}>
       <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
         <Brand appearance={appearance} />
         <div className="flex shrink-0 items-center gap-1.5">
@@ -876,15 +877,18 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
 function SlotGlyph({
   appearance,
   slot,
+  location,
   fallback,
   imgCls,
 }: {
   appearance?: AppAppearance;
   slot: string;
+  /** Optional placement key — location override wins, else base slot. */
+  location?: string;
   fallback: string;
   imgCls?: string;
 }) {
-  const el = iconElement(appearance?.icons?.[slot], fallback);
+  const el = iconElement(effectiveSlotIcon(appearance, slot, location), fallback);
   if (el.type === 'img') {
     // Admin-adjusted display size wins over the per-site default classes.
     // The admin size renders in a SELF-CONTAINED centred box: exactly the

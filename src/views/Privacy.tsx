@@ -82,7 +82,7 @@ export function Privacy() {
 
       <Card className="bg-indigo-50 ring-indigo-200">
         <SectionTitle
-          icon={<AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={18} />}
+          icon={<AppGlyph appearance={appearance} slot="ai" location="info" fallback="🤖" size={18} />}
           title="The AI assistant (if enabled)"
         />
         <p className="text-sm leading-relaxed text-slate-700">{PRIVACY_AI_NOTE}</p>

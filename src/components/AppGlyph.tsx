@@ -1,4 +1,4 @@
-import { iconElement } from '../config/branding';
+import { effectiveSlotIcon, iconElement } from '../config/branding';
 import type { AppAppearance } from '../config/types';
 
 /**
@@ -13,6 +13,7 @@ import type { AppAppearance } from '../config/types';
 export function AppGlyph({
   appearance,
   slot,
+  location,
   fallback,
   size = 24,
   className = '',
@@ -21,6 +22,12 @@ export function AppGlyph({
   appearance?: AppAppearance;
   /** Appearance.icons key (also accepts 'appIcon'). */
   slot: string;
+  /**
+   * Optional placement key (e.g. "tile", "nav", "header", "fab"). When set,
+   * a location-specific override is used if the admin set one; otherwise the
+   * base slot icon is used (same default everywhere).
+   */
+  location?: string;
   /** Fallback emoji used when the slot has no override. */
   fallback: string;
   /** Size in px for both image and emoji. */
@@ -30,7 +37,8 @@ export function AppGlyph({
   /** Extra classes for the <img> when an image override is used. */
   imgClassName?: string;
 }) {
-  const icon = slot === 'appIcon' ? appearance?.appIcon : appearance?.icons?.[slot];
+  const icon =
+    slot === 'appIcon' ? appearance?.appIcon : effectiveSlotIcon(appearance, slot, location);
   const el = iconElement(icon, fallback);
   if (el.type === 'img') {
     const px = el.sizePx ?? size;

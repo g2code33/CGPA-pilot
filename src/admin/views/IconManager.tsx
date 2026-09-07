@@ -7,7 +7,9 @@ import {
   DEFAULT_APP_NAME,
   DEFAULT_TAGLINE,
   ICON_GROUPS,
+  ICON_LOCATIONS,
   iconElement,
+  iconLocationsForSlot,
   slotsByGroup,
   type IconGroup,
 } from '../../config/branding';
@@ -241,16 +243,44 @@ function GroupSection({
     <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5">
       <SectionTitle title={label} />
       <div className="mt-4 space-y-2.5">
-        {slotsByGroup(group).map((slot) => (
-          <SlotEditor
-            key={slot.id}
-            title={`${slot.emoji} ${slot.label}`}
-            hint={slot.hint}
-            value={appearance?.icons?.[slot.id]}
-            fallbackEmoji={slot.emoji}
-            onChange={(v) => onCommit(v, slot.id)}
-          />
-        ))}
+        {slotsByGroup(group).map((slot) => {
+          const locations = iconLocationsForSlot(slot.id);
+          return (
+            <div key={slot.id} className="rounded-xl bg-slate-50/60 p-3 ring-1 ring-slate-100">
+              {/* Shared default used by EVERY location until overridden. */}
+              <SlotEditor
+                title={`${slot.emoji} ${slot.label}`}
+                hint={`${slot.hint} This is the shared default — every location below uses it unless you set a location-specific icon.`}
+                value={appearance?.icons?.[slot.id]}
+                fallbackEmoji={slot.emoji}
+                onChange={(v) => onCommit(v, slot.id)}
+              />
+              {locations.length > 0 && (
+                <div className="mt-1 border-t border-slate-200/70 pt-1">
+                  <p className="px-1 pb-1 pt-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
+                    Individual locations
+                  </p>
+                  <div className="space-y-2.5">
+                    {locations.map((locId) => {
+                      const loc = ICON_LOCATIONS.find((l) => l.id === locId)!;
+                      const locatedId = `${slot.id}.${locId}`;
+                      return (
+                        <SlotEditor
+                          key={locatedId}
+                          title={`${slot.emoji} ${slot.label} · ${loc.label}`}
+                          hint={loc.hint}
+                          value={appearance?.icons?.[locatedId]}
+                          fallbackEmoji={slot.emoji}
+                          onChange={(v) => onCommit(v, locatedId)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </section>
   );

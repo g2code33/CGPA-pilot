@@ -179,9 +179,7 @@ export function AiAssistant({
   if (!statusChecked) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-3xl ring-1 ring-brand-100">
-          <AppGlyph appearance={appearance} slot="ai" fallback="🤖" size={28} />
-        </span>
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" aria-hidden />
         <p className="text-sm font-semibold text-slate-600">Checking the AI assistant…</p>
       </div>
     );
@@ -408,9 +406,17 @@ export function AiAssistant({
         </div>
       </div>
 
-      {/* ── Fixed typing area (never scrolls) — a pure-white card so the
-          input is always clearly visible against the app background ─────── */}
-      <div className="mt-2 shrink-0 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200" style={{ backgroundColor: '#ffffff' }}>
+      {/* ── Fixed typing area (never scrolls) — clearly exposed so the user
+          instantly knows where to type. The input itself stays pure white;
+          the light-slate card + visible label + strong ring make it stand out. */}
+      <div className="mt-2 shrink-0 rounded-2xl bg-slate-50 p-2.5 shadow-sm ring-1 ring-slate-300">
+        <div className="mb-1.5 flex items-center justify-between gap-2 px-0.5">
+          <label htmlFor="ai-message" className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-600">
+            <span className="grid h-6 w-6 place-items-center rounded-lg bg-brand-600 text-xs text-white shadow-sm">💬</span>
+            Message the AI
+          </label>
+          <span className="text-[9px] font-semibold text-slate-400">Your tools are only sent when you ask</span>
+        </div>
         {attachments.length > 0 && (
           <div className="mb-1.5 flex gap-1.5">
             {attachments.map((src, i) => (
@@ -433,12 +439,13 @@ export function AiAssistant({
             onClick={() => fileRef.current?.click()}
             disabled={thinking || attachments.length >= 2}
             title="Attach an image (the AI can read it)"
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-lg ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95 disabled:opacity-40"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-lg shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95 disabled:opacity-40"
             aria-label="Attach image"
           >
             📎
           </button>
           <textarea
+            id="ai-message"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -448,9 +455,9 @@ export function AiAssistant({
               }
             }}
             rows={1}
-            placeholder={attachments.length ? 'Describe the image…' : 'Ask about your CGPA, target, next semester…'}
-            className="max-h-28 min-h-[44px] flex-1 resize-none rounded-2xl border-0 bg-white px-4 py-3 text-[13px] font-medium text-slate-800 shadow-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
-            style={{ backgroundColor: '#ffffff', caretColor: '#0f172a' }}
+            placeholder={attachments.length ? 'Describe the image…' : 'Type your question here…'}
+            className="max-h-28 min-h-[48px] flex-1 resize-none rounded-2xl border-0 bg-white px-4 py-3 text-[13px] font-semibold text-slate-800 shadow ring-2 ring-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+            style={{ backgroundColor: '#ffffff', caretColor: '#4f46e5' }}
           />
           {thinking ? (
             <button
@@ -465,7 +472,7 @@ export function AiAssistant({
             <button
               onClick={() => void send(input, attachments)}
               disabled={thinking || (!input.trim() && !attachments.length)}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-600 text-lg text-white shadow-sm transition hover:bg-brand-700 active:scale-95 disabled:opacity-40"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-600 text-lg text-white shadow-lg shadow-brand-900/20 transition hover:bg-brand-700 active:scale-95 disabled:opacity-40"
               aria-label="Send"
             >
               ➤
@@ -669,8 +676,9 @@ function QuickTab({
   hint: string;
   onClick: () => void;
 }) {
-  // Quick links follow the admin's tool-slot icons (same glyphs as the
-  // home tiles), so a branded icon change shows here too.
+  // Quick links follow the admin's tool-slot icons but are a separate
+  // LOCATION: adjusting the home tile or header never changes this chip, and
+  // the admin can tune it independently.
   const appearance = getRuntimeCatalog().appearance;
   return (
     <button
@@ -678,7 +686,7 @@ function QuickTab({
       className="flex items-center gap-2 rounded-xl bg-white p-2 text-left ring-1 ring-red-200 transition hover:bg-red-50 active:scale-[0.98]"
     >
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-red-100/70 text-base">
-        <AppGlyph appearance={appearance} slot={slot} fallback={fallback} size={18} />
+        <AppGlyph appearance={appearance} slot={slot} location="quick" fallback={fallback} size={18} />
       </span>
       <span className="min-w-0">
         <span className="block truncate text-[11px] font-black text-red-700">{label}</span>

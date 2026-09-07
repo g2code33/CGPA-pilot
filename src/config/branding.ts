@@ -89,19 +89,81 @@ export function slotsByGroup(group: IconGroup): IconSlotDef[] {
   return APP_ICON_SLOTS.filter((s) => s.group === group);
 }
 
+/** One place a base icon can render — each adjustable independently. */
+export interface IconLocationDef {
+  id: string;
+  label: string;
+  hint: string;
+}
+
+/** The location-specific placements admins can adjust per base slot. */
+export const ICON_LOCATIONS: IconLocationDef[] = [
+  { id: 'tile', label: 'Home tile', hint: 'The icon on the tools grid (mobile home + desktop home).' },
+  { id: 'nav', label: 'Sidebar (desktop)', hint: 'The icon in the desktop sidebar navigation.' },
+  { id: 'header', label: 'Open-screen header', hint: 'The icon beside the title when the screen is open.' },
+  { id: 'fab', label: 'Floating button', hint: 'The floating AI button (bottom-right).' },
+  { id: 'quick', label: 'Quick link', hint: 'The small quick-link chip (e.g. inside the AI “no data yet” notice).' },
+  { id: 'info', label: 'Info section', hint: 'The matching icon in an explainer/info section (e.g. Privacy → AI).' },
+];
+
+/** Which locations a base slot renders in. Empty = single-place icon. */
+export function iconLocationsForSlot(id: string): string[] {
+  switch (id) {
+    case 'calculate':
+    case 'target':
+    case 'next':
+    case 'whatif':
+    case 'flight':
+    case 'milestones':
+      return ['tile', 'nav', 'header', 'quick'];
+    case 'privacy':
+      return ['tile', 'nav', 'header'];
+    case 'ai':
+      return ['fab', 'header', 'info'];
+    default:
+      return [];
+  }
+}
+
+/** Human label / fallback emoji for a base-or-located slot id. */
+function splitSlotId(id: string): { base: string; location: string | null } {
+  const i = id.indexOf('.');
+  if (i < 0) return { base: id, location: null };
+  return { base: id.slice(0, i), location: id.slice(i + 1) };
+}
+
+/**
+ * The effective icon for a slot, honouring a location-specific override when
+ * present and falling back to the base slot (the shared default). This keeps
+ * the same default icon everywhere until the admin overrides one location.
+ */
+export function effectiveSlotIcon(
+  appearance: AppAppearance | undefined,
+  slot: string,
+  location?: string | null
+): AppIcon | undefined {
+  const { base, location: loc } = splitSlotId(slot);
+  const located = location ?? loc;
+  if (located) {
+    const locatedIcon = appearance?.icons?.[`${base}.${located}`];
+    if (locatedIcon) return locatedIcon;
+  }
+  return appearance?.icons?.[base];
+}
+
 /** Resolve the effective icon for a slot given the optional appearance. */
 export function slotIcon(appearance: AppAppearance | undefined, id: string): AppIcon | undefined {
-  return appearance?.icons?.[id];
+  return effectiveSlotIcon(appearance, id);
 }
 
-/** A slot's default definition (by id). */
+/** A slot's default definition (by base or located id). */
 export function slotDef(id: string): IconSlotDef | undefined {
-  return APP_ICON_SLOTS.find((s) => s.id === id);
+  return APP_ICON_SLOTS.find((s) => s.id === splitSlotId(id).base);
 }
 
-/** Fallback emoji for a slot (used when no override is set). */
+/** Fallback emoji for a slot (base or located id). */
 export function slotFallback(id: string): string {
-  return APP_ICON_SLOTS.find((s) => s.id === id)?.emoji ?? '•';
+  return APP_ICON_SLOTS.find((s) => s.id === splitSlotId(id).base)?.emoji ?? '•';
 }
 
 /**
