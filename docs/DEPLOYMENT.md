@@ -144,6 +144,22 @@ devices that fall behind are offered a pull.
   new) — online only; the backend rotates the salted digest, so the new
   passcode immediately works everywhere and the old one stops.
 
+- **Branding (Icons & branding) publishes the same way** — logo, wordmark, tagline
+  and per-slot icons ride in the same `appearance` block, and images go to R2 as
+  `asset:<key>` references rather than into the document. How far each surface
+  follows, and when:
+
+  | Surface | Follows the publish | Needs a rebuild? |
+  | --- | --- | --- |
+  | In-app logo/icons (web, PWA, desktop, APK) | next open while online (mid-session: the reload banner) | no |
+  | Browser tab / Apple touch icon | immediately on that load | no |
+  | Installed PWA icon (Chrome/Edge/home screen) | within the Pages TTL + the browser's manifest check (hours–a day) | no |
+  | Desktop window + Linux launcher icon | next launch | no |
+  | Windows `.exe` / Android `ic_launcher` / iOS AppIcon / `.deb` payload | next app build (CI runs `scripts/refresh-brand-icons.mjs`) | **yes** |
+  | Bundled offline seed (`src/config/seed/.live…json`) | next build | **yes** |
+
+  `docs/BRANDING.md` is the full chain (including how to verify one on a device).
+
 There is **no** file export, Git commit, or redeploy step in this loop.
 (Backup file download/upload remains available on the Dashboard as a local
 utility, and `npm run seed:apply` remains a *development* tool for updating

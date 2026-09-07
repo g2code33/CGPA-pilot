@@ -182,22 +182,68 @@ export function iconGlyph(icon: AppIcon | undefined, fallbackEmoji: string): str
  */
 export function applyBrandFavicon(appearance: AppAppearance | undefined): void {
   if (typeof document === 'undefined') return;
-  const logo = appLogoImage(appearance); // resolved: data URL or /api/assets/… URL
+  const logo = brandIdentityLogo(appearance);
   if (!logo) return;
-  const link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
-  if (!link) return;
-  // Only data URLs carry a known type; for asset references let the browser
-  // sniff from the served content-type (we set it on the Worker response).
-  if (logo.startsWith('data:')) {
-    link.setAttribute(
-      'type',
-      logo.startsWith('data:image/jpeg') || logo.startsWith('data:image/jpg') ? 'image/jpeg' : 'image/png'
-    );
-  } else {
-    link.removeAttribute('type');
+  // The browser tab icon and the iOS/Android "add to home screen" tile are the
+  // same identity surface — keep them in step with the in-app logo.
+  const links = document.querySelectorAll<HTMLLinkElement>(
+    "link[rel='icon'], link[rel='shortcut icon'], link[rel='apple-touch-icon']"
+  );
+  if (!links.length) return;
+  for (const link of links) {
+    // Only data URLs carry a known type; for asset references let the browser
+    // sniff from the served content-type (we set it on the Worker response).
+    if (logo.startsWith('data:')) {
+      link.setAttribute(
+        'type',
+        logo.startsWith('data:image/jpeg') || logo.startsWith('data:image/jpg') ? 'image/jpeg' : 'image/png'
+      );
+    } else {
+      link.removeAttribute('type');
+    }
+    link.setAttribute('href', logo);
   }
-  link.setAttribute('href', logo);
 }
+
+/**
+ * The administrator's logo for IDENTITY surfaces (favicon, home-screen tile,
+ * desktop window/launcher icon).
+ *
+ * Different from `appLogoImage()` on purpose: an <img> in the page must not
+ * point at the network in an offline runtime (a broken image is worse than the
+ * bundled one), but an icon slot has no such failure mode — it either loads, or
+ * whatever was there before simply stays. So this prefers the offline-ready
+ * value and only falls back to the remote reference, which means a freshly set
+ * logo shows up on the first online launch instead of after the next sync.
+ */
+export function brandIdentityLogo(appearance: AppAppearance | undefined): string | undefined {
+  return appLogoImage(appearance) ?? resolveAssetUrl(appearance?.logo) ?? resolveAssetUrl(appearance?.appIcon?.image);
+}
+
+/**
+ * Apply the administrator's identity to everything OUTSIDE the page too.
+ *   • favicon / apple-touch-icon (all runtimes)
+ *   • the desktop shell's window, taskbar and launcher icon (Electron only —
+ *     no-op in the browser, where `window.cgpaPilot` is absent)
+ * Called after boot and after each config sync from services/brandAssets.ts.
+ */
+export function applyBrandIdentity(appearance: AppAppearance | undefined): void {
+  applyBrandFavicon(appearance);
+  if (typeof window === 'undefined') return;
+  const bridge = window.cgpaPilot;
+  const setIcon = bridge && (bridge as { setBrandIcon?: unknown }).setBrandIcon;
+  if (typeof setIcon !== 'function') return;
+  const logo = brandIdentityLogo(appearance);
+  if (!logo) return;
+  try {
+    const r = (setIcon as (logo: string, name?: string) => unknown).call(bridge, logo, appearance?.appName?.trim());
+    // The bridge is async in the desktop shell; failures are cosmetic only.
+    if (r && typeof (r as Promise<unknown>).catch === 'function') (r as Promise<unknown>).catch(() => undefined);
+  } catch {
+    /* an old preload without the channel, or a rejected payload — ignore */
+  }
+}
+
 
 /** Default product wordmark when the admin has not overridden it. */
 export const DEFAULT_APP_NAME = 'CGPA Pilot';

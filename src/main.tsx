@@ -71,10 +71,15 @@ async function main() {
   // runtime catalog still holds a valid (cached/seed) configuration.
   console.info('[config]', 'boot local config (network sync runs in background)');
 
-  // Browser tab icon = the admin-set app logo (keeps the bundled icon when
-  // the admin has not set one). PWA/desktop icon: served dynamically by the
-  // Worker (manifest + /app-icon) and refreshed on the next app launch.
+  // Browser tab icon + (in the desktop shell) the window/launcher icon = the
+  // admin-set app logo; keeps the bundled icon when the admin set none. The
+  // images live in R2 behind `asset:` refs, so an offline runtime cannot render
+  // them from a URL — refreshBrandIdentity() downloads them once in the
+  // background, stores them as data URLs in the same offline cache, and
+  // re-applies them. Deferred so it never delays first paint; a no-network boot
+  // simply keeps the cached (already-materialized) logo.
   applyBrandFavicon(getRuntimeCatalog().appearance);
+  void import('./services/brandAssets').then((m) => m.refreshBrandIdentity());
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

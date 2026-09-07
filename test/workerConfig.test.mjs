@@ -464,6 +464,70 @@ test('PWA identity before any publish still answers (bundled defaults)', async (
   assert.ok(doc.icons.every((i) => i.src === 'icon-512.png'));
 });
 
+// Since v1.0.20 a publish moves every embedded image into R2 and keeps only an
+// `asset:<key>` reference. /app-icon used to understand data URLs ONLY, so the
+// R2-hosted logo of a real deployment silently fell back to the bundled icon —
+// which is exactly why installed PWAs kept the old logo. These three tests pin
+// the reference resolution (and its failure modes).
+
+test('PWA identity reads the admin logo through its asset: reference', async () => {
+  const e = env({ r2: true });
+  const LOGO = Buffer.from('logo-bytes-stored-in-r2-for-this-test');
+  // The real flow: the admin console uploads the image and stores only the
+  // reference it gets back, so this is how a deployed catalog actually looks.
+  const up = await worker.fetch(
+    new Request(`${BASE}/api/admin/assets`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'image/png' },
+      body: LOGO,
+    }),
+    e
+  );
+  assert.equal(up.status, 200);
+  const { ref } = await up.json();
+  assert.match(ref, /^asset:catalog\/[0-9a-f]{16}\.png$/);
+
+  const pub = await publish(e, { ...makeValidCatalog(), appearance: { appName: 'R2 Branding', logo: ref } });
+  assert.equal(pub.status, 200);
+
+  const doc = await (await worker.fetch(req('/manifest.webmanifest'), e)).json();
+  assert.match(doc.icons[0].src, /^\/app-icon\?v=[0-9a-f]+$/, 'the manifest is still cache-busted by the logo hash');
+  const ic = await worker.fetch(req(doc.icons[0].src), e);
+  assert.equal(ic.status, 200);
+  assert.equal(ic.headers.get('content-type'), 'image/png');
+  assert.equal(Buffer.from(await ic.arrayBuffer()).toString('utf8'), LOGO.toString('utf8'));
+
+  // A direct request without ?v= works too (that is what Pages proxies).
+  const direct = await worker.fetch(req('/app-icon'), e);
+  assert.equal(direct.status, 200);
+  assert.equal(Buffer.from(await direct.arrayBuffer()).toString('utf8'), LOGO.toString('utf8'));
+});
+
+test('PWA identity: a missing asset object falls back to the bundled icon', async () => {
+  const e = env({ r2: true });
+  const catalog = { ...makeValidCatalog(), appearance: { logo: 'asset:catalog/deadbeefdeadbeef.png' } };
+  assert.equal((await publish(e, catalog)).status, 200);
+
+  e.ASSETS = { fetch: () => Promise.resolve(new Response('static-default-icon')) };
+  const ic = await worker.fetch(req('/app-icon'), e);
+  assert.equal(ic.status, 200, 'never a 404 in front of a manifest icon');
+  assert.equal(await ic.text(), 'static-default-icon');
+  const doc = await (await worker.fetch(req('/manifest.webmanifest'), e)).json();
+  assert.ok(doc.icons.every((i) => i.src === 'icon-512.png'), 'unresolvable logo → the bundled icon is declared');
+});
+
+test('PWA identity: an asset reference cannot point outside the catalog prefix', async () => {
+  const e = env({ r2: true });
+  e.R2_ASSETS.objects.set('secret/other.png', { bytes: Buffer.from('not-an-icon'), contentType: 'image/png' });
+  for (const ref of ['asset:../secret/other.png', 'asset:secret/other.png', 'asset:', 'https://evil.test/a.png']) {
+    const catalog = { ...makeValidCatalog(), appearance: { logo: ref } };
+    assert.equal((await publish(e, catalog)).status, 200, `publish should accept ${ref}`);
+    e.ASSETS = { fetch: () => Promise.resolve(new Response('static-default-icon')) };
+    const ic = await worker.fetch(req('/app-icon'), e);
+    assert.equal(await ic.text(), 'static-default-icon', `${ref} must not be read from the bucket`);
+  }
+});
+
 // ── /api/app/latest (in-app update check for Android/iOS) ─────────────────
 
 test('GET /api/app/latest reports the latest GitHub release version', async () => {

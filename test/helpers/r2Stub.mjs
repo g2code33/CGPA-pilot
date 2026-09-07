@@ -26,6 +26,10 @@ export function createR2Stub() {
         size: o.bytes.byteLength,
         body: new Blob([o.bytes], { type: o.contentType ?? undefined }),
         httpMetadata: { contentType: o.contentType },
+        // Real R2ObjectBody exposes both; readers that want the bytes whole use
+        // arrayBuffer() (the streaming `body` is for proxying responses).
+        arrayBuffer: async () => Uint8Array.from(o.bytes).buffer,
+        text: async () => new TextDecoder().decode(o.bytes),
       };
     },
 

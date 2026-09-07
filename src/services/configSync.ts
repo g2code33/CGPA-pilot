@@ -226,8 +226,11 @@ export async function checkAndSync(
     });
     markPendingUpdate(null); // we're current now
     // Keep the browser tab icon in step with a mid-session branding change
-    // (the boot path in main.tsx already applies it before first paint).
+    // (the boot path in main.tsx already applies it before first paint). The
+    // brand refresh also materializes the newly published logo images into the
+    // offline cache and pushes them to the desktop shell's window icon.
     applyBrandFavicon(payload.appearance as AppAppearance | undefined);
+    void import('./brandAssets').then((m) => m.refreshBrandIdentity());
     return done({
       status: 'synced',
       localVersion: latest.version ?? serverVersion,

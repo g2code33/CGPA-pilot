@@ -8,6 +8,12 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cgpa-pilot.calcitoninpay.workers.dev; font-src 'self' data:; connect-src 'self' https://cgpa-pilot.calcitoninpay.workers.dev;"
     />
     <link rel="icon" type="image/png" href="icon-512.png" />
+    <!-- Home-screen / Start-menu tile (iOS Safari, Android Chrome "add to home
+         screen"). The bundled file is the offline default; src/config/branding.ts
+         swaps both of these to the administrator's logo once the published
+         configuration is loaded, and the build refreshes the file itself
+         (scripts/refresh-brand-icons.mjs) so a fresh install starts correct. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="icon-512.png" />
     <meta name="robots" content="noindex, nofollow" />
     <title>CGPA Pilot — Admin</title>
   </head>

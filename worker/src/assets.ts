@@ -59,6 +59,63 @@ export async function storeAsset(bucket: R2Bucket, bytes: Uint8Array, contentTyp
   return { ref: `asset:${key}`, key, url: `/api/assets/${key}`, bytes: bytes.byteLength };
 }
 
+/** The catalog reference of a stored image (`asset:catalog/<sha16>.png`). */
+export const ASSET_REF_PREFIX = 'asset:';
+
+export function isAssetRef(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith(ASSET_REF_PREFIX);
+}
+
+export interface ResolvedImage {
+  mime: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * Resolve a stored image value into bytes + mime. Published catalogs hold either
+ * an `asset:<key>` R2 reference (v1.0.20+) or, for older publishes, the inline
+ * `data:image/…` URL. Serving the PWA icon (and hashing it for cache-busting)
+ * needs the BYTES, so both shapes are handled here — a value that cannot be
+ * resolved (external URL, missing object, no bucket bound) returns null and the
+ * caller falls back to the bundled default icon.
+ *
+ * Note the key is content-addressed (`catalog/<sha16>.<ext>`), so the bytes are
+ * immutable: the caller can cache them forever.
+ */
+export async function readImageValue(
+  value: string | null | undefined,
+  bucket?: R2Bucket | null
+): Promise<ResolvedImage | null> {
+  if (!value) return null;
+  if (value.startsWith('data:image/')) {
+    const semi = value.indexOf(';');
+    const comma = value.indexOf(',');
+    if (semi === -1 || comma === -1 || comma < semi) return null;
+    const mime = value.slice(5, semi);
+    if (!/(png|jpeg|webp|gif)$/.test(mime)) return null;
+    try {
+      const bytes = base64ToBytes(value.slice(comma + 1));
+      return bytes.length ? { mime, bytes } : null;
+    } catch {
+      return null; // malformed base64 — treat as "no logo set"
+    }
+  }
+  if (!isAssetRef(value) || !bucket) return null;
+  const key = value.slice(ASSET_REF_PREFIX.length);
+  // Only catalog images we stored ourselves: never a traversal or an
+  // attacker-chosen bucket key.
+  if (!key.startsWith('catalog/') || key.includes('..') || key.includes('\\')) return null;
+  try {
+    const obj = await bucket.get(key);
+    if (!obj) return null;
+    const bytes = new Uint8Array(await obj.arrayBuffer());
+    if (!bytes.length) return null;
+    return { mime: obj.httpMetadata?.contentType || 'image/png', bytes };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Rewrite every embedded data-URL image in a catalog to an R2 reference.
  * Covers the known fields (appearance + institution logos) AND a deep scan

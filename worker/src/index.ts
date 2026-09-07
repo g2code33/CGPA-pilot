@@ -32,6 +32,7 @@ import {
   bucketUsage,
   getAccountR2Usage,
   migrateCatalogAssets,
+  readImageValue,
   storeAsset,
 } from './assets';
 import {
@@ -1400,31 +1401,16 @@ export function __resetLatestAppVersionCache(): void {
 // icon file, so both are served from the PUBLISHED catalog: the admin's logo
 // when set, the bundled icon-512.png otherwise.
 
-/** Parse a `data:image/png|jpeg;base64,...` URL into mime + bytes. */
-function dataUrlInfo(dataUrl: string | undefined): { mime: string; bytes: Uint8Array } | null {
-  if (!dataUrl || !dataUrl.startsWith('data:image/')) return null;
-  const semi = dataUrl.indexOf(';');
-  const comma = dataUrl.indexOf(',');
-  if (semi === -1 || comma === -1 || comma < semi) return null;
-  const mime = dataUrl.slice(5, semi);
-  if (!mime.endsWith('png') && !mime.endsWith('jpeg')) return null;
-  try {
-    const bin = atob(dataUrl.slice(comma + 1));
-    if (!bin.length) return null;
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return { mime, bytes };
-  } catch {
-    return null;
-  }
-}
-
 /** The published catalog's appearance block (null until first publish). */
-async function publishedAppearance(env: Env): Promise<{ logo?: string; appName?: string; tagline?: string } | null> {
+async function publishedAppearance(
+  env: Env
+): Promise<{ logo?: string; appIcon?: { image?: string }; appName?: string; tagline?: string } | null> {
   if (!env.CONFIG_DB) return null;
   try {
     const doc = await readPublished(env.CONFIG_DB);
-    return (doc?.payload.appearance as { logo?: string; appName?: string; tagline?: string } | undefined) ?? null;
+    return (doc?.payload.appearance as
+      | { logo?: string; appIcon?: { image?: string }; appName?: string; tagline?: string }
+      | undefined) ?? null;
   } catch {
     return null;
   }
@@ -1454,7 +1440,13 @@ async function iconVersion(bytes: Uint8Array): Promise<string> {
 
 async function handlePwaIdentity(url: URL, req: Request, env: Env): Promise<Response> {
   const appearance = await publishedAppearance(env);
-  const logoInfo = dataUrlInfo(appearance?.logo);
+  // Since v1.0.20 the logo is an `asset:<key>` reference into R2 (older
+  // publishes carry the inline data URL). Both resolve here; a value that
+  // resolves to nothing (no logo set, object missing, R2 unbound) falls back to
+  // the bundled icon below — never a 404 in front of the manifest.
+  const logoInfo =
+    (await readImageValue(appearance?.logo, env.R2_ASSETS)) ??
+    (await readImageValue(appearance?.appIcon?.image, env.R2_ASSETS));
 
   if (url.pathname === '/app-icon') {
     if (logoInfo) {

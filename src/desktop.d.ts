@@ -21,7 +21,16 @@ export interface CgpaPilotApi {
   getVersion: () => Promise<string>;
   checkForUpdates: () => Promise<UpdaterStatus>;
   downloadUpdate: () => Promise<{ ok: boolean; message?: string }>;
-  installUpdate: () => Promise<{ ok: boolean }>;
+  installUpdate: () => Promise<{ ok: boolean; message?: string }>;
+  /**
+   * Optional: only the desktop shell implements it. Pushes the administrator's
+   * app logo (data: or http(s) image URL) to the OS — window/taskbar icon
+   * immediately, per-user launcher icon for the desktop environment.
+   */
+  setBrandIcon?: (
+    logo: string,
+    name?: string
+  ) => Promise<{ ok: boolean; changed?: boolean; message?: string }>;
   onUpdaterStatus: (
     callback: (status: UpdaterStatus) => void
   ) => () => void;
