@@ -499,6 +499,17 @@ function checkForUpdates() {
 }
 
 app.whenReady().then(() => {
+  // Re-assert the administrator's branding on the desktop entry before any
+  // window exists. Both calls no-op when nothing changed, and they are what
+  // makes the logo/name survive an app upgrade — the upgrade rewrites
+  // /usr/share/applications and /usr/share/icons from the package, which would
+  // otherwise reset the menu entry to whatever artwork was baked into the build
+  // until the next config sync.
+  if (process.platform === 'linux') {
+    const execName = path.basename(process.execPath).replace(/\.exe$/i, '');
+    installUserLauncherIcon(execName);
+    installUserDesktopEntry(execName, savedBrandName());
+  }
   wireUpdater();
   createWindow();
 

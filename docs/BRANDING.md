@@ -120,7 +120,12 @@ installed app:
   packaged binary because the copy is derived from the installed entry (no entry —
   no override; an invented `Exec` would outlive uninstalls). Both caches are
   refreshed with `gtk-update-icon-cache` / `update-desktop-database`, best-effort.
-  Nothing is rewritten when the bytes are unchanged, so a normal launch does zero I/O.
+  Nothing is rewritten when the bytes are unchanged, so a normal launch does zero
+  I/O — and the same two calls run once at `app.whenReady()`, *before* any window
+  exists, using the persisted `name.txt`: an app upgrade rewrites
+  `/usr/share/applications` and `/usr/share/icons` from the package, and without
+  that re-assertion the menu entry would fall back to the build-time artwork until
+  the next config sync.
 * Windows/Linux **installer** icons still come from the build (see §5): a `.exe`'s
   icon resource and the `.deb`'s shipped `icon.png` cannot be changed at runtime
   without admin rights. That is the one surface where a branding change needs a new
