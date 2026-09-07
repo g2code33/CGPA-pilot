@@ -64,6 +64,17 @@ export function configApiBase(): string {
   } catch {
     /* non-browser context (tests / bundlers) */
   }
+  // Capacitor native (Android/iOS): the WebView origin is https://localhost,
+  // which has no same-origin /api — the production Worker is the only source
+  // of published configuration updates. Offline-first still works because the
+  // local cache/seed is used when this cannot be reached.
+  try {
+    if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+      return PRODUCTION_API_BASE;
+    }
+  } catch {
+    /* non-browser context (tests / bundlers) */
+  }
   // Split-hosting production: Pages site → API-only Worker.
   try {
     if (typeof window !== 'undefined' && window.location?.hostname === PAGES_HOST) {
