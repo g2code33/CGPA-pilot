@@ -15,7 +15,7 @@
 //
 // Bump `CACHE` whenever you change this file's caching rules; old caches are
 // deleted on activate so devices pick up the new rules immediately.
-const CACHE = 'cgpa-pilot-v7';
+const CACHE = 'cgpa-pilot-v8';
 
 const SHELL = [
   './',
