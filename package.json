@@ -1,6 +1,6 @@
 {
   "name": "cgpa-pilot",
-  "version": "1.0.26",
+  "version": "1.0.27",
   "private": true,
   "author": {
     "name": "CGPA Pilot",
@@ -33,7 +33,8 @@
     "mobile:open:ios": "cap open ios",
     "release:patch": "npm version patch --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main",
     "release:minor": "npm version minor --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main",
-    "release:major": "npm version major --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main"
+    "release:major": "npm version major --no-git-tag-version && git add -A && git commit -m \"release: v$(node -p \"require('./package.json').version\")\" && git push origin main",
+    "verify:branding": "node scripts/verify-branding.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
@@ -71,6 +72,9 @@
     },
     "npmRebuild": false,
     "asar": true,
+    "asarUnpack": [
+      "dist/**/*"
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",

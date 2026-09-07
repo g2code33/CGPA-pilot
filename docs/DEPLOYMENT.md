@@ -158,7 +158,20 @@ devices that fall behind are offered a pull.
   | Windows `.exe` / Android `ic_launcher` / iOS AppIcon / `.deb` payload | next app build (CI runs `scripts/refresh-brand-icons.mjs`) | **yes** |
   | Bundled offline seed (`src/config/seed/.live…json`) | next build | **yes** |
 
-  `docs/BRANDING.md` is the full chain (including how to verify one on a device).
+  `docs/BRANDING.md` is the full chain. To check the whole thing without guessing
+  which surface is stale — this walks the published config, the manifest, both
+  `/app-icon` endpoints and the build inputs, and compares SHA-256 at each step:
+
+  ```bash
+  npm run verify:branding                                      # what users are served
+  npm run verify:branding -- --install /opt/CGPA-Pilot         # an installed desktop app
+  npm run verify:branding -- --logo ./the-logo-i-uploaded.png   # against the original file
+  ```
+
+  Exit status 1 means a surface disagrees with the published branding (or a desktop
+  install is missing the unpacked renderer / has an unusable `chrome-sandbox`), and
+  each failure prints the command that fixes it. Warning-level differences (a CDN
+  copy inside its TTL) never fail the run, so it is safe as a pre-release gate.
 
 There is **no** file export, Git commit, or redeploy step in this loop.
 (Backup file download/upload remains available on the Dashboard as a local

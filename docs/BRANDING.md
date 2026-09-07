@@ -1,9 +1,16 @@
 # Branding: the administrator's logo, all the way down to the OS icon
 
-v1.0.26. "The app logo must be the one the admin set" sounds like one switch; it is
+v1.0.27. "The app logo must be the one the admin set" sounds like one switch; it is
 five independent surfaces, and until now three of them could only ever show the
 artwork committed to this repository. This document is the map — code, cache lifetimes
-and how to check each surface on a real device.
+and how to check each surface on a real device. One command walks the whole served
+chain and says where it disagrees:
+
+```bash
+npm run verify:branding                                    # live endpoints
+npm run verify:branding -- --install /opt/CGPA-Pilot       # an installed desktop app
+npm run verify:branding -- --logo ./the-logo-i-uploaded.png # compare against a file
+```
 
 ## The pipeline
 
@@ -89,7 +96,11 @@ place, so preferring the admin's logo is free.
 * On Pages the same path is proxied by `functions/app-icon.js`, which deliberately
   rewrites the cache header to `max-age=300`: the Worker's answer says `immutable`,
   and because the Pages URL is stable, honouring it would freeze the icon on whatever
-  logo existed at first install.
+  logo existed at first install. It also refuses a body that is not an image (an error
+  page or a JSON 200 from upstream would otherwise be cached as the icon and shown
+  broken); `application/octet-stream` — how an asset stored without metadata arrives
+  — is accepted and declared as `image/png`. Both halves are asserted by
+  `test/pwaBranding.test.mjs`, which *executes* the function with a stubbed Worker.
 * `public/sw.js` caches the manifest and the icon as *identity* requests
   (network-first, cache as the offline fallback), and its `CACHE` key is bumped to
   `v9` so existing installs re-cache the new manifest instead of keeping the old one.
@@ -114,7 +125,10 @@ installed app:
 * On Linux it also installs the logo into the **per-user** icon theme —
   `~/.local/share/icons/hicolor/<size>x<size>/apps/cgpa-pilot.png`, symlinks to that
   one saved file — and mirrors `/usr/share/applications/cgpa-pilot.desktop` into
-  `~/.local/share/applications/` with `Name=` set to the admin's product name. User
+  `~/.local/share/applications/` with `Name=` set to the admin's product name. The
+  override reuses the basename of whichever system entry exists — `<executableName>`
+  for a `.deb`, `<ProductName>` for an AppImage — because writing the other name
+  would add a second launcher instead of re-labelling one. User
   files take precedence over system ones, so the dash, Activities search and alt-tab
   follow the branding without root, and the `Exec=` line keeps pointing at the
   packaged binary because the copy is derived from the installed entry (no entry —
@@ -183,10 +197,20 @@ degrades the *branding* of that build instead of failing the release. If a Windo
 | Browser tab | admin logo after the first load; `/app-icon?v=…` in the manifest |
 | Installed PWA | `chrome://apps` / shortcut icon changes within a day; force it with DevTools → Application → Manifest → update, or re-add the app |
 | Desktop window/taskbar | `~/.config/cgpa-pilot/brand/icon.png` exists and equals the admin logo; next launch uses it |
-| GNOME/Activities icon | `ls -l ~/.local/share/icons/hicolor/48x48/apps/cgpa-pilot.png` → symlink into that brand dir |
+| GNOME/Activities icon | `ls -l ~/.local/share/icons/hicolor/48x48/apps/cgpa-pilot.png` → symlink into that brand dir. A *plain file* there is an older build's copy: correct today, but it will not follow the next change |
 | Android launcher | `adb shell dumpsys package com.cgpapilot.app` after the build; the icon is baked at build time (§5) |
 | Windows Start/taskbar | icon comes from the `.exe` built after the branding publish; `ie4uinit.exe -show` clears a stale cache |
 
-Related: `docs/DESKTOP-LINUX.md` (packaging, sandbox helper),
+Two limits worth knowing, both deliberate:
+
+* Pages serves the **static** `public/manifest.webmanifest`, so a rebrand changes the
+  icon there but not its `name` — Cloudflare Pages functions cannot rewrite a file
+  that the CDN already serves. Only the Worker origin has a dynamic name. A pinned
+  shortcut keeps the name it was installed with until it is re-added.
+* The `.desktop` `Icon=` is a *name*, not a path: the DE resolves it through hicolor,
+  which is why the nine symlinks are the mechanism and why a partially written theme
+  shows a half-updated logo (`verify-branding` counts them).
+
+Related: `docs/DESKTOP-LINUX.md` (packaging, sandbox helper, launch modes),
 `build/icons/README.md` (why one PNG per hicolor size), `docs/DEPLOYMENT.md`
 (publish → what a client sees).

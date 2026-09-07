@@ -1,5 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+/** Mirrors the `app:launch-info` payload in electron/main.ts. */
+export interface LaunchInfo {
+  mode: number;
+  name: string;
+  note: string;
+  flags: string[];
+  previousFailure: string | null;
+  sandboxFallback: string | null;
+  rendererEntry: string | null;
+  loaderError: string | null;
+  stateFile: string;
+}
+
 export type UpdaterStatus =
   | { status: 'checking' }
   | { status: 'available'; version?: string; releaseNotes?: unknown }
@@ -26,6 +39,11 @@ const api = {
     name?: string
   ): Promise<{ ok: boolean; changed?: boolean; message?: string }> =>
     ipcRenderer.invoke('branding:set-icon', logo, name),
+  /**
+   * How the app is launching and why — the support answer to "blank window" or
+   * "the old logo is still in my menu". Read-only diagnostics, no actions.
+   */
+  getLaunchInfo: (): Promise<LaunchInfo> => ipcRenderer.invoke('app:launch-info'),
   onUpdaterStatus: (callback: (status: UpdaterStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: UpdaterStatus) =>
       callback(status);

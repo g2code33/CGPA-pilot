@@ -1,18 +1,29 @@
 import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readlinkSync,
-  statSync,
-  symlinkSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { autoUpdater } from 'electron-updater';
+import { installDesktopEntry, installLauncherIcon, writeIfChanged, type BrandInstallOptions } from './brandInstall';
+import {
+  indexOfEntry,
+  insideArchive,
+  orderRendererCandidates,
+  pickRendererEntry,
+  rendererCandidatePaths,
+} from './rendererPath';
+import {
+  chooseLaunchMode,
+  clampMode,
+  escalate,
+  LAUNCH_MODES,
+  launchFlags,
+  markPainted,
+  readLaunchState,
+  relaunchArgs,
+  STARTUP_GRACE_MS,
+  writeLaunchState,
+  type LaunchModeState,
+} from './launchMode';
 
 // ─────────────────────────────────────────────────────────────────────────
 // WHY THIS FILE LOOKS SO DEFENSIVE (v1.0.25 Linux fixes)
@@ -30,13 +41,17 @@ import { autoUpdater } from 'electron-updater';
 //    that launch instead of crashing — an unsandboxed renderer beats an app
 //    that never opens.
 //
-// 2. `dist/**` was listed in asarUnpack. Unpacked files are *removed* from
-//    app.asar and only an "unpacked" marker stays in the header: Node's fs shim
-//    follows that marker, Chromium's file:// loader does not, so
-//    loadFile('…/resources/app.asar/dist/index.html') rejected with ERR_FAILED
-//    and the window was blank. asarUnpack is gone (nothing here needs it) and
-//    the entry point is now resolved from the paths that actually exist, with a
-//    readable diagnostic page as the last resort instead of an empty rectangle.
+// 2. Blank window, twice, from one rule written down wrong: a `file://` load may
+//    never be given a path that goes through app.asar. Chromium reads the REAL
+//    filesystem there and cannot see inside the archive, while Node's patched fs
+//    can — so `existsSync(…/app.asar/dist/index.html)` says yes and the load says
+//        [cgpa-pilot] renderer load failed: ERR_FAILED (-2) while loading
+//        file:///opt/CGPA-Pilot/resources/app.asar/dist/index.html
+//    1.0.24 had dist unpacked but still loaded through the archive's marker;
+//    1.0.25 "fixed" it by putting dist INSIDE the archive — same failure. The
+//    actual fix is both halves together: `asarUnpack: ["dist/**/*"]` so real
+//    files exist, and a candidate order that loads the real
+//    `resources/app.asar.unpacked/dist/index.html` (electron/rendererPath.ts).
 //
 // 3. `autoInstallOnAppQuit` (electron-updater's default) installs a downloaded
 //    update from the quit handler — on Linux that means apt/pkexec mid-exit, and
@@ -53,6 +68,16 @@ import { autoUpdater } from 'electron-updater';
 //    The hook now always sets root:root 4755, and the check above is the safety
 //    net for installs where that chmod could not happen (read-only /opt, a
 //    hand-copied AppImage folder, an extract that dropped the setuid bit).
+//
+// 5. (v1.0.27) A renderer that cannot start at all — a kernel refusing the
+//    sandbox it wants (`Zygote could not fork: process_type renderer`,
+//    `write: Broken pipe`, then `Segmentation fault (core dumped)`) — used to
+//    leave a dead or empty window with only a terminal traceback to explain it.
+//    Now nothing paints without a plan B: the launch runs a short ladder of
+//    progressively more conservative modes (electron/launchMode.ts), remembers
+//    the one that worked in <userData>/launch-mode.json, and an unpainted launch
+//    escalates instead of staying blank. `cgpa-pilot --launch-mode-default`
+//    starts from the top again.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Packaged renders load the Vite build from `file://` (loadFile). Chromium
@@ -127,33 +152,152 @@ if (sandboxFallback) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// LAUNCH MODES — a window that cannot paint must not need a bug report
+//
+// A Linux launch can fail for reasons invisible from outside and specific to the
+// machine: a kernel that will not allow the sandbox Chromium wants (the zygote
+// cannot fork, `write: Broken pipe`, a segfault where the window should be), or a
+// GPU process taking the frame down with it. None of that can be detected before
+// the launch — only that the launch did not paint. So the app walks a short ladder
+// of progressively more conservative modes and REMEMBERS the one that worked in
+// <userData>/launch-mode.json; the next start skips straight to it.
+//
+// The decision logic is pure and tested in electron/launchMode.ts; what follows is
+// the Electron glue — push the switches, watch for a paint, relaunch on failure.
+// `app:version` doubles as the liveness proof: the renderer calls it as soon as the
+// UI mounts, so a mode is only judged dead when nothing came back at all. Support
+// escape hatch: `cgpa-pilot --launch-mode-default` retries from the top.
+// ─────────────────────────────────────────────────────────────────────────
+
+const launchModeFile = () => path.join(app.getPath('userData'), 'launch-mode.json');
+const launchModeState = (): LaunchModeState | null => readLaunchState(launchModeFile());
+
+/** CLI reset > the relaunch hand-off in the environment > what worked last time. */
+const launchMode = chooseLaunchMode({ argv: process.argv, env: process.env, state: launchModeState() });
+/** Why we are in this mode — quoted on the diagnostic page and in the logs. */
+const lastLaunchFailure = launchMode > 0 ? launchModeState()?.reason : undefined;
+
+for (const flag of launchFlags(launchMode, process.argv)) app.commandLine.appendSwitch(flag);
+if (launchMode > 0) {
+  const entry = LAUNCH_MODES[launchMode];
+  console.warn(
+    `[cgpa-pilot] launch mode "${entry.name}" (${entry.note})` +
+      (lastLaunchFailure ? `\n              previous launch failed: ${lastLaunchFailure}` : '') +
+      `\n              flags: ${entry.flags.map((f) => '--' + f).join(' ') || 'none'}` +
+      '\n              remembered in <userData>/launch-mode.json — to start over:' +
+      ' `cgpa-pilot --launch-mode-default`'
+  );
+}
+
+/**
+ * Leave the mode that did not paint. A renderer failure usually takes the process
+ * down with it, so recovery is a *relaunch* in the next mode — and since a hard
+ * crash can happen before the state file is written, the new mode is also handed
+ * to the child through the environment. False means "nothing left to try": the
+ * caller shows the diagnostic page instead of exiting into silence, which is also
+ * what closes the relaunch loop.
+ */
+/** How many relaunches this process has queued — never more than one. */
+let escalationsQueued = 0;
+
+function escalateLaunchMode(reason: string): boolean {
+  // Several failures can arrive at once (did-fail-load, then the watchdog, then
+  // render-process-gone). `app.relaunch()` queues a child per call, so the second
+  // one would start the app twice; the process is already leaving either way.
+  if (escalationsQueued > 0) return false;
+  escalationsQueued += 1;
+  const step = escalate(launchMode, reason, launchModeState());
+  writeLaunchState(launchModeFile(), step.state);
+  const failed = LAUNCH_MODES[clampMode(launchMode)].name;
+  if (step.next === null) {
+    console.error(
+      '[cgpa-pilot] every launch mode failed (last: ' + reason + ').\n' +
+        '              Retry from the top with: cgpa-pilot --launch-mode-default\n' +
+        '              (or delete <userData>/launch-mode.json)'
+    );
+    return false;
+  }
+  const entry = LAUNCH_MODES[step.next];
+  process.env.CGPA_LAUNCH_MODE = String(step.next); // loop guard for the child
+  console.error(
+    '[cgpa-pilot] launch mode "' + failed + '" did not paint (' + reason + ').\n' +
+      '              Relaunching once in mode "' + entry.name + '" (' + entry.note + ').'
+  );
+  app.relaunch({ args: relaunchArgs(process.argv) });
+  app.exit(0);
+  return true;
+}
+
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 let mainWindow: BrowserWindow | null = null;
 
-/** Where the built renderer can be, most-likely location first. */
+let loaderError: string | null = null;
+
+/**
+ * Where the packaged renderer is, best candidate first.
+ *
+ * The rule that matters: a `file://` load must never be handed a path that goes
+ * through `app.asar`. Node can read there (Electron patches `fs`) but Chromium's
+ * loader cannot, and that mismatch is what produced two blank windows — see note
+ * 2 in the header. The whole `dist` tree is therefore asarUnpacked, the real
+ * `app.asar.unpacked/dist/index.html` is preferred, and the archive path stays
+ * last. The ordering itself is pure (electron/rendererPath.ts) and tested.
+ */
 function rendererEntryCandidates(): string[] {
-  const rel = path.join('dist', 'index.html');
-  const appAsar = app.getAppPath(); // …/resources/app.asar (or the loose app dir in dev)
-  const list = [
-    // Normal packaged layout: everything lives inside app.asar.
-    path.join(__dirname, '..', rel),
-    path.join(appAsar, rel),
-    // Belt and braces: if a build ever ships with dist/** unpacked again
-    // (asarUnpack), the bytes live in the sibling directory, not the archive.
-    path.join(path.dirname(appAsar), 'app.asar.unpacked', rel),
-  ];
-  return [...new Set(list)];
+  return orderRendererCandidates(rendererCandidatePaths(app.getAppPath(), __dirname), (file) => {
+    try {
+      return statSync(file).size > 0;
+    } catch {
+      return false;
+    }
+  });
 }
 
-/** The first candidate that can actually be read, or null. */
-function resolveRendererEntry(): string | null {
-  if (isDev) return null;
-  for (const file of rendererEntryCandidates()) {
-    try {
-      if (existsSync(file) && readFileSync(file).length > 0) return file;
-    } catch {
-      /* try the next candidate */
-    }
+/** Which of the candidates this process is on — a retry advances it. */
+let rendererEntryIndex = 0;
+
+/** The live window's "this launch painted" hook, owned by the diagnostics wiring. */
+let markRendererAlive: (() => void) | null = null;
+
+/**
+ * Resolve the renderer entry to load. `fromIndex` exists because
+ * `rendererEntryCandidates()` is deterministic: a retry that started from 0 would
+ * hand back the exact path that just failed.
+ */
+function resolveRendererEntry(fromIndex = 0): string | null {
+  const ordered = rendererEntryCandidates();
+  const found = pickRendererEntry(
+    ordered,
+    (file) => {
+      try {
+        return readFileSync(file).includes('<div id="root">');
+      } catch {
+        return false;
+      }
+    },
+    fromIndex,
+  );
+  if (found) {
+    rendererEntryIndex = Math.max(0, indexOfEntry(ordered, found));
+    return found;
+  }
+  // Nothing carried the marker: load the first candidate anyway rather than
+  // guarantee a white screen, but say why.
+  if (ordered.length > fromIndex) {
+    rendererEntryIndex = fromIndex;
+    loaderError = 'dist/index.html at ' + ordered[fromIndex] + ' has no #root element';
+    return ordered[fromIndex];
+  }
+  loaderError = 'no packaged renderer found — looked for dist/index.html in:\n' + ordered.join('\n');
+  return null;
+}
+
+/** The next candidate worth loading after the current one, or null. */
+function nextCandidateEntry(): { file: string; index: number } | null {
+  const ordered = rendererEntryCandidates();
+  for (let i = rendererEntryIndex + 1; i < ordered.length; i++) {
+    if (existsSync(ordered[i])) return { file: ordered[i], index: i };
   }
   return null;
 }
@@ -239,86 +383,29 @@ async function readBrandImageBytes(source: string): Promise<Buffer | null> {
   return null;
 }
 
-/** Write only when the content differs, so every launch is not a disk churn. */
-function writeIfChanged(file: string, bytes: Buffer | string, mode = 0o644): boolean {
-  try {
-    const next = typeof bytes === 'string' ? Buffer.from(bytes, 'utf8') : bytes;
-    if (existsSync(file)) {
-      const current = readFileSync(file);
-      if (current.length === next.length && current.equals(next)) return false;
-    }
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, next, { mode });
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * The launcher icon and the menu entry, from the persisted brand logo. Both no-op
+ * when nothing changed, and both are re-asserted on every start — see
+ * electron/brandInstall.ts for why user files are the only ones worth writing.
+ */
+function brandInstallOptions(execName: string, productName?: string | null): BrandInstallOptions {
+  return {
+    home: app.getPath('home'),
+    iconFile: brandIconFile(),
+    execName,
+    productName: productName ?? null,
+    // An AppImage's launcher entry carries the product name instead of the
+    // executable name; the override must reuse whichever file exists.
+    desktopAlias: app.name ? path.basename(app.name).replace(/\s+/g, '-') : null,
+  };
 }
 
 function installUserLauncherIcon(execName: string): void {
-  if (process.platform !== 'linux') return;
-  const icon = brandIconFile();
-  if (!existsSync(icon)) return;
-  const home = app.getPath('home');
-  for (const size of HICOLOR_SIZES) {
-    const dir = path.join(home, '.local', 'share', 'icons', 'hicolor', `${size}x${size}`, 'apps');
-    const link = path.join(dir, `${execName}.png`);
-    let target: string | null = null;
-    try {
-      target = readlinkSync(link); // throws when it is a plain file (older build) → rewrite below
-    } catch {
-      target = null;
-    }
-    if (target === icon) continue; // already ours, nothing to do
-    try {
-      mkdirSync(dir, { recursive: true });
-      try {
-        unlinkSync(link);
-      } catch {
-        /* nothing there yet */
-      }
-      try {
-        symlinkSync(icon, link);
-      } catch {
-        // No symlink permission (some mounts) → write the bytes instead.
-        writeFileSync(link, readFileSync(icon));
-      }
-    } catch {
-      /* best effort — the window icon is already applied */
-    }
-  }
-  // Rehash the caches so the menu shows the new logo without a logout. Both are
-  // optional and exist only on desktop systems; failures are irrelevant.
-  spawnSync('gtk-update-icon-cache', ['-q', '-t', '-f', path.join(home, '.local', 'share', 'icons', 'hicolor')]);
-  spawnSync('update-desktop-database', [path.join(home, '.local', 'share', 'applications')]);
+  installLauncherIcon(brandInstallOptions(execName));
 }
 
-/**
- * Mirror the packaged .desktop entry into ~/.local/share/applications with the
- * admin's product name, so Activities/GNOME (and any hand-written launcher)
- * label the app the way the administrator named it while keeping the working
- * Exec/Icon of the installed entry. Skipped when no system entry exists — an
- * invented Exec would outlive uninstalls and break the launcher.
- */
 function installUserDesktopEntry(execName: string, productName: string | undefined): void {
-  if (process.platform !== 'linux') return;
-  const system = path.join('/usr/share/applications', `${execName}.desktop`);
-  if (!existsSync(system)) return;
-  let text: string;
-  try {
-    text = readFileSync(system, 'utf8');
-  } catch {
-    return;
-  }
-  const name = (productName ?? '').trim();
-  const lines = text.split(/\r?\n/).map((line) => {
-    if (name && /^Name=/.test(line)) return `Name=${name}`;
-    if (/^Icon=/.test(line)) return `Icon=${execName}`;
-    if (/^StartupWMClass=/.test(line)) return `StartupWMClass=${execName}`;
-    return line;
-  });
-  const userDir = path.join(app.getPath('home'), '.local', 'share', 'applications');
-  writeIfChanged(path.join(userDir, `${execName}.desktop`), lines.join('\n'));
+  installDesktopEntry(brandInstallOptions(execName, productName));
 }
 
 /** Remember the admin's product name for the window/menu titles. */
@@ -344,12 +431,17 @@ function escapeHtml(s: string): string {
 function loadLoaderError(win: BrowserWindow, reason: string) {
   if (win.isDestroyed()) return;
   const deb = `cgpa-pilot-${app.getVersion()}-amd64.deb`;
+  const tried = rendererEntryCandidates()[Math.max(0, rendererEntryIndex)] ?? '';
+  const archiveWarning = insideArchive(tried)
+    ? ' The path tried is inside the asar archive, which Chromium cannot read —' +
+      ' this build must ship dist unpacked (asarUnpack).'
+    : '';
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>CGPA Pilot — could not start</title></head>
 <body style="margin:0;padding:40px;background:#0f172a;color:#e2e8f0;font:15px/1.65 system-ui,sans-serif">
   <div style="max-width:680px">
     <h1 style="font-size:22px;margin:0 0 6px">CGPA Pilot could not load its interface</h1>
     <p style="color:#94a3b8;margin:0 0 22px">${escapeHtml(reason)}</p>
-    <p style="color:#94a3b8;margin:0 0 8px">Searched for <code>dist/index.html</code> in:</p>
+    <p style="color:#94a3b8;margin:0 0 8px">Searched for <code>dist/index.html</code> in (real paths first):</p>
     <ul style="margin:0 0 22px;padding-left:20px;color:#cbd5e1">${rendererEntryCandidates()
       .map((f) => `<li><code>${escapeHtml(f)}</code></li>`)
       .join('')}</ul>
@@ -358,6 +450,10 @@ function loadLoaderError(win: BrowserWindow, reason: string) {
       (that also removes pre-1.0.25 files left in <code>/opt/CGPA Pilot</code>):
     </p>
     <pre style="background:#020617;padding:14px 16px;border-radius:8px;overflow:auto;color:#a5b4fc">sudo apt install ./${escapeHtml(deb)}</pre>
+    <p style="color:#64748b;font-size:13px;margin-top:18px">launch mode:
+      <code>${escapeHtml(LAUNCH_MODES[clampMode(launchMode)].name)}</code>${escapeHtml(
+        lastLaunchFailure ? ' — ' + lastLaunchFailure : ' — no previous failure recorded'
+      )}${escapeHtml(archiveWarning)}</p>
   </div>
 </body></html>`;
   void win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).catch(() => {
@@ -394,11 +490,11 @@ function createWindow() {
   });
 }
 
-/** Load the packaged renderer, falling back between asar/unpacked layouts. */
+/** Load the packaged renderer, preferring real paths over archive paths. */
 async function loadRenderer(win: BrowserWindow) {
   const entry = resolveRendererEntry();
   if (entry == null) {
-    loadLoaderError(win, 'No readable dist/index.html inside the application package.');
+    loadLoaderError(win, loaderError ?? 'No readable dist/index.html inside the application package.');
     return;
   }
   try {
@@ -409,28 +505,93 @@ async function loadRenderer(win: BrowserWindow) {
   }
 }
 
-/** Turns "a blank window" into a console record, so field reports are actionable. */
+/**
+ * Turns "a blank window" into a record AND into a recovery action. A main-frame
+ * load failure or a dead renderer first steps through the other renderer
+ * locations, then walks the launch ladder (see LAUNCH MODES above) — instead of
+ * leaving the user alone with a dark rectangle.
+ */
 function wireRendererDiagnostics(win: BrowserWindow) {
-  let loaded = false;
-  let retried = false;
+  let painted = false;
+  let retrying = false;
+
+  const recordPaint = () => {
+    if (painted) return;
+    painted = true;
+    // Whatever mode demonstrably painted becomes the remembered one. On a normal
+    // launch the file already says that, so nothing is written.
+    const next = markPainted(launchMode, launchModeState());
+    if (next) writeLaunchState(launchModeFile(), next);
+  };
+
+  // Only a real document counts: the diagnostic page finishes loading too, and
+  // treating that as success would hide the failure forever.
+  const paintedUrl = () => !win.webContents.getURL().startsWith('data:');
   win.webContents.on('did-finish-load', () => {
-    loaded = true;
+    if (paintedUrl()) recordPaint();
   });
-  win.webContents.on('did-fail-load', (_event, errorCode, errorText, validatedURL) => {
-    if (loaded || errorCode === -3 /* ERR_ABORTED — a superseded load */) return;
-    const detail = `${errorText || 'ERR_FAILED'} (${errorCode}) while loading ${validatedURL}`;
-    console.error('[cgpa-pilot] renderer load failed:', detail);
-    // A file:// failure can mean "the archive has the entry but the bytes were
-    // unpacked next to it" — retry once against the candidate that really
-    // reads, and only then give up with the diagnostic page.
-    const entry = resolveRendererEntry();
-    if (!retried && entry != null && pathToFileURL(entry).href !== validatedURL) {
-      retried = true;
-      void win.loadFile(entry).catch(() => loadLoaderError(win, detail));
+  win.webContents.on('dom-ready', () => {
+    if (paintedUrl()) recordPaint();
+  });
+  // Handed to `noteRendererAlive()` so a call from the renderer can mark the
+  // paint — the typed BrowserWindow event list has no room for a custom channel.
+  markRendererAlive = recordPaint;
+  win.on('closed', () => {
+    if (markRendererAlive === recordPaint) markRendererAlive = null;
+  });
+
+  const recover = (detail: string) => {
+    escalateLaunchMode(detail); // exits the process when a next mode exists
+    loadLoaderError(win, `${detail}\n\nEvery renderer location was tried and every launch mode failed.`);
+  };
+
+  const fail = (detail: string) => {
+    if (painted || retrying) return;
+    const next = nextCandidateEntry();
+    if (next) {
+      retrying = true;
+      rendererEntryIndex = next.index;
+      console.error(`[cgpa-pilot] renderer did not start (${detail}); trying ${next.file}`);
+      void win
+        .loadFile(next.file)
+        .catch(() => undefined)
+        .finally(() => {
+          retrying = false;
+        });
       return;
     }
-    if (!validatedURL.startsWith('data:')) loadLoaderError(win, detail);
+    console.error('[cgpa-pilot] renderer did not start:', detail);
+    recover(detail);
+  };
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorText, validatedURL) => {
+    if (painted || errorCode === -3 /* ERR_ABORTED — a superseded load */) return;
+    if (String(validatedURL).startsWith('data:')) return; // the diagnostic page itself
+    fail(`${errorText || 'ERR_FAILED'} (${errorCode}) while loading ${validatedURL}`);
   });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    fail(`renderer exited (reason: ${details.reason}, code: ${details.exitCode ?? 'n/a'})`);
+  });
+  win.on('unresponsive', () => {
+    // A hung window is reported, never relaunched: restarting something that may
+    // answer a second later would be worse than the hang.
+    console.warn('[cgpa-pilot] window reported unresponsive (no action taken)');
+  });
+
+  // Silence is a failure too: a renderer that dies quietly (a zygote that could
+  // not fork, a GPU process taking the frame down) sends no event at all.
+  setTimeout(() => {
+    if (!painted) fail(`no painted renderer within ${STARTUP_GRACE_MS / 1000}s`);
+  }, STARTUP_GRACE_MS);
+}
+
+/**
+ * Mark the launch good from the renderer side (see LAUNCH MODES). Emitted on the
+ * window so the handler that owns the "painted" bookkeeping records it: a mode
+ * whose UI is demonstrably running is never escalated.
+ */
+function noteRendererAlive() {
+  markRendererAlive?.();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -528,7 +689,27 @@ app.on('window-all-closed', () => {
 // ─────────────────────────────────────────────────────────────────────────
 // IPC
 // ─────────────────────────────────────────────────────────────────────────
-ipcMain.handle('app:version', () => app.getVersion());
+/**
+ * The renderer's first call, and the proof of life for the launch ladder: if the
+ * UI got far enough to ask, this launch is good.
+ */
+ipcMain.handle('app:version', () => {
+  noteRendererAlive();
+  return app.getVersion();
+});
+
+/** Support/diagnostics surface — how the app is launching, and why. */
+ipcMain.handle('app:launch-info', () => ({
+  mode: launchMode,
+  name: LAUNCH_MODES[clampMode(launchMode)].name,
+  note: LAUNCH_MODES[clampMode(launchMode)].note,
+  flags: launchFlags(launchMode, []).map((f) => `--${f}`),
+  previousFailure: lastLaunchFailure ?? null,
+  sandboxFallback: sandboxFallback ?? null,
+  rendererEntry: rendererEntryCandidates()[rendererEntryIndex] ?? null,
+  loaderError,
+  stateFile: launchModeFile(),
+}));
 
 /**
  * branding:setIcon — the renderer hands us the admin's app logo (a data: URL or

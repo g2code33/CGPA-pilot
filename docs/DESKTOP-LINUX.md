@@ -1,7 +1,9 @@
-# Desktop packaging — Linux/.deb notes (v1.0.25, sandbox policy revised in v1.0.26)
+# Desktop packaging — Linux/.deb notes
 
-Everything here is enforced by `test/desktopPackaging.test.mjs`, so a regression
-fails `npm test` instead of shipping a .deb that will not open.
+*Rules as of v1.0.27: sandbox policy (1.0.26), the asar rule (1.0.27) and the
+launch-mode ladder (1.0.27). Each one exists because shipping without it produced
+a bug report — they are enforced by `test/desktopPackaging.test.mjs`,
+`test/desktopRendererPath.test.mjs` and `test/brandDesktopInstall.test.mjs`.*
 
 ## 1. The install path must not contain a space
 
@@ -40,31 +42,55 @@ hook deletes whatever that leaves behind.
 Electron's own data directory is unaffected: `app.getName()` still reads the
 top-level `name` (`cgpa-pilot`), so `~/.config/cgpa-pilot` keeps the user's data.
 
-## 2. `dist/` must stay inside `app.asar`
+## 2. The renderer must be loaded from a REAL file, never through `app.asar`
 
-`asarUnpack: ["dist/**/*"]` was the second half of the blank-window bug. Unpacked
-files are *removed* from the archive and only a marker stays:
+Two releases shipped a blank window from getting this half-right each time:
 
-```jsonc
-// header of app.asar with asarUnpack: ["dist/**/*"]
-{ "dist": { "files": { "index.html": { "size": 1224, "unpacked": true } } } }
-// vs. without asarUnpack
-{ "dist": { "files": { "index.html": { "size": 1224, "offset": "1713163", … } } } }
+| version | `asarUnpack` | what `loadFile()` was given | result |
+|---|---|---|---|
+| 1.0.24 | `["dist/**/*"]` | `…/app.asar/dist/index.html` (the marker) | `ERR_FAILED (-2)` |
+| 1.0.25 | *(removed)* | `…/app.asar/dist/index.html` (inside the archive) | `ERR_FAILED (-2)` |
+| 1.0.27 | `["dist/**/*"]` | `…/app.asar.unpacked/dist/index.html` (real) | paints |
+
+The rule: **a `file://` load must never be handed a path that goes through
+`app.asar`.** Node can read there — Electron patches `fs` to understand the
+archive and its "unpacked" markers — but Chromium's `file://` loader reads the
+real filesystem, so `existsSync()` says yes while the load says *no such URL*:
+
+```
+electron: Failed to load URL: file:///opt/CGPA-Pilot/resources/app.asar/dist/index.html with error: ERR_FAILED
 ```
 
-Node's `fs` shim follows the marker into `app.asar.unpacked`, but Chromium's
-`file://` loader — which is what `win.loadFile()` uses — does not, so the load
-rejects and the log shows:
+→ a dark, empty window, then `Segmentation fault (core dumped)` when the dead
+renderer takes the process with it.
 
-```
-electron: Failed to load URL: file:///opt/…/resources/app.asar/dist/index.html with error: ERR_FAILED
-```
+So both halves are required, and neither alone is enough:
 
-→ a dark, empty window. Nothing in this app needs an unpacked file (no native
-module, no child process reading `dist/`), so `asarUnpack` is gone.
-`electron/main.ts` still probes the `app.asar.unpacked` layout as a fallback and,
-if nothing is readable, renders a diagnostic page with the searched paths
-instead of an empty rectangle.
+1. `build.asarUnpack: ["dist/**/*"]` in `package.json` — puts real bytes on disk
+   (`resources/app.asar.unpacked/dist/`). `asar: true` stays; the archive still
+   holds `dist-electron/` and `package.json`.
+2. `electron/rendererPath.ts` — `rendererCandidatePaths()` lists the unpacked
+   path first, the loose `dist-electron/../dist` second (dev), the archive path
+   last; `orderRendererCandidates()` then ranks existing real paths above
+   existing archive paths. `main.ts` walks that list by index, so a retry loads a
+   *different* file — re-resolving from 0 would return the same path that just
+   failed.
+
+If nothing is readable the window shows a diagnostic page (searched paths, the
+active launch mode, the reinstall command) instead of an empty rectangle.
+
+`nativeImage.createFromPath()` has the same limitation as Chromium here — that is
+why the window icon is read from bytes: `readFileSync` (asar-aware) →
+`createFromBuffer` (see `windowIcon()`).
+
+This is not Linux-only: `asar` / `asarUnpack` apply to the Windows build too, so the
+same code path runs there (the real file is
+`resources\app.asar.unpacked\dist\index.html`). `test/desktopAsarLayout.test.mjs`
+packs a real archive and asserts which candidate wins, and `insideArchive()` matches
+backslash paths as well as slash ones (`test/desktopRendererPath.test.mjs`).
+Android/iOS have no archive at all — Capacitor serves the bundle from its own asset
+layer — so the only thing they share with this rule is the logo source: the same
+build-time refresh (`docs/BRANDING.md`).
 
 ## 3. Icons: sizes, transparency, WM_CLASS
 
@@ -137,7 +163,66 @@ sudo chown root:root /opt/CGPA-Pilot/chrome-sandbox && sudo chmod 4755 /opt/CGPA
 Installing the 1.0.26 `.deb` does that by itself — the release artefact is the
 fix; no manual step is needed on an upgrade.
 
-## 5. Auto-update
+## 5. A launch that cannot paint escalates, once
+
+Some failures cannot be detected before the launch — only that nothing painted:
+
+```
+Zygote could not fork: process_type renderer process, numfds 4, child_pid -1
+write: Broken pipe
+Segmentation fault (core dumped)
+```
+
+(a kernel or sandbox policy Chromium's renderer cannot start under, a GPU process
+that dies with the frame, a read-only `/opt` that swallowed the `chmod 4755`).
+The app therefore walks a short ladder and **remembers the mode that worked** in
+`<userData>/launch-mode.json`, so nobody watches the dance twice:
+
+| mode | switches | for |
+|---|---|---|
+| 0 `default` | none | a correct install — sandboxed |
+| 1 `no-sandbox` | `--no-sandbox` | no usable SUID helper / blocked userns |
+| 2 `no-zygote` | `--no-sandbox --no-zygote --disable-gpu` | kernels where the zygote or the GPU process is what dies |
+
+Mechanics (`electron/launchMode.ts` for the logic, `electron/main.ts` for the
+Electron glue):
+
+* A launch is "painted" when the renderer fires `did-finish-load`/`dom-ready` on a
+  non-`data:` URL **or** calls `app:version` (the UI's first IPC call). The
+  diagnostic page never counts — otherwise it would hide the failure forever.
+* No signal within `STARTUP_GRACE_MS` (12 s) is a failure too: silence is what a
+  renderer that dies quietly looks like.
+* Failure → other candidate paths first, then `escalate()` → write the state file,
+  set `CGPA_LAUNCH_MODE` for the child (a crash can happen before the write),
+  `app.relaunch()`, `app.exit(0)`. A mode that paints rewrites the file with
+  `failures: 0` and `paintedAt`, and becomes the remembered one.
+* Exhausted ladder → **no relaunch**; the diagnostic page says so. That is the loop
+  guard: without the env hand-off a machine where every mode dies would restart
+  forever.
+* Support hatch: `cgpa-pilot --launch-mode-default` (or delete
+  `~/.config/cgpa-pilot/launch-mode.json`) starts from mode 0 again. `window.cgpaPilot.getLaunchInfo()`
+  returns the active mode, its reason, the renderer path and the sandbox fallback —
+  readable from DevTools without a log file.
+
+Windows and macOS are unaffected: there is no SUID helper and no zygote re-exec, so
+mode 0 is the only rung that matters (the flags are still applied if a machine ever
+needs them).
+
+## 6. Verifying an install without launching anything
+
+```bash
+npm run verify:branding -- --install /opt/CGPA-Pilot
+```
+
+Reports, per machine: whether `app.asar.unpacked/dist/index.html` exists and
+contains `#root` (the two ways this goes blank), `chrome-sandbox` owner+mode, the
+`/usr/bin/cgpa-pilot` wrapper, the brand logo, all nine hicolor symlinks and
+whether their bytes match it, the `~/.local/share/applications` override
+(`Name`/`Icon`/`StartupWMClass`/`Exec`), and the remembered launch mode with the
+reason it escalated. Exit code 1 = a failure was found; it is a diagnostic, not a
+fix — but it names the `chown`/`chmod` or reinstall command for each problem.
+
+## 7. Auto-update
 
 `electron-updater` defaults `autoInstallOnAppQuit` to true: the downloaded update
 is installed from a quit handler, which runs `apt`/`pkexec` on Linux and logs
@@ -156,12 +241,14 @@ downloading") instead of doing nothing.
 
 ```bash
 sudo apt remove cgpa-pilot                     # drops the old /opt/CGPA Pilot package files too
-sudo apt install ./cgpa-pilot-1.0.26-amd64.deb
+sudo apt install ./cgpa-pilot-1.0.27-amd64.deb
 hash -r; cgpa-pilot                            # or log out once so GNOME reloads the icon cache
 ```
 
-If the launcher icon still shows the old logo after upgrading, the desktop
-environment is reading a stale cache:
+Run the check above first — on 1.0.27+ a stale logo is almost always a *partially*
+written theme, which the app re-asserts on every start. If the launcher icon still
+shows the old logo after upgrading, the desktop environment is reading a stale
+cache:
 
 ```bash
 gtk-update-icon-cache -q -t -f ~/.local/share/icons/hicolor   # only if branding installed its override

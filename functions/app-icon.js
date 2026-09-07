@@ -26,9 +26,15 @@ export const onRequest = async (ctx) => {
       cf: { cacheTtl: 0 },
     });
     if (res.ok && res.status === 200) {
-      const type = res.headers.get('content-type');
-      if (type && type.startsWith('image/')) headers.set('content-type', type);
-      return new Response(res.body, { status: 200, headers });
+      const type = res.headers.get('content-type') ?? '';
+      // Only bytes that can be an icon are worth passing on: an error page or a
+      // JSON body served as 200 would be cached for the TTL and shown broken,
+      // which is worse than the bundled default. An asset uploaded without
+      // metadata arrives as octet-stream, so that stays valid.
+      if (/^image\//i.test(type) || /^application\/octet-stream$/i.test(type)) {
+        if (/^image\//i.test(type)) headers.set('content-type', type);
+        return new Response(res.body, { status: 200, headers });
+      }
     }
   } catch {
     /* Worker unreachable — fall through to the bundled default below. */

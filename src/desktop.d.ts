@@ -31,6 +31,19 @@ export interface CgpaPilotApi {
     logo: string,
     name?: string
   ) => Promise<{ ok: boolean; changed?: boolean; message?: string }>;
+  /** Optional: read-only launch diagnostics (which launch mode is active, why,
+   *  which renderer path was loaded). Support for "blank window" reports. */
+  getLaunchInfo?: () => Promise<{
+    mode: number;
+    name: string;
+    note: string;
+    flags: string[];
+    previousFailure: string | null;
+    sandboxFallback: string | null;
+    rendererEntry: string | null;
+    loaderError: string | null;
+    stateFile: string;
+  }>;
   onUpdaterStatus: (
     callback: (status: UpdaterStatus) => void
   ) => () => void;

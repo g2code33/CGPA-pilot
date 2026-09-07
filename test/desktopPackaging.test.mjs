@@ -6,9 +6,14 @@
 //   • a space in productName      → /opt/CGPA Pilot → Chromium cannot exec its
 //                                   own zygote → "LaunchProcess: failed to
 //                                   execvp: /opt/CGPA" + FATAL/SIGTRAP.
-//   • dist/** in asarUnpack       → the renderer bytes leave app.asar, the
-//                                   file:// loader follows only the marker →
-//                                   ERR_FAILED → blank window.
+//   • loading through app.asar    → Chromium's file:// loader reads the REAL
+//                                   filesystem and cannot look inside the
+//                                   archive (Node's fs shim can, which is what
+//                                   made this so easy to miss) → ERR_FAILED →
+//                                   blank window. dist/** MUST be asarUnpacked
+//                                   AND the real unpacked path must be the one
+//                                   handed to loadFile — 1.0.24 and 1.0.25 each
+//                                   got half of that wrong.
 //   • a single icon.png for Linux → lands in hicolor/1024x1024, which is not a
 //                                   directory hicolor's index.theme declares →
 //                                   no logo in the menu/dock.
@@ -49,16 +54,29 @@ test('productName is space-free (Linux installs to /opt/<productName>)', () => {
   );
 });
 
-test('the renderer is never asar-unpacked', () => {
+test('the renderer ships unpacked AND is loaded from a real path', () => {
   const unpack = build.asarUnpack ?? [];
-  for (const pattern of unpack) {
-    assert.doesNotMatch(
-      String(pattern),
-      /(^|[/*])dist(\/|$)/,
-      `asarUnpack entry "${pattern}" removes dist/ from app.asar; loadFile() then fails with ERR_FAILED`
-    );
-  }
-  assert.ok(build.files.includes('dist/**/*'), 'dist/**/* must ship inside the asar');
+  assert.ok(
+    unpack.some((p) => String(p).replace(/\\/g, '/').startsWith('dist/')),
+    `asarUnpack must keep dist/ out of the archive (got ${JSON.stringify(unpack)}): a file:// ` +
+      'load can only read real files, so a renderer inside app.asar never paints'
+  );
+  assert.ok(build.files.includes('dist/**/*'), 'dist/**/* must still be listed in files');
+
+  // The other half: the entry point must be RESOLVED to a real path. A build can
+  // ship dist unpacked and still hand loadFile the app.asar path (that is exactly
+  // what 1.0.24 did) — so the loader must prefer app.asar.unpacked.
+  const main = readFileSync(`${root}/electron/main.ts`, 'utf8');
+  assert.match(
+    main,
+    /from '\.\/rendererPath'/,
+    'main.ts must delegate renderer-entry ordering to electron/rendererPath.ts (unit-tested)'
+  );
+  assert.doesNotMatch(
+    main,
+    /loadFile\(\s*path\.join\(app\.getAppPath\(\)/,
+    'loadFile must never be handed a path built from app.getAppPath() (the archive) directly'
+  );
 });
 
 test('packaged files stay lean (no build/ or icon sources in the app)', () => {

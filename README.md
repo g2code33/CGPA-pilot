@@ -86,12 +86,22 @@ npm run mobile:sync    # build web + cap sync android
 - **Linux** → `cgpa-pilot-<v>-x64.deb` + `.AppImage` + `latest-linux.yml`
 - **Android** → Capacitor `cgpa-pilot-<v>.apk`
 
-> **Desktop packaging rules** (why `productName` is `CGPA-Pilot`, why `dist/` is
-> never `asarUnpack`ed, how the Linux/Windows icons are wired): `docs/DESKTOP-LINUX.md`.
-> If an installed app "does nothing" on Linux — `LaunchProcess: failed to execvp`,
-> a `FATAL:zygote_host_impl_linux.cc` or `FATAL:setuid_sandbox_host.cc` trap, a blank
-> window or a missing logo — that file has the cause and the repair; `npm test`
-> guards all of it.
+> **Desktop packaging rules** (why `productName` is `CGPA-Pilot`, why the renderer
+> must be `asarUnpack`ed *and* loaded from its real path, how the Linux/Windows icons
+> are wired, and what the app does when a machine cannot paint at all):
+> `docs/DESKTOP-LINUX.md`. If an installed app "does nothing" —
+> `LaunchProcess: failed to execvp`, a `FATAL:zygote_host_impl_linux.cc` or
+> `FATAL:setuid_sandbox_host.cc` trap, `Zygote could not fork`, `ERR_FAILED` on
+> `app.asar/dist/index.html`, a blank window or a stale logo — that file has the cause
+> and the repair, and so does:
+>
+> ```bash
+> npm run verify:branding -- --install /opt/CGPA-Pilot   # an installed Linux app
+> npm run verify:branding                                # what users are served
+> ```
+>
+> `npm test` guards all of it, including the launch-mode escalation ladder and the
+> renderer path ordering against a real packed `app.asar`.
 >
 > **Branding rules** (how the logo the administrator sets reaches the tab icon, the
 > installed PWA icon, the desktop window/launcher icon and the shipped installer
