@@ -1,0 +1,991 @@
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { resolveContext, institutionLabel } from './config/context';
+import { appLogoImage, appName, iconElement } from './config/branding';
+import { resolveAssetUrl } from './config/assets';
+import type { AppAppearance } from './config/types';
+import { getRuntimeCatalog } from './config/runtime';
+import {
+  getPendingConfigUpdate,
+  clearPendingConfigUpdate,
+  onConfigUpdate,
+} from './services/configSync';
+import { useInstitution, listUniversities } from './state/institutionSelection';
+import { UpdateButton } from './components/UpdateButton';
+import { ClearButton } from './components/ClearButton';
+import { UpdateBanner } from './components/UpdateBanner';
+import { AppUpdateBanner } from './components/AppUpdateBanner';
+import { useAcademic } from './state/store';
+import { useDerived } from './state/derived';
+import { permissionOn } from './permissions';
+import { getAiStatusShared } from './services/aiChat';
+import type { AiPublicStatus } from './admin/aiSettings';
+import { AiAssistant } from './views/AiAssistant';
+import { toolNameFor, toolHintFor } from './services/semesterModel';
+import {
+  installBeforeUnloadGuard,
+  hasEnteredAcademicData,
+} from './services/sessionGuard';
+import { Calculate } from './views/Calculate';
+import { Target } from './views/Target';
+import { NextSemester } from './views/NextSemester';
+import { WhatIf } from './views/WhatIf';
+import { FlightPathView } from './views/FlightPath';
+import { Milestones } from './views/Milestones';
+import { Privacy } from './views/Privacy';
+import { InstitutionSelector } from './components/InstitutionSelector';
+import { Wordmark, Tagline } from './components/Wordmark';
+import { Info } from './components/ui';
+import { ideaTip } from './infoTips';
+import { useViewMode } from './platform';
+import { SkySplash } from './components/SkySplash';
+import { AppGlyph } from './components/AppGlyph';
+import { fmt2 } from './util/format';
+
+export type Screen =
+  | 'home'
+  | 'calculate'
+  | 'target'
+  | 'next'
+  | 'whatif'
+  | 'flight'
+  | 'milestones'
+  | 'ai'
+  | 'privacy';
+
+/**
+ * Admin "live preview" hooks — the real student app is embedded in the
+ * admin console's publish preview and driven through this interface:
+ *  • `nav`   — "jump to this screen" (the counter `n` re-triggers repeats)
+ *  • `onScreen` — report the current screen back to the preview chrome
+ *  • `badges` — amber "changes live here" dots on tool tiles
+ * When absent the app behaves exactly as it always did.
+ */
+export interface StudentPreviewControls {
+  nav?: { screen: Screen; n: number } | null;
+  onScreen?: (s: Screen) => void;
+  badges?: Partial<Record<string, string>>;
+  /** Preview mode: skip the intro splash and fill the embedding container. */
+  isPreview?: boolean;
+}
+
+const TOOLS: {
+  id: Exclude<Screen, 'home' | 'privacy'>;
+  icon: string;
+  title: string;
+  tagline: string;
+  emoji: string;
+  needsData: boolean;
+}[] = [
+  {
+    id: 'calculate',
+    icon: '🧮',
+    emoji: '📝',
+    title: 'My results',
+    tagline: 'Enter grades & see your confirmed CGPA',
+    needsData: false,
+  },
+  {
+    id: 'target',
+    icon: '🎯',
+    emoji: '🎯',
+    title: 'Target',
+    tagline: 'Pick a goal — see if it is reachable',
+    needsData: true,
+  },
+  {
+    id: 'next',
+    icon: '▶️',
+    emoji: '▶️',
+    title: 'Next Semester',
+    tagline: 'Grades you need to stay on track',
+    needsData: true,
+  },
+  {
+    id: 'whatif',
+    icon: '🔀',
+    emoji: '🔀',
+    title: 'What-If',
+    tagline: 'Try different future GPAs',
+    needsData: true,
+  },
+  {
+    id: 'flight',
+    icon: '🛩️',
+    emoji: '🛩️',
+    title: 'Flight Path',
+    tagline: 'Your route to graduation',
+    needsData: true,
+  },
+  {
+    id: 'milestones',
+    icon: '🏁',
+    emoji: '🏁',
+    title: 'Milestones',
+    tagline: 'Stage-by-stage checkpoints',
+    needsData: true,
+  },
+];
+
+const SCREEN_TITLES: Partial<Record<Screen, { icon: string; title: string }>> = {
+  calculate: { icon: '🧮', title: 'My results & standing' },
+  target: { icon: '🎯', title: 'Target' },
+  next: { icon: '▶️', title: 'Next Semester' },
+  whatif: { icon: '🔀', title: 'What-If Simulator' },
+  flight: { icon: '🛩️', title: 'Flight Path' },
+  milestones: { icon: '🏁', title: 'Milestones' },
+  ai: { icon: '🤖', title: 'CGPA PILOT AI' },
+  privacy: { icon: '🔒', title: 'Privacy' },
+};
+
+// Linear order of the tool screens so every open tool can offer an obvious
+// Previous / Next at the bottom for simple thumb navigation.
+// (CGPA PILOT AI is NOT a tool — it lives on the floating 🤖 button.)
+const TOOL_ORDER = ['calculate', 'target', 'next', 'whatif', 'flight', 'milestones'] as const;
+type ToolId = (typeof TOOL_ORDER)[number];
+const isTool = (s: Screen): s is ToolId =>
+  (TOOL_ORDER as readonly string[]).includes(s);
+
+export default function App({ preview }: { preview?: StudentPreviewControls } = {}) {
+  const { state, dispatch } = useAcademic();
+  const d = useDerived();
+  // Administrator-set permissions + branding/icons ride the non-personal
+  // runtime catalog (populated at boot from the synced/cached configuration).
+  const runtime = getRuntimeCatalog();
+  const appearance: AppAppearance | undefined = runtime.appearance;
+  const splashAllowed = permissionOn('playIntroSplash');
+  const whatIfAllowed = permissionOn('allowWhatIf');
+  const [institutionSelected, setInstitutionSelected] = useState(false);
+  const [modeSelected, setModeSelected] = useState<string | null>(null);
+  // Admin live-preview skips the intro splash (the admin wants the changes now).
+  const [splashDone, setSplashDone] = useState(!splashAllowed || !!preview?.isPreview);
+  const [splashRun, setSplashRun] = useState(0);
+  const [screenRaw, setScreenRaw] = useState<Screen>('home');
+  const screen = screenRaw;
+  // Navigation also reports back to the admin's live-preview chrome.
+  function setScreen(s: Screen) {
+    setScreenRaw(s);
+    preview?.onScreen?.(s);
+  }
+  // Admin live-preview "jump to where the change lands".
+  const previewNavN = preview?.nav?.n;
+  useEffect(() => {
+    const nav = preview?.nav;
+    if (nav) setScreenRaw(nav.screen);
+  }, [previewNavN]);
+  // In admin live-preview the app lives in a container that is shorter than
+  // the viewport (the preview bar sits above it) — fill the parent instead.
+  const rootH = preview?.isPreview ? 'h-full' : 'h-[100dvh]';
+  // Which view the client should use: Electron (deb/Windows) → desktop,
+  // Android/iOS APK → mobile, web → auto-detected from the device.
+  const view = useViewMode();
+  // AI section: hidden from the tool list only when the admin has explicitly
+  // switched it OFF (server status). Unknown / offline → shown (the screen
+  // itself explains "unavailable").
+  const [aiStatus, setAiStatus] = useState<AiPublicStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    const refresh = () => {
+      // force=true: the admin can flip the AI on/off at any time — the
+      // student picks it up within ~30s (and immediately when the tab
+      // becomes visible again) without refreshing the app.
+      void getAiStatusShared(true).then((s) => {
+        if (live) setAiStatus(s);
+      });
+    };
+    refresh();
+    const iv = window.setInterval(refresh, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      live = false;
+      window.clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+  // Where the student was when they tapped the 🤖 button — the AI screen's
+  // "‹ Collapse" button returns them exactly there.
+  const [aiReturnScreen, setAiReturnScreen] = useState<Screen>('home');
+  const aiVisible = !(aiStatus && aiStatus.enabled === false);
+  const visibleTools = TOOLS.filter((t) => t.id !== 'whatif' || whatIfAllowed);
+  const visibleOrder = visibleTools.map((t) => t.id) as ToolId[];
+
+  // A newer published configuration was stored mid-session → offer an
+  // explicit "reload to apply" (never an automatic reload mid-session).
+  const [pendingCfg, setPendingCfg] = useState(getPendingConfigUpdate());
+  useEffect(() => onConfigUpdate(setPendingCfg), []);
+
+  // Replay the Sky Dash mini-game from anywhere on the opening screens.
+  function playGameAgain() {
+    setSplashRun((r) => r + 1);
+    setSplashDone(false);
+  }
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  useEffect(
+    () => installBeforeUnloadGuard(() => hasEnteredAcademicData(stateRef.current)),
+    []
+  );
+
+  // Splash — "Sky Dash": press & hold to fly the aeroplane and catch stars.
+  // Letting go lets the countdown resume and then loads the institution page.
+  if (!splashDone) {
+    return (
+      <SkySplash key={splashRun} appearance={appearance} onDone={() => setSplashDone(true)} />
+    );
+  }
+
+  // Institution selection
+  if (!institutionSelected) {
+    return (
+      <div className={`${rootH} bg-gradient-to-b from-brand-900 via-brand-800 to-brand-600 flex flex-col items-center justify-center px-5 overflow-y-auto`}>
+        {/* Replay the Sky Dash opening mini-game from the very top */}
+        <button
+          onClick={playGameAgain}
+          title="Play Sky Dash mini-game"
+          aria-label="Play the mini-game again"
+          className="fixed right-4 top-4 z-10 flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-xs font-black text-white ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25 active:scale-95"
+        >
+          🎮 Play
+        </button>
+        <div className="w-full max-w-md py-8 text-center">
+          {/* Fixed 96px slot: the admin-sized app logo grows in place
+              (overflowing the slot) and the opening layout never reflows. */}
+          <div className="relative mx-auto mb-6 flex h-24 w-24 items-center justify-center">
+            <img
+              src={appLogoImage(appearance) ?? './icon-512.png'}
+              alt={appName(appearance)}
+              className="relative object-contain drop-shadow-xl"
+              style={{ width: appearance?.logoSize ?? 80, height: appearance?.logoSize ?? 80 }}
+            />
+          </div>
+          <h1 className="tracking-tight text-white drop-shadow-xl">
+            <Wordmark appearance={appearance} size={36} accent className="font-black" />
+          </h1>
+          <p className="mt-2">
+            <Tagline appearance={appearance} />
+          </p>
+          <p className="mt-2 text-base font-medium text-white/90">Select your university, school and programme.</p>
+          <SplashInstitutionLogos />
+          <div className="mt-6 rounded-3xl bg-white/10 backdrop-blur-md p-4 shadow-2xl shadow-brand-900/20 ring-1 ring-white/20">
+            <InstitutionSelector />
+          </div>
+          <button onClick={() => setInstitutionSelected(true)} className="mt-5 w-full rounded-2xl bg-white px-6 py-4 text-base font-black text-brand-800 shadow-xl hover:bg-brand-50 active:scale-[0.98] transition">
+            Continue →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Mode selection
+  if (!modeSelected) {
+    return (
+      <div className={`${rootH} bg-gradient-to-b from-brand-50 to-white flex flex-col items-center justify-center px-5 overflow-y-auto`}>
+        <div className="w-full max-w-sm py-8 text-center">
+          <h2 className="text-2xl font-black text-slate-800">How do you want to start?</h2>
+          <p className="mt-1 text-sm text-slate-500">You can change this later at any time.</p>
+          <div className="mt-6 space-y-3">
+            <button onClick={() => { dispatch({ type: 'setInputMode', inputMode: 'quick' }); setModeSelected('quick'); }} className="w-full rounded-2xl bg-brand-600 px-5 py-4 text-left text-base font-black text-white shadow-lg hover:bg-brand-700 active:scale-[0.98] transition">
+              ⚡ Quick Mode
+              <span className="block text-xs font-medium opacity-90">Current level + CGPA to begin</span>
+            </button>
+            <button onClick={() => { dispatch({ type: 'setInputMode', inputMode: 'history' }); setModeSelected('history'); }} className="w-full rounded-2xl bg-white px-5 py-4 text-left text-base font-black text-brand-600 ring-1 ring-brand-200 shadow-sm hover:bg-brand-50 active:scale-[0.98] transition">
+              CGPA History
+              <span className="block text-xs font-medium opacity-80">Enter each level for advance planning</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // An admin-hidden tool can never be the active screen — fall back to home.
+  const effectiveScreen: Screen = screen === 'whatif' && !whatIfAllowed ? 'home' : screen;
+
+  // ── Shared derived values (used by both the mobile and desktop views) ──
+  // An incomplete CGPA history (a selected level without ALL earlier levels
+  // entered) must never count as "results entered" — the tools stay locked
+  // and the app keeps telling the student to go back and complete it.
+  const historyIncomplete =
+    d.state.mode === 'history' && !!d.historyJourney && !d.historyJourney.complete;
+  // "Results entered" == the user has typed a CGPA (Quick: current standing;
+  // History: a COMPLETE level history). This mirrors the Proceed gate so
+  // proceeding home actually unlocks the tools and shows the entered state.
+  const resultsEntered =
+    d.state.mode === 'history'
+      ? d.state.semesters.some((s) => s.gpa !== null) && !historyIncomplete
+      : d.state.baseline.cgpa !== null;
+  const hasData = resultsEntered;
+  const heroCgpa = historyIncomplete
+    ? null
+    : d.record.cgpa !== null
+      ? d.record.cgpa
+      : d.state.mode === 'history'
+        ? (d.state.semesters.find((s) => s.gpa !== null)?.gpa ?? null)
+        : d.state.baseline.cgpa;
+  // Home help sentence — registry-driven so the admin can reword or hide it.
+  const homeHowItWorks = ideaTip('home.howItWorks');
+
+  // "Next Semester" adapts its title to the semantic semester role so a
+  // mid-semester student never sees their current / already-written semester
+  // called "next". (d.semesterRole is already 'next-semester' in History mode.)
+  const screenTitle =
+    screen === 'next'
+      ? d.semesterRole === 'finish-current'
+        ? 'Finish This Semester'
+        : d.semesterRole === 'upon-release'
+          ? 'Upon Release'
+          : 'Next Semester'
+      : SCREEN_TITLES[screen]?.title;
+
+  // The active tool's body — identical in both views; only the container
+  // width around it differs (narrow phone column vs. wide desktop column).
+  const toolBody = (
+    <>
+      {screen === 'calculate' && <Calculate onProceed={() => setScreen('home')} />}
+      {screen === 'target' && <Target />}
+      {screen === 'next' && <NextSemester />}
+      {screen === 'whatif' && <WhatIf />}
+      {screen === 'flight' && <FlightPathView />}
+      {screen === 'milestones' && <Milestones />}
+      {screen === 'ai' && (
+        <AiAssistant
+          aiStatus={aiStatus}
+          onNavigate={(s) => setScreen(s as Screen)}
+          onCollapse={() => setScreen(aiReturnScreen)}
+        />
+      )}
+      {screen === 'privacy' && <Privacy />}
+    </>
+  );
+
+  // ── CGPA PILOT AI — floating button (bottom-right, every main screen) ──
+  // Not part of the tools: always one tap away from anywhere. Hidden when the
+  // admin has switched the assistant off, and on the AI screen itself.
+  const aiFab = (pos: string) =>
+    aiVisible && screen !== 'ai' ? (
+      <button
+        onClick={() => {
+          // Remember where the student was so the AI's "‹ Collapse" returns
+          // them there (home, a tool, …).
+          setAiReturnScreen(screen);
+          setScreen('ai');
+        }}
+        aria-label="Open CGPA Pilot AI"
+        title="CGPA Pilot AI — ask anything about your academics"
+        className={`no-print fixed z-30 ${pos} grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-indigo-700 text-2xl text-white shadow-xl shadow-brand-900/40 ring-2 ring-white/50 transition hover:scale-105 active:scale-95`}
+      >
+        🤖
+        <span
+          className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-white"
+          aria-hidden
+        />
+      </button>
+    ) : null;
+
+  const pendingCfgBanner = pendingCfg ? (
+    <div className="no-print flex flex-wrap items-center justify-center gap-2 bg-sky-600 px-4 py-2 text-center text-xs font-semibold text-white">
+      <span>📥 New curriculum configuration{pendingCfg.version ? ` (v${pendingCfg.version})` : ''} is ready on this device.</span>
+      <button
+        className="rounded-lg bg-white/20 px-2.5 py-1 font-bold hover:bg-white/30"
+        onClick={() => {
+          clearPendingConfigUpdate();
+          window.location.reload();
+        }}
+      >
+        Reload to apply
+      </button>
+    </div>
+  ) : null;
+
+  // The home hub content (hero + tool tiles + privacy). `wide` switches the
+  // tile grid to the desktop 2–3 column arrangement.
+  const homeContent = (wide: boolean) => (
+    <>
+      {/* Hero */}
+      <section className="mt-1 rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-900 p-4 text-white shadow-xl shadow-brand-900/10 ring-1 ring-white/10">
+        {hasData ? (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[10px] font-black text-emerald-200 ring-1 ring-emerald-300/40">
+                ✓ Results entered
+              </span>
+              <button
+                onClick={() => setScreen('calculate')}
+                title="Edit results — change level, CGPA or not-released courses"
+                aria-label="Edit results — change level, CGPA or not-released courses"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
+              >
+                ✏️
+              </button>
+            </div>
+            <div className="mt-2 flex items-end justify-between gap-4">
+              <p className="text-3xl font-black tabular-nums leading-none">
+                {heroCgpa !== null ? fmt2(heroCgpa) : '—'}
+              </p>
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-brand-200">
+                  Target
+                </p>
+                <p className="text-3xl font-black tabular-nums leading-none text-emerald-300">
+                  {fmt2(d.state.targetCgpa ?? 3.6)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] font-semibold text-brand-100">
+              🏅 {d.classBand?.label ?? '—'}
+              <span className="mx-1.5 text-brand-300">·</span>
+              Level {d.state.baseline.levelIndex * 100}
+              {d.record.creditHours > 0 ? (
+                <>
+                  <span className="mx-1.5 text-brand-300">·</span>
+                  {d.record.creditHours} graded credits
+                </>
+              ) : null}
+            </p>
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="flex items-center justify-center text-2xl">
+              {/* Fixed slot: an admin-enlarged plane overflows, the hero stays */}
+              <span className="grid h-8 w-12 place-items-center">
+                <AppGlyph appearance={appearance} slot="plane" fallback="✈️" size={26} />
+              </span>
+            </p>
+            <h2 className="mt-1 text-lg font-black">Let’s get you off the ground</h2>
+            <button
+              onClick={() => setScreen('calculate')}
+              className="mt-2.5 rounded-2xl bg-white px-6 py-2.5 text-sm font-black text-brand-700 shadow-lg active:scale-[0.98]"
+            >
+              📝 Enter my results
+            </button>
+          </div>
+      )}
+      {/* Help tip — same guidance as the onboarding line, always reachable */}
+      <div className="mt-2.5 flex justify-end">
+        {homeHowItWorks && (
+          <Info
+            label="How does this work?"
+            className="[&>button]:bg-white/15 [&>button]:text-white [&>button]:ring-white/30 [&>button]:hover:bg-white/25"
+          >
+            {homeHowItWorks}
+          </Info>
+        )}
+      </div>
+    </section>
+
+      {/* Tool tiles */}
+      <p className="mt-3 mb-1.5 px-1 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">
+        Tools
+      </p>
+      <div className={wide ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3' : 'grid grid-cols-1 gap-2 sm:grid-cols-2'}>
+        {visibleTools.map((t) => {
+          const disabled = t.needsData && !hasData;
+          const isResults = t.id === 'calculate';
+          const isNext = t.id === 'next';
+          // Admin live-preview: amber mark on the tiles where changes land.
+          const badge = preview?.badges?.[t.id];
+          // The "Next Semester" tool tile name adapts to the student's
+          // standing (Finish This Semester / Upon Release / Next Semester).
+          const title = isNext ? toolNameFor(d.semesterRole) : t.title;
+          const hint = isNext ? toolHintFor(d.semesterRole) : t.tagline;
+          const tagline = isResults && hasData ? 'Results entered — tap to Edit' : hint;
+          return (
+            <button
+              key={t.id}
+              onClick={() => !disabled && setScreen(t.id)}
+              disabled={disabled}
+              title={badge}
+              className={`relative flex w-full items-center gap-2.5 rounded-2xl p-2 text-left ring-1 transition ${
+                disabled
+                  ? 'bg-slate-100 ring-slate-200 opacity-70'
+                  : badge
+                    ? 'bg-amber-50 ring-amber-300 shadow-sm active:scale-[0.99]'
+                    : 'bg-white ring-slate-200 shadow-sm active:scale-[0.99]'
+              }`}
+            >
+              {badge && !disabled && (
+                <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-white" aria-hidden />
+              )}
+              {/* FIXED-SLOT ICON GROWTH (v1.0.18): the slot is ALWAYS 36 px,
+                  so the tile and its row never change size. The icon ALONE
+                  grows — the glyph is absolutely centred on the slot, so an
+                  admin-enlarged icon overflows the slot symmetrically (it
+                  truly increases in size and width, in place) without ever
+                  shifting the tile, the row or the label. */}
+              <span className="relative h-9 w-9 shrink-0 text-2xl leading-none">
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                  <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                </span>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-extrabold leading-tight text-slate-900">
+                  {title}
+                </span>
+                <span className="block truncate text-[10px] leading-tight text-slate-500">{tagline}</span>
+              </span>
+              {disabled ? (
+                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-500">
+                  add results first
+                </span>
+              ) : isResults && hasData && !badge ? (
+                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-700">
+                  ✓ entered
+                </span>
+              ) : badge ? (
+                <span className="shrink-0 rounded-full bg-amber-200 px-2 py-1 text-[9px] font-black text-amber-900">
+                  ● changed
+                </span>
+              ) : (
+                <span className="shrink-0 text-slate-300">›</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Privacy */}
+      <button
+        onClick={() => setScreen('privacy')}
+        className="mt-3 flex w-full items-center gap-2 rounded-2xl bg-emerald-50 px-3 py-2 text-left ring-1 ring-emerald-200"
+      >
+        {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
+        <span className="relative h-5 w-5 shrink-0 text-base">
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-5 w-5 object-contain" />
+          </span>
+        </span>
+        <span className="flex-1 text-[11px] font-bold text-emerald-800">
+          No account. Nothing you type is saved or shared — see how.
+        </span>
+        <span className="text-emerald-400">›</span>
+      </button>
+
+      <p className="mt-3 px-2 text-center text-[10px] leading-snug text-slate-400">
+        {d.university.shortName} grading &amp; classification per published
+        university rules · CGPA PILOT is an unofficial planning aid, not an
+        academic record.
+      </p>
+    </>
+  );
+
+  // ── DESKTOP SHELL (the PC view) ─────────────────────────────────────────
+  // Electron (Windows .exe / Linux .deb / .AppImage) always renders this; on
+  // the web it appears on wide fine-pointer screens (laptops/desktops).
+  // A persistent left sidebar replaces the mobile bottom bar — the mobile
+  // flow below stays exactly as it is.
+  if (view === 'desktop') {
+    return (
+      <div className={`${rootH} flex flex-col bg-slate-100`}>
+        <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/80 px-4 py-2 backdrop-blur">
+          <Brand appearance={appearance} />
+          <div className="flex shrink-0 items-center gap-1.5">
+            <UpdateButton />
+            <ClearButton />
+          </div>
+        </header>
+        <UpdateBanner />
+        <AppUpdateBanner />
+        {pendingCfgBanner}
+        <div className="flex min-h-0 flex-1">
+          {/* Sidebar navigation */}
+          <aside className="no-print flex w-64 shrink-0 flex-col gap-1 overflow-y-auto border-r border-slate-200 bg-white p-3">
+            <p className="px-2 pb-1 pt-1 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
+              Tools
+            </p>
+            {visibleTools.map((t) => {
+              const disabled = t.needsData && !hasData;
+              const active = screen === t.id;
+              const title = t.id === 'next' ? toolNameFor(d.semesterRole) : t.title;
+              const hint = t.id === 'next' ? toolHintFor(d.semesterRole) : t.tagline;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => !disabled && setScreen(t.id)}
+                  disabled={disabled}
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                    active
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : disabled
+                        ? 'cursor-not-allowed bg-slate-50 text-slate-400'
+                        : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {/* v1.0.18: fixed slot — the row width never changes; the
+                      icon alone grows, centred in place (no shift). */}
+                  <span className="relative h-9 w-9 shrink-0 text-2xl leading-none">
+                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                      <SlotGlyph appearance={appearance} slot={t.id} fallback={t.icon} imgCls="h-7 w-7" />
+                    </span>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-extrabold leading-tight">
+                      {title}
+                    </span>
+                    <span
+                      className={`block truncate text-[11px] leading-tight ${
+                        active ? 'text-brand-100' : 'text-slate-500'
+                      }`}
+                    >
+                      {hint}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+            <div className="my-1.5 h-px shrink-0 bg-slate-200" />
+            <button
+              onClick={() => setScreen('privacy')}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                screen === 'privacy'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-emerald-800 hover:bg-emerald-50'
+              }`}
+            >
+              {/* v1.0.18: fixed slot — the icon alone grows, centred in place. */}
+              <span className="relative h-9 w-9 shrink-0 text-xl leading-none">
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                  <SlotGlyph appearance={appearance} slot="privacy" fallback="🔒" imgCls="h-6 w-6" />
+                </span>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-extrabold leading-tight">Privacy</span>
+                <span
+                  className={`block truncate text-[11px] leading-tight ${
+                    screen === 'privacy' ? 'text-emerald-100' : 'text-slate-500'
+                  }`}
+                >
+                  No account. Nothing is saved or shared.
+                </span>
+              </span>
+            </button>
+            <div className="mt-auto shrink-0 px-2 pb-1 pt-3 text-[10px] font-semibold leading-relaxed text-slate-400">
+              v{import.meta.env.VITE_APP_VERSION || 'dev'} · {appName(appearance)}
+              <br />
+              Offline-ready · works with no connection
+            </div>
+          </aside>
+          {/* Content area — the AI screen is full-height (only its own
+              conversation scrolls; header + typing area stay put). */}
+          {effectiveScreen === 'ai' ? (
+            <div className="app-frame min-w-0 flex-1 overflow-hidden">
+              <div className="mx-auto h-full w-full max-w-3xl px-6 py-4">{toolBody}</div>
+            </div>
+          ) : (
+            <div className="app-frame min-w-0 flex-1 overflow-y-auto overscroll-contain">
+              <div
+                className={`mx-auto w-full px-6 py-5 ${
+                  effectiveScreen === 'home' ? 'max-w-5xl' : 'max-w-3xl'
+                }`}
+              >
+                {effectiveScreen === 'home' ? (
+                  homeContent(true)
+                ) : (
+                  <>
+                    <div className="no-print mb-4 flex items-center justify-between gap-3">
+                      <h1 className="flex min-w-0 items-center gap-2 text-xl font-black tracking-tight text-slate-900">
+                        {/* v1.0.18: fixed slot — the title never moves; the
+                            icon alone grows, centred in place (no shift). */}
+                        <span className="relative h-7 w-7 shrink-0 text-lg leading-none">
+                          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                            {SCREEN_TITLES[screen] && (
+                              <SlotGlyph
+                                appearance={appearance}
+                                slot={screen}
+                                fallback={SCREEN_TITLES[screen]!.icon}
+                                imgCls="h-5 w-5 object-contain"
+                              />
+                            )}
+                          </span>
+                        </span>
+                        <span className="truncate">{screenTitle}</span>
+                      </h1>
+                      <button
+                        onClick={() => setScreen('home')}
+                        className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
+                      >
+                        🏠 Home
+                      </button>
+                    </div>
+                    {toolBody}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        {aiFab('bottom-6 right-6')}
+      </div>
+    );
+  }
+
+  // Tool screens (drill-in). Fixed app frame: header + scrollable content +
+  // a Previous / Next / Home bottom bar for simple navigation.
+  if (effectiveScreen !== 'home') {
+    const meta = SCREEN_TITLES[screen];
+    const idx = visibleOrder.indexOf(screen as ToolId);
+    const prev = idx > 0 ? visibleTools[idx - 1] : null;
+    const next = idx >= 0 && idx < visibleTools.length - 1 ? visibleTools[idx + 1] : null;
+    // Role-aware tool name so the bottom-nav label also updates with state.
+    const navTitle = (tool: { id: string; title: string } | null) =>
+      tool && tool.id === 'next' ? toolNameFor(d.semesterRole) : tool?.title ?? '';
+    return (
+      <div className={`${rootH} flex flex-col bg-slate-50`}>
+        <header className="no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
+          <button
+            onClick={() => setScreen('home')}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
+            aria-label="Back to home"
+          >
+            ←
+          </button>
+          <div className="min-w-0 flex-1">
+            {/* The h1 itself must NOT clip (no `truncate` here — that used
+                to cut off admin-enlarged icons). Only the TITLE text
+                truncates, and the icon chip GROWS with the admin's size
+                (min 16 px) so a bigger icon is visibly bigger, in place. */}
+            <h1 className="flex min-w-0 items-center gap-1 text-[13px] font-extrabold text-slate-900">
+              {meta && (
+                <span className="grid min-h-4 min-w-4 shrink-0 place-items-center rounded bg-white/80 ring-1 ring-slate-200">
+                  <SlotGlyph appearance={appearance} slot={screen} fallback={meta.icon} imgCls="h-4 w-4 object-contain" />
+                </span>
+              )}
+              <span className="min-w-0 truncate">{screenTitle}</span>
+            </h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <UpdateButton />
+            <ClearButton />
+          </div>
+        </header>
+        {/* The AI screen is full-height: header + notices + typing area stay
+            put, only the conversation scrolls (and no bottom tool nav). */}
+        {screen === 'ai' ? (
+          <div className="app-frame flex-1 overflow-hidden px-3 py-2">
+            <div className="mx-auto h-full w-full max-w-md">{toolBody}</div>
+          </div>
+        ) : (
+          <>
+            <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+              <div className="mx-auto w-full max-w-md">{toolBody}</div>
+            </div>
+            {/* Bottom tool navigation */}
+            <nav className="no-print shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
+              <div className="mx-auto flex w-full max-w-md items-center gap-2">
+                {isTool(screen) && prev ? (
+              <button
+                onClick={() => setScreen(prev.id)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl px-2 py-2 text-left text-brand-700 active:scale-95"
+              >
+                <span className="text-lg leading-none">‹</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Prev
+                  </span>
+                  <span className="block truncate text-xs font-black">{navTitle(prev)}</span>
+                </span>
+              </button>
+            ) : (
+              <div className="min-w-0 flex-1" />
+            )}
+            <button
+              onClick={() => setScreen('home')}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-indigo-700 text-lg text-white shadow active:scale-95"
+              aria-label="Home"
+              title="Home"
+            >
+              🏠
+            </button>
+            {isTool(screen) && next ? (
+              <button
+                onClick={() => setScreen(next.id)}
+                className="flex min-w-0 flex-1 items-center justify-end gap-1.5 rounded-xl px-2 py-2 text-right text-brand-700 active:scale-95"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Next
+                  </span>
+                  <span className="block truncate text-xs font-black">{navTitle(next)}</span>
+                </span>
+                <span className="text-lg leading-none">›</span>
+              </button>
+            ) : (
+              <div className="min-w-0 flex-1" />
+            )}
+              </div>
+            </nav>
+          </>
+        )}
+        {aiFab('bottom-16 right-3')}
+      </div>
+    );
+  }
+
+  // ── HOME HUB (mobile view — the layout most students use) ─────────────
+  return (
+    <div className={`${rootH} flex flex-col bg-gradient-to-b from-brand-50 to-white`}>
+      <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
+        <Brand appearance={appearance} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <UpdateButton />
+          <ClearButton />
+        </div>
+      </header>
+      <UpdateBanner />
+      <AppUpdateBanner />
+      {pendingCfgBanner}
+      <div className="app-frame flex-1 overflow-y-auto overscroll-contain px-4 pb-3">
+        <div className="mx-auto w-full max-w-md">
+          {homeContent(false)}
+        </div>
+      </div>
+      {aiFab('bottom-4 right-3')}
+    </div>
+  );
+}
+
+
+
+/** Renders an appearance-overridable icon slot as an image or its emoji. */
+function SlotGlyph({
+  appearance,
+  slot,
+  fallback,
+  imgCls,
+}: {
+  appearance?: AppAppearance;
+  slot: string;
+  fallback: string;
+  imgCls?: string;
+}) {
+  const el = iconElement(appearance?.icons?.[slot], fallback);
+  if (el.type === 'img') {
+    // Admin-adjusted display size wins over the per-site default classes.
+    // The admin size renders in a SELF-CONTAINED centred box: exactly the
+    // admin's pixels, never clipped, never shrunk. Surrounding caller slots
+    // keep their own layout — the box simply overflows them symmetrically
+    // about its centre, so the icon INCREASES IN PLACE instead of shifting.
+    if (el.sizePx) {
+      return (
+        <span
+          className="grid shrink-0 overflow-visible place-items-center"
+          style={{ width: el.sizePx, height: el.sizePx }}
+        >
+          <img
+            src={el.src}
+            alt={el.alt ?? ''}
+            className="max-w-none object-contain"
+            style={{ width: el.sizePx, height: el.sizePx }}
+          />
+        </span>
+      );
+    }
+    return <img src={el.src} alt={el.alt ?? ''} className={`object-contain ${imgCls ?? 'h-6 w-6'}`} />;
+  }
+  return <span className="inline-flex leading-none">{el.text}</span>;
+}
+
+/**
+ * Institution & department logos shown directly under the caption
+ * “Select your university, school and programme.” Only the currently
+ * selected university and its active departments are shown (from the
+ * published catalog). Renders nothing when no logos are set.
+ */
+function SplashInstitutionLogos() {
+  const { context } = useInstitution();
+  const uni = listUniversities().find((u) => u.id === context.universityId);
+  const depts = uni?.schools.filter((s) => s.status === 'active') ?? [];
+  const items: { src?: string; emoji: string; name: string }[] = [];
+  if (uni) items.push({ src: uni.logo, emoji: '🏛️', name: uni.shortName || uni.name });
+  for (const d of depts) items.push({ src: d.logo, emoji: '🏢', name: d.name });
+  const anyLogo = items.some((i) => i.src);
+  if (!anyLogo) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-start justify-center gap-3">
+      {items.map((it, i) => (
+        <div key={i} className="flex w-14 flex-col items-center gap-1">
+          {it.src ? (
+            <img
+              src={it.src}
+              alt={`${it.name} logo`}
+              className="h-11 w-11 rounded-xl bg-white object-contain p-0.5 shadow ring-1 ring-white/25"
+            />
+          ) : (
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-white/15 text-xl ring-1 ring-white/20">
+              {it.emoji}
+            </span>
+          )}
+          <span className="max-w-full truncate text-[9px] font-bold leading-tight text-white/85" title={it.name}>
+            {it.name}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NavItem({ label, icon, active, onClick }: { label: string; icon: string; active?: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+        active ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+      }`}
+    >
+      <span className="text-base">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+function Brand({ compact = false, appearance }: { compact?: boolean; appearance?: AppAppearance }) {
+  const ctx = resolveContext();
+  // resolveAssetUrl: institution logos may be asset:<key> refs (R2) or data URLs.
+  const logoUrl =
+    resolveAssetUrl(ctx.school?.logo) ??
+    resolveAssetUrl(ctx.university?.logo) ??
+    appLogoImage(appearance) ??
+    './icon-512.png';
+  const clicks = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function onLogoTap(e: MouseEvent) {
+    e.preventDefault();
+    clicks.current += 1;
+    if (timer.current) clearTimeout(timer.current);
+    if (clicks.current >= 3) { clicks.current = 0; openAdminConsole(); return; }
+    timer.current = setTimeout(() => { clicks.current = 0; }, 900);
+  }
+  function openAdminConsole() {
+    const url = './admin.html';
+    const inCapacitor = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.() ?? false);
+    if (inCapacitor) { window.location.href = url; return; }
+    const win = window.open(url, '_blank');
+    if (!win) window.location.href = url;
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <img src={logoUrl} alt={appName(appearance)} onClick={onLogoTap} title={appName(appearance)} className="h-8 w-8 shrink-0 cursor-pointer select-none rounded-lg shadow-sm" width={32} height={32} />
+      <button type="button" onClick={onLogoTap} className="cursor-pointer select-none text-left leading-tight" title={appName(appearance)}>
+        <h1 className="font-extrabold tracking-tight">
+          <Wordmark
+            appearance={appearance}
+            size={13}
+            color="#0f172a"
+            accent
+            accentClass="text-brand-600"
+            applyColor={false}
+            className="font-extrabold"
+          />
+        </h1>
+        {!compact && (
+          <p className="text-[10px] font-medium leading-tight text-slate-500">
+            {institutionLabel()}
+          </p>
+        )}
+      </button>
+    </div>
+  );
+}

@@ -1,0 +1,333 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+/* Visible keyboard focus on every interactive element (accessibility).
+   :focus-visible leaves mouse/touch clicks un-ringed while always showing a
+   clear indicator for keyboard users. */
+:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: #eef2f7;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SPLASH — an aeroplane flies across the sky with a gentle bobbing path.
+   The plane starts off-screen left and finishes off-screen right.
+   ───────────────────────────────────────────────────────────────────── */
+.splash-plane {
+  position: absolute;
+  top: 18%;
+  left: 0;
+  z-index: 5;
+  animation: plane-fly 4s linear infinite;
+  will-change: transform;
+}
+@keyframes plane-fly {
+  0%   { transform: translate3d(-20vw, 4px, 0) rotate(3deg); }
+  22%  { transform: translate3d(12vw, -26px, 0) rotate(-6deg); }
+  45%  { transform: translate3d(42vw, 6px, 0) rotate(2deg); }
+  70%  { transform: translate3d(80vw, -20px, 0) rotate(-5deg); }
+  100% { transform: translate3d(130vw, 0px, 0) rotate(4deg); }
+}
+.splash-ground {
+  position: absolute;
+  bottom: 8%;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  opacity: 0.7;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold
+      transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-ghost {
+    @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200;
+  }
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm
+      outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   PRINT SYSTEM (Prompt 15)
+   On screen the print root is hidden; on print only it is shown and the
+   live app is hidden, so any single section/scenario can print in
+   isolation. Layout is A4-friendly with clean page breaks.
+   ───────────────────────────────────────────────────────────────────── */
+#cgpa-print-root {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  /* Hide the live application entirely while printing a scoped sheet. */
+  .app-root {
+    display: none !important;
+  }
+  #cgpa-print-root {
+    display: block !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  /* A4 page setup. The fixed running header (~11mm tall) is anchored at the
+     top of the paper; the generous 18mm top margin keeps EVERY page's
+     content at least ~6mm below it, so the header can never overlap the
+     main info (no per-page padding tricks needed). */
+  @page {
+    size: A4;
+    margin: 18mm 14mm 14mm 14mm;
+  }
+  html,
+  body {
+    background: #fff;
+  }
+  #cgpa-print-root {
+    color: #0f172a;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  #cgpa-print-root h1,
+  #cgpa-print-root h2,
+  #cgpa-print-root h3 {
+    page-break-after: avoid;
+  }
+  /* Typography polish: never strand a single line at a page edge. */
+  #cgpa-print-root p {
+    orphans: 2;
+    widows: 2;
+  }
+  #cgpa-print-root table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+    font-size: 10.5px;
+  }
+  #cgpa-print-root tr {
+    page-break-inside: avoid;
+  }
+  /* Table header rows repeat on every page the table spans. */
+  #cgpa-print-root thead {
+    display: table-header-group;
+  }
+  /* Wide on-screen tables must never be clipped on paper — let them spill
+     to their natural width instead of scrolling. */
+  #cgpa-print-root .overflow-x-auto {
+    overflow: visible !important;
+  }
+  /* Headers: allow wrap (no nowrap) + a bold rule that prints even when the
+     browser is set to omit background graphics. */
+  #cgpa-print-root th {
+    white-space: normal !important;
+    font-size: 9px !important;
+  }
+  #cgpa-print-root thead th {
+    border-bottom: 2px solid #0f172a !important;
+  }
+  #cgpa-print-root tbody tr {
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+  #cgpa-print-root td {
+    vertical-align: top;
+  }
+  /* Screen-only controls (print buttons, 💡 icons, toggles) never reach paper. */
+  #cgpa-print-root button {
+    display: none !important;
+  }
+  /* Section cards get a visible frame on paper. */
+  #cgpa-print-root .print-sheet {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+  }
+  #cgpa-print-root svg {
+    max-width: 100%;
+    height: auto;
+    page-break-inside: avoid;
+  }
+  #cgpa-print-root .print-block {
+    page-break-inside: avoid;
+    margin-bottom: 14px;
+  }
+  /* The disclaimer stays with the document, not stranded alone. */
+  #cgpa-print-root .print-disclaimer {
+    page-break-inside: avoid;
+    margin-top: 12px;
+  }
+  #cgpa-print-root .print-page-break {
+    page-break-before: always;
+  }
+  #cgpa-print-root .print-card {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SKY DASH — opening mini-game (plane + clouds + catchable stars)
+   ───────────────────────────────────────────────────────────────────── */
+.sky-sun {
+  position: absolute;
+  top: 7%;
+  left: 8%;
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #fef3c7 0%, #fcd34d 55%, rgba(252,211,77,0) 75%);
+  opacity: 0.9;
+  filter: blur(0px);
+  box-shadow: 0 0 40px 6px rgba(253, 224, 71, 0.55);
+  animation: sun-glow 4s ease-in-out infinite;
+}
+@keyframes sun-glow {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+.sky-cloud {
+  position: absolute;
+  display: block;
+  width: 130px;
+  height: 42px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.16);
+  filter: blur(4px);
+  opacity: 0.9;
+}
+.sky-cloud::before,
+.sky-cloud::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  background: inherit;
+}
+.sky-cloud::before { width: 62px; height: 62px; left: 26px; top: -30px; }
+.sky-cloud::after  { width: 46px; height: 46px; right: 26px; top: -20px; }
+.sky-cloud-a { top: 16%; animation: drift 26s linear infinite; }
+.sky-cloud-b { top: 40%; width: 110px; transform: scale(0.8); animation: drift 34s linear infinite reverse; }
+.sky-cloud-c { top: 62%; width: 150px; transform: scale(1.1); animation: drift 44s linear infinite; }
+@keyframes drift {
+  0%   { left: -160px; }
+  100% { left: 110vw; }
+}
+.sky-star {
+  position: absolute;
+  font-size: 30px;
+  line-height: 1;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.25));
+  animation: star-bob 1.6s ease-in-out infinite;
+}
+@keyframes star-bob {
+  0%, 100% { transform: translate(-50%, -50%) scale(0.9); }
+  50% { transform: translate(-50%, -58%) scale(1.08); }
+}
+.sky-spark {
+  position: absolute;
+  z-index: 12;
+  transform: translate(-50%, -50%);
+  font-weight: 900;
+  font-size: 13px;
+  white-space: nowrap;
+  color: #fde68a;
+  text-shadow: 0 0 6px rgba(0,0,0,0.35);
+  animation: spark-pop 0.9s ease-out forwards;
+}
+@keyframes spark-pop {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
+  100% { opacity: 0; transform: translate(-50%, -170%) scale(1.25); }
+}
+
+/* Soft "sonar" glow for the eye-catching Advanced what-if button:
+   a gentle ring that expands and fades — inviting, not a blink. */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(124, 58, 237, 0);
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-glow {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+  }
+}
+
+/* ── Very visible scrollbars ─────────────────────────────────────────────
+   Any area that scrolls (the app frame, tables, side panes) gets a thick,
+   high-contrast scrollbar so users can always find it and drag it. */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: #4f46e5 #e2e8f0; /* Firefox: thumb / track */
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+::-webkit-scrollbar-thumb {
+  background: #4f46e5;
+  border: 3px solid #e2e8f0;
+  border-radius: 999px;
+  min-height: 40px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4338ca;
+}
+::-webkit-scrollbar-corner {
+  background: #e2e8f0;
+}
+/* Dark sections (hero/print sheets, Sky Dash) — keep the bar readable. */
+.bg-gradient-to-br ::-webkit-scrollbar-track,
+.bg-slate-900 ::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.25);
+}
