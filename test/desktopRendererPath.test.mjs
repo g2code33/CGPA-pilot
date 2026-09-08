@@ -378,3 +378,18 @@ test('the main process registers the scheme before ready and serves every asset 
   }
   return undefined;
 });
+
+test('the page CSP admits the desktop scheme, so a rescued launch cannot be blocked by it', () => {
+  // The whole point of the fallback is that it works on a machine where the normal
+  // route failed; if 'self' did not match `cgpa:` the fallback would trade a blank
+  // window for a console full of refused subresources and nothing to learn from.
+  const html = readFileSync(`${root}/index.html`, 'utf8');
+  const meta = /http-equiv="Content-Security-Policy"\s*content="([^"]+)"/.exec(html);
+  assert.ok(meta, 'index.html must ship a CSP meta');
+  for (const clause of meta[1].split(';')) {
+    const directive = clause.trim().split(/\s+/)[0];
+    if (!["default-src", "script-src", "style-src", "img-src", "font-src", "connect-src"].includes(directive)) continue;
+    assert.ok(clause.includes("'self'"), `${directive} must keep 'self'`);
+    assert.ok(clause.includes(`${RENDERER_SCHEME}:`), `${directive} must also allow ${RENDERER_SCHEME}: (the desktop route)`);
+  }
+});

@@ -6,9 +6,17 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
+    <!--
+      The desktop app can be served from the `cgpa:` scheme (electron/rendererPath.ts)
+      when a file:// read is refused, and CSP's 'self' is documented to match a custom
+      scheme only once that scheme is registered as standard. Rather than rely on it,
+      every directive below also names `cgpa:`: browsers never see that scheme, so the
+      web/PWA policy is unchanged, and a test pins the literal to RENDERER_SCHEME so the
+      two cannot drift apart.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cgpa-pilot.calcitoninpay.workers.dev; font-src 'self' data:; connect-src 'self' https://cgpa-pilot.calcitoninpay.workers.dev;"
+      content="default-src 'self' cgpa:; script-src 'self' cgpa:; style-src 'self' cgpa: 'unsafe-inline'; img-src 'self' cgpa: data: blob: https://cgpa-pilot.calcitoninpay.workers.dev; font-src 'self' cgpa: data:; connect-src 'self' cgpa: https://cgpa-pilot.calcitoninpay.workers.dev;"
     />
     <link rel="icon" type="image/png" href="icon-512.png" />
     <!-- Home-screen / Start-menu tile (iOS Safari, Android Chrome "add to home
