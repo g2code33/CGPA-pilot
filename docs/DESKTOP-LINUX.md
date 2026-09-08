@@ -50,7 +50,8 @@ Two releases shipped a blank window from getting this half-right each time:
 |---|---|---|---|
 | 1.0.24 | `["dist/**/*"]` | `…/app.asar/dist/index.html` (the marker) | `ERR_FAILED (-2)` |
 | 1.0.25 | *(removed)* | `…/app.asar/dist/index.html` (inside the archive) | `ERR_FAILED (-2)` |
-| 1.0.27 | `["dist/**/*"]` | `…/app.asar.unpacked/dist/index.html` (real) | paints |
+| 1.0.27 | `["dist/**/*"]` | `…/app.asar.unpacked/dist/index.html` (real) | `ERR_FAILED (-2)` on a user machine, although `statSync`/`readFileSync` of that exact path succeeded |
+| 1.0.28 | `["dist/**/*"]` | same file, then `cgpa://bundle/index.html`, then an extracted copy | paints on both machines |
 
 The rule: **a `file://` load must never be handed a path that goes through
 `app.asar`.** Node can read there — Electron patches `fs` to understand the
@@ -79,6 +80,38 @@ So both halves are required, and neither alone is enough:
 If nothing is readable the window shows a diagnostic page (searched paths, the
 active launch mode, the reinstall command) instead of an empty rectangle.
 
+### The rule is stronger than "give it a real file"
+
+1.0.27 proved the missing half: a *real, unpacked, world-readable* file was still
+refused, because a `file://` load is executed by Chromium's IO process, and that
+process's read policy is not Node's — the archive and `userData` are inside it, a
+sibling `app.asar.unpacked/**` under `/opt` is not necessarily. So `dist/**` being
+unpacked, and the loader preferring it, are **packaging hygiene, not a guarantee**;
+what guarantees a paint is having a strategy that needs no sandboxed read at all.
+
+`electron/rendererPath.ts` therefore also owns the protocol's pure half, and
+`main.ts` keeps the mechanical parts in one place:
+
+```ts
+rendererStartURL()                         // cgpa://bundle/index.html
+rendererRootDirs(appDir, mainDir)           // unpacked, loose, archive — same order as loadFile
+resolveRendererFile(pathname, roots, exists)// root-relative mapping, traversal refused,
+                                            // missing asset = 404, route = the shell
+contentTypeFor(file)                        // correct MIME for ESM + fetch + CORS
+```
+
+`protocol.registerSchemesAsPrivileged` runs before `app.whenReady()` (Electron
+requires that ordering: `standard` + `secure` + `supportFetchAPI` + `corsEnabled`, so
+Vite's `<script type="module" crossorigin>` and relative `./assets/…` URLs resolve
+against a fixed host `bundle` exactly as they would on https). `protocol.handle` runs
+after ready and reads with Node's `fs` — which *can* see inside `app.asar` — so the
+asar layout stops mattering for the renderer.
+
+The consequence for the renderer's own configuration: `cgpa:` is an offline runtime
+just like `file:` (`src/config/assets.ts`), so remote logo URLs are still materialised
+rather than fetched by the page. `configApiBase()` keys off the preload bridge, not the
+scheme, so config sync keeps working (see `docs/BRANDING.md`).
+
 **And a third layer, so a packaging slip can never become a blank window again:** if
 the only renderer the resolver finds is *inside* the archive, `electron/rendererExtract.ts`
 copies `app.asar/dist` out to `<userData>/renderer/dist` (through Node's asar-aware
@@ -88,7 +121,7 @@ have shipped `asarUnpack` of the dist tree. The copy is planned by comparing siz
 bounded (files, bytes, depth) — an incomplete tree is refused rather than half-copied,
 which is what lets the launch ladder take over instead of showing a broken app.
 `npm run verify:branding -- --install …` reports that directory if it exists, because
-on a healthy 1.0.27 install it should never be created.
+on a healthy install it should never be created.
 
 `nativeImage.createFromPath()` has the same limitation as Chromium here — that is
 why the window icon is read from bytes: `readFileSync` (asar-aware) →
@@ -203,10 +236,29 @@ Electron glue):
   diagnostic page never counts — otherwise it would hide the failure forever.
 * No signal within `STARTUP_GRACE_MS` (12 s) is a failure too: silence is what a
   renderer that dies quietly looks like.
-* Failure → other candidate paths first, then `escalate()` → write the state file,
-  set `CGPA_LAUNCH_MODE` for the child (a crash can happen before the write),
-  `app.relaunch()`, `app.exit(0)`. A mode that paints rewrites the file with
-  `failures: 0` and `paintedAt`, and becomes the remembered one.
+* Failure → the remaining load strategies of §2 (other candidate paths, the
+  main-process `cgpa://` route, the extracted copy) first, and only when they are
+  spent `escalate()`: write the state file, set `CGPA_LAUNCH_MODE` for the child (a
+  crash can happen before the write), `app.relaunch()`, `app.exit(0)`. A mode that
+  paints rewrites the file with `failures: 0` and `paintedAt`, and becomes the
+  remembered one.
+* No path leads to the diagnostic page without going through that machine. An
+  earlier revision called `loadLoaderError()` straight from `loadRenderer`'s catch,
+  and the real report that proved it: the paste contained **no** `[cgpa-pilot]` line
+  at all, because navigating away turned the pending `did-fail-load` into a discarded
+  `ERR_ABORTED`. A recovery route that can be skipped is a recovery route that will be.
+* Everything the app knows goes to stderr, where the user is already looking:
+
+  ```
+  [cgpa-pilot] renderer loaded from file:// (real files first)
+  [cgpa-pilot] could not load the renderer via cgpa:// …: …    ← a strategy failed, next one runs
+  [cgpa-pilot] renderer did not start: …                        ← event, or the 12 s watchdog
+  [cgpa-pilot] launch mode 0 failed; relaunching in mode 1 (--no-sandbox)
+  ```
+
+  A line reading `renderer loaded from cgpa://` means the sandboxed loader could not
+  read `dist/` at all and the main process served the app instead — the UI works, and
+  `/opt` ownership is the thing to fix.
 * Exhausted ladder → **no relaunch**; the diagnostic page says so. That is the loop
   guard: without the env hand-off a machine where every mode dies would restart
   forever.

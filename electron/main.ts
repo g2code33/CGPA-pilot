@@ -1,16 +1,21 @@
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { app, BrowserWindow, ipcMain, nativeImage, protocol } from 'electron';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { installDesktopEntry, installLauncherIcon, writeIfChanged, type BrandInstallOptions } from './brandInstall';
 import { copyRendererTree } from './rendererExtract';
 import {
+  contentTypeFor,
   indexOfEntry,
   insideArchive,
   orderRendererCandidates,
   pickRendererEntry,
+  RENDERER_SCHEME,
   rendererCandidatePaths,
+  rendererRootDirs,
+  rendererStartURL,
+  resolveRendererFile,
 } from './rendererPath';
 import {
   chooseLaunchMode,
@@ -87,6 +92,31 @@ import {
 // builds. This switch allows bundled `file://` files to load normally while
 // keeping the rest of Chromium's security intact.
 app.commandLine.appendSwitch('allow-file-access-from-files');
+
+/**
+ * The packaged renderer is served by the MAIN process over this scheme (see
+ * electron/rendererPath.ts). It must be declared before `app.whenReady()`, and it
+ * is standard+secure so relative URLs, ES modules and `fetch` behave as they do on
+ * https — without it a `cgpa://` page could not load its own module scripts.
+ * `file://` stays wired up as a fallback, so an Electron that refuses the
+ * registration (or a protocol handler that throws) still shows the app.
+ */
+try {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: RENDERER_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
+      },
+    },
+  ]);
+} catch (e) {
+  console.warn('[cgpa-pilot] could not register the renderer scheme, falling back to file://:', (e as Error).message);
+}
 
 /**
  * Why the renderer may have to run without the OS sandbox — and only for
@@ -333,14 +363,6 @@ function resolveRendererEntry(fromIndex = 0): string | null {
   return null;
 }
 
-/** The next candidate worth loading after the current one, or null. */
-function nextCandidateEntry(): { file: string; index: number } | null {
-  const ordered = rendererEntryCandidates();
-  for (let i = rendererEntryIndex + 1; i < ordered.length; i++) {
-    if (existsSync(ordered[i])) return { file: ordered[i], index: i };
-  }
-  return null;
-}
 
 /**
  * The window icon. Read from bytes rather than a path: nativeImage's path
@@ -501,6 +523,97 @@ function loadLoaderError(win: BrowserWindow, reason: string) {
   });
 }
 
+/** Whether `protocol.handle` took effect for this process. */
+let rendererProtocolReady = false;
+
+/**
+ * Serve `dist/**` from the main process. The point is that NOTHING sandboxed has
+ * to open a file: Chromium's own `file://` reader runs in a process whose file
+ * policy may not cover `resources/app.asar.unpacked/**` (a real 1.0.27 report:
+ * ERR_FAILED on a path Node reads fine), while `readFileSync` here goes through
+ * Node's asar-aware fs — so the same bytes work whether they live in the archive,
+ * next to it, or in the extracted copy.
+ */
+function registerRendererProtocol(): boolean {
+  if (rendererProtocolReady) return true;
+  try {
+    protocol.handle(RENDERER_SCHEME, (request) => {
+      let url: URL;
+      try {
+        url = new URL(request.url);
+      } catch {
+        return new Response('bad request', { status: 400 });
+      }
+      const roots = rendererRootDirs(app.getAppPath(), __dirname);
+      const resolved = resolveRendererFile(url.pathname, roots, (file) => {
+        try {
+          return statSync(file).isFile();
+        } catch {
+          return false;
+        }
+      });
+      if (!resolved.file) {
+        // A missing *asset* is a 404, never the HTML shell: a JS file containing
+        // an HTML document would surface as a syntax error and be blamed on the
+        // bundle. Client-side routes (no extension) do get the shell.
+        return new Response(`Not found: ${url.pathname}`, {
+          status: 404,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        });
+      }
+      let bytes: Buffer;
+      try {
+        bytes = readFileSync(resolved.file);
+      } catch (e) {
+        loaderError = `Reading ${resolved.file} failed: ${(e as Error).message}`;
+        return new Response(loaderError, { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+      }
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          'content-type': contentTypeFor(resolved.file),
+          // Module scripts are fetched with CORS even on a privileged scheme.
+          'access-control-allow-origin': '*',
+          'cache-control': 'no-store',
+          'x-cgpa-source': path.basename(resolved.file),
+        },
+      });
+    });
+    rendererProtocolReady = true;
+    return true;
+  } catch (e) {
+    console.warn('[cgpa-pilot] the renderer protocol could not be handled:', (e as Error).message);
+    return false;
+  }
+}
+
+/**
+ * One line that explains a renderer file well enough to act on: is it real, is it
+ * ours, who can read it, and where the path actually resolves. This is what turns
+ * "blank window, ERR_FAILED" into a report we can diagnose from the text alone.
+ */
+function describeRendererFile(file: string | null): string {
+  if (!file) return 'no renderer entry was found';
+  const bits: string[] = [file];
+  try {
+    const st = statSync(file);
+    bits.push(`${st.size} bytes`);
+    bits.push(`mode ${(st.mode & 0o777).toString(8)}`);
+    bits.push(`uid ${st.uid}${st.uid === process.getuid?.() ? ' (self)' : ''}`);
+    bits.push(st.isFile() ? 'regular file' : 'NOT a regular file');
+    if (insideArchive(file)) bits.push('INSIDE app.asar (a file:// load cannot read this)');
+    try {
+      const real = realpathSync(file);
+      if (real !== file) bits.push(`resolves to ${real}`);
+    } catch {
+      bits.push('realpath failed');
+    }
+  } catch (e) {
+    bits.push(`cannot be stat'ed (${(e as Error).message})`);
+  }
+  return bits.join(' · ');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -530,30 +643,110 @@ function createWindow() {
   });
 }
 
+/**
+ * The ways to get the UI on screen, in order, tried until one paints.
+ *
+ * Each step is a *strategy*, not a location, because the failure that matters is
+ * not "the file is missing" — it is "the file is there and the process that has
+ * to read it is not allowed to". A step that cannot even be attempted throws with
+ * the reason, so the log explains the fallback and not just the last error.
+ */
+type LoadStep = { name: string; run: (win: BrowserWindow) => Promise<string> };
+
+function loadSteps(): LoadStep[] {
+  return [
+    {
+      // What every working install does today — nothing changes for them.
+      name: 'file:// (real files first)',
+      run: async (win) => {
+        const ordered = rendererEntryCandidates();
+        const errors: string[] = [];
+        for (let i = 0; i < ordered.length; i++) {
+          const entry = resolveRendererEntry(i);
+          if (!entry) break;
+          try {
+            await win.loadFile(entry);
+            return entry;
+          } catch (e) {
+            errors.push(`${entry}: ${(e as Error).message}`);
+          }
+        }
+        throw new Error(errors.length ? errors.join('; ') : 'no candidate held a readable dist/index.html');
+      },
+    },
+    {
+      // Same bytes, but read by THIS process: no sandboxed process has to reach
+      // the filesystem, which is what a denied file:// read needs a way around.
+      name: `${RENDERER_SCHEME}:// (served by the main process)`,
+      run: async (win) => {
+        if (!registerRendererProtocol()) throw new Error('the renderer scheme could not be registered');
+        const url = rendererStartURL();
+        await win.loadURL(url);
+        return url;
+      },
+    },
+    {
+      // And if the sandbox also refuses sub-resource reads from /opt, load from a
+      // copy in userData, which its policy does cover.
+      name: 'extracted copy in userData',
+      run: async (win) => {
+        const file = rescueRendererFromArchive();
+        if (!file) throw new Error('the renderer could not be extracted from the package');
+        await win.loadFile(file);
+        return file;
+      },
+    },
+  ];
+}
+
+/** Which strategy this process is on. Advanced on every failure, never reset. */
+let loadStepIndex = -1;
+let loadedFrom: string | null = null;
+let loadDetail = '';
+let stepping = false;
+
+/**
+ * Run the next strategy. Returns false when they are spent — the caller then hands
+ * over to the launch ladder, and only after that to the diagnostic page. No path
+ * leads to the page without passing through here, so a failed load can never again
+ * be swallowed into a silent dark window.
+ */
+async function advanceLoadSteps(win: BrowserWindow): Promise<boolean> {
+  if (stepping) return true;
+  const steps = loadSteps();
+  while (loadStepIndex + 1 < steps.length) {
+    loadStepIndex += 1;
+    const step = steps[loadStepIndex];
+    stepping = true;
+    try {
+      loadedFrom = await step.run(win);
+      console.log(`[cgpa-pilot] renderer loaded from ${step.name}`);
+      return true;
+    } catch (e) {
+      loadDetail = `${step.name}: ${(e as Error).message}`;
+      console.error(`[cgpa-pilot] could not load the renderer via ${loadDetail}`);
+    } finally {
+      stepping = false;
+    }
+  }
+  return false;
+}
+
 /** Load the packaged renderer, preferring real paths over archive paths. */
 async function loadRenderer(win: BrowserWindow) {
-  const entry = resolveRendererEntry();
-  if (entry == null) {
-    loadLoaderError(win, loaderError ?? 'No readable dist/index.html inside the application package.');
-    return;
-  }
-  try {
-    await win.loadFile(entry);
-  } catch (e) {
-    if (win.isDestroyed()) return;
-    loadLoaderError(win, `Loading ${entry} failed: ${(e as Error).message}`);
-  }
+  const ok = await advanceLoadSteps(win);
+  if (ok) return;
+  failLoad(win, loadDetail || 'no renderer strategy was available');
 }
 
 /**
  * Turns "a blank window" into a record AND into a recovery action. A main-frame
- * load failure or a dead renderer first steps through the other renderer
- * locations, then walks the launch ladder (see LAUNCH MODES above) — instead of
+ * load failure or a dead renderer first steps through the remaining load
+ * strategies, then walks the launch ladder (see LAUNCH MODES above) — instead of
  * leaving the user alone with a dark rectangle.
  */
 function wireRendererDiagnostics(win: BrowserWindow) {
   let painted = false;
-  let retrying = false;
 
   const recordPaint = () => {
     if (painted) return;
@@ -580,28 +773,13 @@ function wireRendererDiagnostics(win: BrowserWindow) {
     if (markRendererAlive === recordPaint) markRendererAlive = null;
   });
 
-  const recover = (detail: string) => {
-    escalateLaunchMode(detail); // exits the process when a next mode exists
-    loadLoaderError(win, `${detail}\n\nEvery renderer location was tried and every launch mode failed.`);
-  };
-
   const fail = (detail: string) => {
-    if (painted || retrying) return;
-    const next = nextCandidateEntry();
-    if (next) {
-      retrying = true;
-      rendererEntryIndex = next.index;
-      console.error(`[cgpa-pilot] renderer did not start (${detail}); trying ${next.file}`);
-      void win
-        .loadFile(next.file)
-        .catch(() => undefined)
-        .finally(() => {
-          retrying = false;
-        });
-      return;
-    }
-    console.error('[cgpa-pilot] renderer did not start:', detail);
-    recover(detail);
+    if (painted) return;
+    void (async () => {
+      console.error('[cgpa-pilot] renderer did not start:', detail);
+      if (await advanceLoadSteps(win)) return; // a later strategy may still paint
+      failLoad(win, detail);
+    })();
   };
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorText, validatedURL) => {
@@ -623,6 +801,17 @@ function wireRendererDiagnostics(win: BrowserWindow) {
   setTimeout(() => {
     if (!painted) fail(`no painted renderer within ${STARTUP_GRACE_MS / 1000}s`);
   }, STARTUP_GRACE_MS);
+}
+
+/**
+ * Every strategy is spent: try another launch mode, and only then explain it on
+ * screen. Kept outside the diagnostics wiring because `loadRenderer` can also get
+ * here directly, before any `did-fail-load` event exists.
+ */
+function failLoad(win: BrowserWindow, detail: string) {
+  const context = `${detail}\n  renderer file: ${describeRendererFile(loadedFrom ?? resolveRendererEntry(rendererEntryIndex))}`;
+  escalateLaunchMode(context); // exits the process when a next mode exists
+  loadLoaderError(win, `${context}\n\nEvery load strategy was tried and every launch mode failed.`);
 }
 
 /**

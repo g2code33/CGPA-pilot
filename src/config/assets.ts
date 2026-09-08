@@ -43,7 +43,12 @@ export function assetRef(key: string): string {
 export function isOfflineRuntime(): boolean {
   try {
     if (typeof window === 'undefined') return false;
-    if (window.location?.protocol === 'file:') return true;
+    const scheme = window.location?.protocol;
+    // `cgpa:` is the desktop renderer scheme served by the Electron main process
+    // (electron/rendererPath.ts). It behaves like file:// for us — no same-origin
+    // API, offline first — so the packaging must be treated identically here or the
+    // desktop would start trusting remote logo URLs it cannot always reach.
+    if (scheme === 'file:' || scheme === 'cgpa:') return true;
     if (window.Capacitor?.isNativePlatform?.()) return true;
   } catch {
     /* non-browser / test contexts */

@@ -28,11 +28,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  contentTypeFor,
   insideArchive,
   indexOfEntry,
   orderRendererCandidates,
   pickRendererEntry,
+  RENDERER_HOST,
+  RENDERER_SCHEME,
   rendererCandidatePaths,
+  rendererRootDirs,
+  rendererStartURL,
+  resolveRendererFile,
 } from '../electron/rendererPath.ts';
 import {
   chooseLaunchMode,
@@ -238,13 +244,137 @@ test('main.ts wires the ladder to real Electron events (no dead code paths)', ()
   const main = readFileSync(`${root}/electron/main.ts`, 'utf8');
   assert.match(main, /render-process-gone/, 'a crashed renderer is what triggers escalation');
   assert.match(main, /did-fail-load/, 'a failed load is what triggers a candidate retry');
-  assert.match(main, /escalateLaunchMode\(detail\)/, 'exhausted candidates hand over to the ladder');
+  assert.match(main, /if \(await advanceLoadSteps\(win\)\) return; \/\/ a later strategy may still paint/, 'a failure tries the remaining strategies first');
+  assert.match(main, /failLoad\(win, detail\);/, 'and only then reaches the page');
+  assert.match(main, /escalateLaunchMode\(context\)/, 'the exhausted ladder escalates the launch mode');
   assert.match(main, /app\.relaunch/, 'recovery is a relaunch — a dead renderer cannot be revived');
   assert.match(main, /writeLaunchState\(launchModeFile\(\), step\.state\)/, 'the outcome is persisted before relaunching');
   assert.match(main, /process\.env\.CGPA_LAUNCH_MODE = String\(step\.next\)/, 'and handed to the child, which is the loop guard');
   assert.match(main, /if \(escalationsQueued > 0\) return false/, 'one relaunch per process, however many failures arrive');
   assert.match(main, /markRendererAlive/, 'the renderer proves life through app:version');
+  assert.match(main, /registerRendererProtocol/, 'and the main process can serve the renderer itself');
+  assert.doesNotMatch(main, /loadRenderer[\s\S]{0,400}loadLoaderError\(win, `Loading/, 'a rejected load must never skip the recovery machine');
   assert.match(main, /STARTUP_GRACE_MS/, 'silence counts as a failure, not as success');
   // A diagnostic page that itself looks like a painted UI would mask the bug.
   assert.match(main, /startsWith\('data:'\)/, 'the diagnostic page must never count as a paint');
+});
+
+// ── the main-process protocol route ───────────────────────────────────────
+//
+// `file://` is Chromium reading the disk from a sandboxed process; the custom
+// scheme is the main process handing over bytes. The mapping below is the whole
+// attack surface of that route, so it is tested as a pure function: what resolves,
+// what must 404, and what must never escape its root.
+
+const URLROOT = '/opt/CGPA-Pilot/resources';
+const roots = [`${URLROOT}/app.asar.unpacked/dist`, `${URLROOT}/app.asar/dist`];
+const has = (files) => (f) => files.includes(path.resolve(f));
+
+test('the start URL is a real origin, not a path', () => {
+  const url = new URL(rendererStartURL());
+  assert.equal(url.protocol, `${RENDERER_SCHEME}:`);
+  assert.equal(url.host, RENDERER_HOST);
+  assert.equal(url.pathname, '/index.html');
+  // Relative module/asset URLs have to resolve inside the same origin, which is
+  // what `standard: true` buys us. Check the arithmetic the renderer will do.
+  const asset = new URL('./assets/index-abc.js', url.href);
+  assert.equal(asset.origin, url.origin, 'assets must stay same-origin (CSP default-src \'self\')');
+  assert.equal(asset.pathname, '/assets/index-abc.js');
+});
+
+test('the roots the protocol reads from are ordered like the candidates', () => {
+  const list = rendererRootDirs(`${URLROOT}/app.asar`, `${URLROOT}/app.asar/dist-electron`);
+  assert.equal(list[0], path.resolve(`${URLROOT}/app.asar.unpacked/dist`));
+  assert.ok(list.some((r) => insideArchive(r)), 'the archive stays reachable — Node can read it');
+  assert.equal(new Set(list).size, list.length);
+});
+
+test('the protocol serves index.html and its assets, from the first root that has them', () => {
+  const present = [
+    path.resolve(`${URLROOT}/app.asar.unpacked/dist/index.html`),
+    path.resolve(`${URLROOT}/app.asar/dist/index.html`),
+    path.resolve(`${URLROOT}/app.asar/dist/assets/only-in-archive.js`),
+  ];
+  const read = has(present);
+  assert.deepEqual(resolveRendererFile('/index.html', roots, read), {
+    file: path.resolve(`${URLROOT}/app.asar.unpacked/dist/index.html`),
+    status: 200,
+    fallback: false,
+  }, 'the real directory wins over the archive, as everywhere else');
+  assert.equal(
+    resolveRendererFile('/', roots, read).file,
+    path.resolve(`${URLROOT}/app.asar.unpacked/dist/index.html`),
+    'the bare origin path is the shell'
+  );
+  // An asset that only exists in the archive is still served — no filesystem
+  // permission or sandbox policy involved, which is the point of the route.
+  assert.equal(
+    resolveRendererFile('/assets/only-in-archive.js', roots, read).file,
+    path.resolve(`${URLROOT}/app.asar/dist/assets/only-in-archive.js`)
+  );
+  assert.equal(resolveRendererFile('/assets/missing.js', roots, read).status, 404);
+  assert.equal(resolveRendererFile('/assets/missing.js', roots, read).fallback, false, 'a missing asset must not silently become HTML');
+});
+
+test('client-side routes get the shell; traversal and bad escapes do not', () => {
+  const read = has([path.resolve(`${URLROOT}/app.asar.unpacked/dist/index.html`)]);
+  const routed = resolveRendererFile('/institution/42/term-3', roots, read);
+  assert.equal(routed.status, 200);
+  assert.equal(routed.fallback, true, 'extension-less paths are routes, and routes render the app');
+
+  for (const attack of [
+    '/../package.json',
+    '/../../etc/passwd',
+    '/%2e%2e/%2e%2e/etc/passwd',
+    '/..%2f..%2fetc/passwd',
+    "\\..\\..\\windows\\win.ini",
+    '/assets/../../secrets.env',
+  ]) {
+    const r = resolveRendererFile(attack, roots, (f) => f.endsWith('index.html') && !insideArchive(f));
+    assert.ok(!r.file || path.resolve(r.file).startsWith(path.resolve(roots[0])), `${attack} escaped to ${r.file}`);
+  }
+  assert.equal(resolveRendererFile('%', roots, read).status, 404, 'a malformed escape is refused, not thrown');
+});
+
+test('content types are what a module-loading page needs', () => {
+  assert.match(contentTypeFor('a/index.html'), /^text\/html/);
+  assert.match(contentTypeFor('a/assets/x.js'), /text\/javascript/, 'ES modules are refused without a JS MIME type');
+  assert.equal(contentTypeFor('a/x.mjs'), contentTypeFor('a/x.js'));
+  assert.match(contentTypeFor('a/assets/x.css'), /^text\/css/);
+  assert.match(contentTypeFor('a/manifest.webmanifest'), /manifest/);
+  assert.equal(contentTypeFor('a/icon.png'), 'image/png');
+  assert.equal(contentTypeFor('a/unknown.bin'), 'application/octet-stream');
+});
+
+test('the renderer treats the desktop scheme as an offline runtime, like file://', () => {
+  // src/config/assets.ts decides which logo values are usable; if it only knows
+  // `file:` then a `cgpa://` desktop would take a different (untested) code path.
+  const assets = readFileSync(`${root}/src/config/assets.ts`, 'utf8');
+  const offlineBody = assets.slice(assets.indexOf('export function isOfflineRuntime'), assets.indexOf('export function isOfflineRuntime') + 1200);
+  assert.match(offlineBody, /['"]file:['"]/, 'file:// still counts');
+  assert.match(offlineBody, new RegExp(`['"]${RENDERER_SCHEME}:['"]`), `${RENDERER_SCHEME}: must count too`);
+});
+
+test('the main process registers the scheme before ready and serves every asset index.html asks for', () => {
+  const main = readFileSync(`${root}/electron/main.ts`, 'utf8');
+  const register = main.indexOf('registerSchemesAsPrivileged');
+  const ready = main.indexOf('app.whenReady().then('); // the real call, not the prose about it
+  assert.ok(register > 0 && ready > 0 && register < ready, 'Electron requires privileged schemes before app ready');
+  assert.match(main, /corsEnabled: true/, 'module scripts are fetched with CORS even from a privileged scheme');
+  assert.match(main, /'access-control-allow-origin': '\*'/);
+
+  const distIndex = path.join(root, 'dist', 'index.html');
+  if (!existsSync(distIndex)) return undefined; // `dist/` only exists after a web build
+  const read = (f) => existsSync(f);
+  const distRoots = [path.join(root, 'dist')];
+  const html = readFileSync(distIndex, 'utf8');
+  const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]).filter((u) => !/^https?:|^data:/.test(u));
+  assert.ok(refs.length >= 2, 'the built index should reference its assets: ' + refs.join(' '));
+  for (const ref of refs) {
+    const pathname = new URL(ref, 'http://x/').pathname;
+    const r = resolveRendererFile(pathname, distRoots, read);
+    assert.equal(r.status, 200, `${ref} is referenced by index.html but the protocol cannot serve it`);
+    assert.ok(readFileSync(r.file).length > 0, `${ref} resolves to an empty file`);
+  }
+  return undefined;
 });

@@ -77,3 +77,109 @@ export function indexOfEntry(ordered: string[], file: string): number {
   const want = path.resolve(file);
   return ordered.findIndex((f) => path.resolve(f) === want);
 }
+
+// ── the protocol route ────────────────────────────────────────────────────
+//
+// WHY ANOTHER WAY TO LOAD THE SAME FILE. `file://` reads are performed by
+// Chromium's own stack, in a sandboxed process whose file policy is built from a
+// small allowlist (the executable, its `app.asar`, userData). On a machine where
+// that policy does not cover `resources/app.asar.unpacked/**` — which is what the
+// 1.0.27 field report showed, with the file demonstrably present and readable:
+//
+//     electron: Failed to load URL: file:///opt/CGPA-Pilot/resources/app.asar.unpacked/dist/index.html with error: ERR_FAILED
+//
+// — the load fails even though Node (in the browser process) can read the same
+// path. A privileged custom scheme fixes that structurally: `protocol.handle`
+// serves the response *from the main process*, so the bytes reach the renderer
+// without any sandboxed process touching the filesystem. It also makes the asar
+// question moot — Node's `fs` reads through the archive — so a package can no
+// longer be blank-windowed by an unpacking or path-policy detail.
+//
+// The resolution below is pure (injected `exists`) so the mapping, the traversal
+// guard and the SPA fallback are tested without Electron.
+
+/** The scheme the packaged renderer is served over. */
+export const RENDERER_SCHEME = 'cgpa';
+/** Fixed host so relative URLs resolve predictably (`cgpa://bundle/assets/…`). */
+export const RENDERER_HOST = 'bundle';
+
+export function rendererStartURL(): string {
+  return `${RENDERER_SCHEME}://${RENDERER_HOST}/index.html`;
+}
+
+/** Directories the renderer may be read from, best first (see `rendererCandidatePaths`). */
+export function rendererRootDirs(appDir: string, mainDir: string): string[] {
+  return [...new Set(rendererCandidatePaths(appDir, mainDir).map((f) => path.dirname(f)))];
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json; charset=utf-8',
+};
+
+export function contentTypeFor(file: string): string {
+  return CONTENT_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
+}
+
+export interface ResolvedRendererFile {
+  /** The file to read, or null when nothing matches. */
+  file: string | null;
+  status: 200 | 404;
+  /** True when an unknown path was answered with the app shell (client routing). */
+  fallback: boolean;
+}
+
+/**
+ * Map a request pathname to a file under one of `roots`.
+ *
+ * Guards, in order of how much they matter: `..` cannot escape a root (the
+ * scheme is privileged and the renderer is a normal web page — a traversal here
+ * would be a real filesystem read of anything the app can run); a path with no
+ * extension falls back to `index.html` so client-side routes keep working; and a
+ * missing *asset* is a 404 rather than HTML with a JavaScript content type, which
+ * would show up as a confusing syntax error instead of a clear failure.
+ */
+export function resolveRendererFile(
+  pathname: string,
+  roots: string[],
+  exists: (file: string) => boolean
+): ResolvedRendererFile {
+  let decoded = pathname || '/';
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    return { file: null, status: 404, fallback: false }; // a malformed escape is a 404, not a crash
+  }
+  const clean = decoded.replace(/\\/g, '/'); // Windows separators are not path separators in a URL
+  const segments = clean.split('/').filter((part) => part.length > 0 && part !== '.');
+  if (segments.some((part) => part === '..')) return { file: null, status: 404, fallback: false };
+
+  const rel = segments.join('/');
+  const want = rel === '' || rel === 'index.html' ? 'index.html' : rel;
+  for (const root of roots) {
+    const candidate = path.join(root, want);
+    if (exists(candidate)) return { file: candidate, status: 200, fallback: false };
+  }
+  if (!path.extname(want)) {
+    for (const root of roots) {
+      const shell = path.join(root, 'index.html');
+      if (exists(shell)) return { file: shell, status: 200, fallback: true };
+    }
+  }
+  return { file: null, status: 404, fallback: false };
+}
