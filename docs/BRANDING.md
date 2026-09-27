@@ -157,38 +157,43 @@ branding rather than hoped to be current. Wired into `build:web` right after
    `.live.admin-catalog.json` if the seed refresh already fetched it, else
    `/api/config/latest`),
 2. resolves it (`asset:` → `/api/assets/<key>`, `data:`, `http(s)`),
-3. re-renders every shipped icon with ImageMagick — `public/icon-512.png`,
+3. re-renders the **web and desktop** artwork with ImageMagick — `public/icon-512.png`,
    `build/icon.png` (opaque master) and the `build/icons/{16…512}` hicolor set that
-   `win.icon` and `linux.icon` consume, all five Android `mipmap-*` buckets
-   (`ic_launcher`, `ic_launcher_round` circle-cropped, `ic_launcher_foreground` at
-   66 % for the adaptive-icon safe zone, and the `drawable-{port,land}-*` splash),
-   and the iOS `AppIcon.appiconset` entries — each sized to the pixel dimensions of
-   the file it replaces, so density rules and Xcode's manifest stay valid,
-4. writes only changed bytes (a routine build leaves the tree clean).
+   `win.icon` and `linux.icon` consume — each sized to the pixel dimensions of the
+   file it replaces, so density rules and Xcode's manifest stay valid,
+4. hands the **phone** to `scripts/mobile-icons.mjs`, which is the only definition of
+   what an Android/iOS icon set contains (five density buckets, the adaptive
+   foreground/`<monochrome>` layers, `values/ic_launcher_background.xml`,
+   `drawable-{port,land}-*` splash, and every entry the iOS `Contents.json` declares).
+   It is pure Node, so it runs identically with or without ImageMagick — see
+   `docs/MOBILE.md`;
+5. writes only changed bytes (a routine build leaves the tree clean).
 
 Failures are warnings by design — no rasterizer, no network, no admin logo, an
 unreadable image all leave the committed artwork in place, because branding must
 never be able to break packaging. `CGPA_BRAND_ICONS=0` skips it entirely (a
 reproducible or fully offline build).
 
-> **Keeping CI able to rasterize:** the Ubuntu runner ships ImageMagick, the
-> Windows and macOS ones do not, so those two legs would fall back to the copy-only
-> path above. The steps that install it live in
+> **ImageMagick is now optional.** A square-PNG logo (what the admin upload becomes)
+> is rasterized by `scripts/pngkit.mjs` — decode, crop, resize, mask, encode — so a
+> clean checkout with no ImageMagick and no network still gets the whole set, and
+> `build/icons/` is derived from the committed `build/icon.png` when the administrator
+> has published no logo at all (that directory is not in git, yet `package.json`
+> points electron-builder at it; without the fallback a fresh clone cannot package).
+> ImageMagick is still used when present, because it is the only thing that can read an
+> SVG or a JPEG logo. The steps that install it live in
 > `docs/ci-brand-icons-imagemagick.patch` — apply them with
 > `git apply docs/ci-brand-icons-imagemagick.patch` (this repo keeps
 > `.github/workflows` edits as patches, like `docs/ci-ios-upload-fix.patch`, because
 > the automation token has no `workflows` scope). They are `continue-on-error`, so
-> even unapplied the release still builds — only the installer artwork lags.
+> even unapplied the release still builds — only a non-PNG logo fails to rasterize.
 
-Without ImageMagick the script limits itself to copying a **square PNG** into the
-three targets whose consumers resize for themselves (`public/icon-512.png` and, when
-the source is big enough, `build/icons/{256,512}`), and refuses everything else:
-renaming a JPEG to `.png` or writing a 600×300 wordmark into a density-mipmap or an
-iOS AppIcon would be worse than the artwork already in the repo. That fallback is
-why `.github/workflows/build-desktop.yml` installs ImageMagick on the Windows and
-macOS legs (Ubuntu runners ship it) — with `continue-on-error`, so a failed install
-degrades the *branding* of that build instead of failing the release. If a Windows
-`.exe` ever ships the old logo, check that step's log for "ImageMagick not found".
+What it still refuses: a JPEG logo or a 600×300 wordmark without ImageMagick, because
+writing those into a density mipmap or an iOS AppIcon is worse than the committed
+artwork (`pngSquareInfo` is the gate, and the log says so). If a Windows `.exe` ever
+ships the old logo, look for "ImageMagick not found" and "not a square PNG" in that
+step's log — and run `node scripts/verify-branding.mjs`, which compares the SHA of
+every surface and checks `npm run check:mobile` on the generated art.
 
 ## Checking a device
 

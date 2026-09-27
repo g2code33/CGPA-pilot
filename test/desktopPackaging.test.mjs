@@ -217,7 +217,7 @@ test('the shipped installer artwork is regenerated from the published branding',
   // Branding is cosmetic: no rasterizer, no network or no admin logo must all
   // leave the committed artwork in place with a warning, never a failed build.
   assert.doesNotMatch(src, /process\.exit\(/, 'the script must never fail a build');
-  assert.match(src, /catch \(e\) \{\n  \/\/ Branding must never break a build/, 'top-level failures warn');
+  assert.match(src, /Branding must never break a build/, 'top-level failures warn');
   assert.match(src, /CGPA_BRAND_ICONS/, 'opt-out switch for reproducible/offline builds');
   // ImageMagick downgrades small PNGs to a palette unless forced; the Linux .ico
   // set and the masked Android layers then look banded (or get rejected).
@@ -225,20 +225,37 @@ test('the shipped installer artwork is regenerated from the published branding',
   assert.match(src, /png:color-type=\$\{colorType\}/, 'opaque masters must be forced to RGB');
 });
 
-test('without a rasterizer the refresh refuses to write an unsafe icon', () => {
+test('without ImageMagick the refresh still rasterizes, and only what is safe', () => {
   const src = readFileSync(`${root}/scripts/refresh-brand-icons.mjs`, 'utf8');
-  // Copying raw upload bytes is only safe for a SQUARE PNG, and only into
-  // targets whose consumer resizes: the manifest declares image/png, Android
-  // needs exact density dims, iOS forbids alpha, and electron-builder can only
-  // shrink — so a JPEG or an odd-sized logo must be skipped, not renamed.
+  // "No ImageMagick on the build host" used to mean the phone and installer art kept
+  // whatever was committed — which is how a home screen ended up showing a placeholder
+  // while the administrator's logo was live in the app. A square PNG (what the upload
+  // is stored as) needs no external tool, so a pure-Node path must exist and must be
+  // the one that runs.
+  assert.match(src, /function nodeSquareIcon/, 'a Node rasterizer must exist');
+  assert.match(src, /refreshWebAndDesktopNode\(bytes\)/, 'and be used when ImageMagick is absent');
+  assert.match(src, /from '\.\/pngkit\.mjs'/, 'in-repo, with no dependency to install');
+  // But only for a SQUARE PNG: Android needs exact density dims, iOS forbids alpha, and
+  // electron-builder can only shrink. Anything else keeps the committed artwork.
   assert.match(src, /function pngSquareInfo/, 'the PNG header must actually be checked');
   assert.match(src, /not a square PNG/, 'and refused with an actionable warning');
-  assert.match(src, /if \(png\.size >= 512\)/, 'a 512 target must not be filled by a smaller logo');
   assert.match(src, /width !== height/, 'non-square sources are never stretched');
+  // build/icons/ is generated art that package.json points electron-builder at, so a
+  // fresh clone with no logo and no network must still end up holding the directory.
+  assert.match(src, /function ensureIconSet/, 'the hicolor set is derived from the committed master');
+  assert.match(src, /ensureIconSet\(\)/, 'on every "keeping the committed artwork" bail-out');
+  assert.match(src, /if \(existsSync\(file\)\) continue/, 'never overwriting a size that exists');
 });
 
 test('every icon path electron-builder and Capacitor read is covered by the refresh', () => {
-  const src = readFileSync(`${root}/scripts/refresh-brand-icons.mjs`, 'utf8');
+  // Asserted across the whole build-time pipeline, because the phone half is no longer
+  // this script's own work — it delegates to scripts/mobile-icons.mjs, the single
+  // definition of an Android/iOS icon set. Splitting the rules while keeping the CHECK
+  // whole matters: two files that both claim to own the mipmap set is exactly how the
+  // two halves drifted apart before.
+  const refreshSrc = readFileSync(`${root}/scripts/refresh-brand-icons.mjs`, 'utf8');
+  const src = refreshSrc + readFileSync(`${root}/scripts/mobile-icons.mjs`, 'utf8');
+  assert.match(refreshSrc, /'mobile-icons\.mjs'/, 'the refresh must invoke the generator, not merely coexist with it');
   const covered = [
     build.win.icon, // build/icons/256x256.png — the .exe/.ico source
     linux.icon, // build/icons — the hicolor set

@@ -86,6 +86,87 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   PHONE CHROME — status bar, notch, gesture bar
+   ─────────────────────────────────────────────────────────────────────
+   `index.html` sets `viewport-fit=cover`, which is what lets the app paint its own
+   background behind the status bar… and also what lets the status bar paint ON TOP
+   of the app. Without these rules the header sits under the clock and the back
+   button, and the bottom bar sits under the swipe gesture, which is exactly the
+   complaint this fixes: taps in that strip are consumed by the OS, so the button is
+   not merely ugly, it is dead.
+
+   The insets are CSS variables rather than raw `env()` so that (a) a browser without
+   `viewport-fit=cover` support resolves to 0 in ONE place, and (b) a caller can add
+   the inset to its own padding instead of replacing it — which is why headers/bars
+   below take their spacing from `--app-*-pad` and never from a `py-*` utility.
+
+   Android note: the native theme ALSO sets `android:fitsSystemWindows` (see
+   android/app/src/main/res/values/styles.xml), because on a WebView the value of
+   `env(safe-area-inset-top)` depends on the window being laid out edge-to-edge —
+   which the system decides, not the page. Between the two, the header is inset
+   exactly once: with `fitsSystemWindows` the WebView starts below the bar, `env()`
+   reports 0, and nothing is added; on iOS the WebView runs full-bleed, `env()`
+   reports the real inset, and it is.
+*/
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+@supports not (top: env(safe-area-inset-top)) {
+  :root {
+    --safe-top: 0px;
+    --safe-right: 0px;
+    --safe-bottom: 0px;
+    --safe-left: 0px;
+  }
+}
+
+@layer components {
+  /* The bar at the top of every shell: home hub, tool screens, desktop, admin.
+     `header.app-header`, not `.app-header`: unlayered and single-class custom rules
+     lose to Tailwind's utilities in this build (measured in the emitted sheet), and
+     a later `py-2` on one of these elements must not be able to delete the inset.
+     An element-qualified selector wins on specificity and survives minification —
+     `.app-header.app-header` is collapsed back to one class by the CSS minifier. */
+  header.app-header {
+    --app-header-pad: 0.375rem;
+    padding-top: calc(var(--app-header-pad) + var(--safe-top));
+    padding-bottom: var(--app-header-pad);
+  }
+
+  /* The bar at the bottom: previous / next / home, and the admin tab strip. */
+  nav.app-bar {
+    --app-bar-pad: 0.5rem;
+    padding-top: var(--app-bar-pad);
+    padding-bottom: calc(var(--app-bar-pad) + var(--safe-bottom));
+  }
+
+  /* Landscape on a notched phone: the inset moves to the SIDES, and a full-height
+     shell would otherwise run under them. */
+  @media (orientation: landscape) {
+    header.app-header {
+      padding-left: calc(1rem + var(--safe-left));
+      padding-right: calc(1rem + var(--safe-right));
+    }
+  }
+}
+
+/* No rubber-band that reveals a bare window behind the header, and no
+   tap-highlight flash on Android — the two things that make a WebView app feel
+   like a website in a frame rather than an app. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────
    PRINT SYSTEM (Prompt 15)
    On screen the print root is hidden; on print only it is shown and the
    live app is hidden, so any single section/scenario can print in

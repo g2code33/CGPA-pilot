@@ -106,6 +106,11 @@ npm run mobile:sync    # build web + cap sync android
 > **Branding rules** (how the logo the administrator sets reaches the tab icon, the
 > installed PWA icon, the desktop window/launcher icon and the shipped installer
 > artwork — and which of those need a rebuild): `docs/BRANDING.md`.
+>
+> **Phone rules** (status-bar/notch insets, the launcher + install artwork, the
+> `versionCode` that makes an APK updatable, and what only a human can do before a
+> release — signing, Play, a real-device pass): `docs/MOBILE.md`. `npm run
+> check:mobile` gates the first three in CI.
 
 Pushing to `main` triggers the GitHub Actions workflow
 (`docs/workflow-build-desktop.yml` → install at `.github/workflows/`) which

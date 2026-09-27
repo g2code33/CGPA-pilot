@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -15,7 +17,8 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -34,6 +37,18 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
     </application>
+
+    <!--
+      `allowBackup=false` + the rules below are not paranoia: the student's whole
+      record lives in this WebView's storage, and the default "back up the app"
+      behaviour would copy it to a Google account and restore it onto another
+      device. The app's promise is that nothing is stored anywhere but here, so the
+      manifest has to say so as well as the code.
+
+      `windowSoftInputMode=adjustResize` keeps the typing area and the semester form
+      above the keyboard instead of under it (`configChanges` already stops the
+      activity being recreated when the keyboard opens).
+    -->
 
     <!-- Permissions -->
 

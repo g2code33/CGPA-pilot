@@ -436,11 +436,85 @@ function verifyInstall(dir) {
   }
 }
 
+// ── mobile: generated art, native chrome, release facts ───────────────────
+//
+// The web surfaces above are compared by bytes; the phone has the same problem in two
+// extra places — art that a generator owns, and XML that no generator touches. So the
+// generators are asked whether they agree (`--check`, the same call CI makes), and the
+// XML is asserted on the few lines whose absence is a visible defect.
+
+function runTool(file, cliArgs, label, fix) {
+  let out = '';
+  let status = 0;
+  try {
+    out = execFileSync(process.execPath, [file, ...cliArgs], { cwd: repo, encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) {
+    status = e.status ?? 1;
+    out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+  }
+  const summary = out.trim().split('\n').filter(Boolean).slice(0, 3).join(' · ');
+  if (status === 0) ok(label, summary || 'no drift');
+  else bad(label, summary || 'the check failed', fix);
+  return status;
+}
+
+function verifyMobile() {
+  const res = path.join(repo, 'android', 'app', 'src', 'main', 'res');
+  if (!existsSync(res)) {
+    warn('mobile', 'no android/ project here (cap add android has not been run) — skipping the native checks');
+    return;
+  }
+  const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null);
+  const styles = read(path.join(res, 'values', 'styles.xml'));
+  const v27 = read(path.join(res, 'values-v27', 'styles.xml'));
+  const colors = read(path.join(res, 'values', 'colors.xml'));
+  const manifest = read(path.join(repo, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'));
+  const gradle = read(path.join(repo, 'android', 'app', 'build.gradle'));
+  const capCfg = read(path.join(repo, 'capacitor.config.ts'));
+  const css = read(path.join(repo, 'src', 'index.css'));
+
+  runTool('scripts/mobile-icons.mjs', ['--check'], 'mobile icons', 'npm run mobile:icons — a stale APK icon is the logo users see every single day');
+  runTool('scripts/sync-mobile-version.mjs', ['--check'], 'mobile versions', 'npm run mobile:version — Android refuses an update whose versionCode did not rise');
+
+  // Each item is phrased as the symptom a student would report, because that is how it
+  // gets recognised in a bug report filed weeks later.
+  const themeFacts = [
+    ['AppTheme.NoActionBarLaunch', styles, /AppTheme\.NoActionBarLaunch[\s\S]*?fitsSystemWindows">true/, 'the header and its back button sit under the status bar/notch'],
+    ['launch theme bars', styles, /AppTheme\.NoActionBarLaunch[\s\S]*?statusBarColor/, 'the strip above the app stays the framework default indigo'],
+    ['light status bar', styles, /windowLightStatusBar">true/, 'a white header with white clock icons — unreadable'],
+    ['splash handoff', styles, /postSplashScreenTheme/, 'the native splash never hands over, so the logo freezes on screen'],
+    ['v27 nav bar', v27 ?? '', /windowLightNavigationBar/, 'the gesture pill is invisible on a white nav bar (API 27+ overlay missing)'],
+    ['app colours', colors ?? '', /name="app_background"/, 'the pre-paint window colour and the CSS background disagree (a flash on open)'],
+    ['backup opt-out', manifest ?? '', /allowBackup="false"/, 'the student record is copied to a Google account by default'],
+    ['keyboard', manifest ?? '', /windowSoftInputMode="adjustResize"/, 'the keyboard covers the field being typed in'],
+    ['first-paint colour', capCfg ?? '', /backgroundColor/, 'a white flash before the WebView paints (CapConfig reads android.backgroundColor)'],
+    ['safe areas in CSS', css ?? '', /--safe-top:/, 'iOS and any edge-to-edge WebView get no inset at all'],
+  ];
+  for (const [label, source, re, symptom] of themeFacts) {
+    if (!source) {
+      warn(label, 'file not found — nothing to check');
+      continue;
+    }
+    if (re.test(source)) ok(label, 'set');
+    else bad(label, `missing — ${symptom}`, 'docs/MOBILE.md, "Phone chrome"');
+  }
+
+  // Two facts a maintainer will otherwise re-break in CI, reported as warnings because
+  // both are choices, not defects.
+  if (/minifyEnabled\s+false/.test(gradle ?? '')) {
+    warn('apk shrinking', 'minifyEnabled false — larger APK, no R8; fine until methods hit 64k');
+  }
+  if (/keystoreProperties|release-keystore\.p12/.test(gradle ?? '') && !existsSync(path.join(repo, 'android', 'release-keystore.p12'))) {
+    warn('signing', 'release-keystore.p12 absent — CI signs with the DEBUG key. A phone with a debug-signed build can never be updated by a release-signed one (uninstall first)');
+  }
+}
+
 // ── main ────────────────────────────────────────────────────────────────────
 
 const install = opt('install');
 try {
   await verifyServed();
+  verifyMobile();
 } catch (e) {
   bad('verification crashed', e.message);
 }

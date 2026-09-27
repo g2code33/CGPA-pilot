@@ -15,7 +15,11 @@
 //
 // Bump `CACHE` whenever you change this file's caching rules; old caches are
 // deleted on activate so devices pick up the new rules immediately.
-const CACHE = 'cgpa-pilot-v9'; // v9: manifest now points at /app-icon (admin logo) — force a re-cache
+// Derived from package.json by scripts/sync-mobile-version.mjs (`npm run
+// mobile:version`), so a release re-caches instead of serving the previous build's
+// assets forever. Bump it by hand only if you change the rules below without a
+// release (previous note: v9 — manifest now points at /app-icon, the admin logo).
+const CACHE = 'cgpa-pilot-v1.0.29';
 
 const SHELL = [
   './',

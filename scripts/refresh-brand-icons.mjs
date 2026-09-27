@@ -38,6 +38,15 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import {
+  composeCanvas,
+  decodePng,
+  encodePng,
+  flatten,
+  maskCircle,
+  readPngDims,
+  resizeArea,
+} from './pngkit.mjs';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -152,7 +161,7 @@ async function logoBytes(value) {
  * edge and colour type, or null when the bytes are not a PNG at all — the only
  * shape a copy-without-resizing can safely stand in for.
  */
-function pngSquareInfo(buf) {
+export function pngSquareInfo(buf) {
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   if (buf.length < 24 || !buf.subarray(0, 8).equals(PNG)) return null;
   if (buf.toString('ascii', 12, 16) !== 'IHDR') return null;
@@ -164,6 +173,25 @@ function pngSquareInfo(buf) {
   // high-bit-depth 48/64 variants with an sBIT chunk) is not worth guessing.
   if (![0, 2, 3, 4, 6].includes(colorType)) return null;
   return { size: width, colorType };
+}
+
+/**
+ * The same operation as `squareIcon`, in pure Node.
+ *
+ * This exists because "no ImageMagick on the build host" used to mean the mobile and
+ * installer artwork silently kept whatever was committed — which is how a phone ended
+ * up showing a placeholder icon on the home screen and in the installer while the
+ * administrator's logo was live in the app. A PNG source (which is what the admin
+ * upload is stored as) needs no external tool: decoding, fitting and encoding are
+ * here, so the refresh works in CI and on a clean checkout.
+ */
+export function nodeSquareIcon(bytes, { size, scale = 0.88, background = null, round = false }) {
+  const img = decodePng(bytes);
+  const side = Math.max(1, Math.round(size * scale));
+  let canvas = composeCanvas(resizeArea(img, side, side), size, { background });
+  if (background) canvas = flatten(canvas, background);
+  if (round) canvas = maskCircle(canvas);
+  return encodePng(canvas);
 }
 
 /** 'magick' (v7, sub-commands) or 'convert' (v6, standalone binaries) or null. */
@@ -225,7 +253,7 @@ function toPng(args, label = 'convert', colorType = 6) {
  * onto `background` (opaque). `round` crops to a circle (Android's legacy
  * `ic_launcher_round`, which the launcher displays as-is).
  */
-function squareIcon(src, { size, scale = 0.88, background = null, round = false }) {
+export function squareIcon(src, { size, scale = 0.88, background = null, round = false }) {
   const fit = Math.max(8, Math.round(size * scale));
   const args = [src, '-filter', 'Mitchell', '-resize', `${fit}x${fit}`, '-gravity', 'center'];
   args.push('-background', background ?? 'none', '-extent', `${size}x${size}`);
@@ -251,17 +279,48 @@ function squareIcon(src, { size, scale = 0.88, background = null, round = false 
   }
 }
 
-/** Adaptive-icon foreground layer: smaller, always transparent. */
-function foregroundIcon(src, size) {
-  return squareIcon(src, { size, scale: 0.66 });
-}
-
 // ── 4. targets ─────────────────────────────────────────────────────────────
 
 function androidBackgroundColour() {
   const xml = readTextSafe(path.join(ROOT, 'android', 'app', 'src', 'main', 'res', 'values', 'ic_launcher_background.xml'));
   const m = xml && /<color name="ic_launcher_background">(#[0-9a-fA-F]{3,8})<\/color>/.exec(xml);
   return m ? m[1] : '#FFFFFF';
+}
+
+/**
+ * Make the desktop/web icon set EXIST, from the committed master, without overwriting
+ * anything.
+ *
+ * `build/icons/*.png` is not in git (it is generated art) but `package.json` points
+ * electron-builder at it for both Windows (`build/icons/256x256.png`) and Linux
+ * (`build/icons`). Until now the only writer of that directory was the admin-logo path,
+ * so a fresh clone — CI with no API reachable, or anyone building from source offline —
+ * had no icon directory at all: the packaging step either failed or shipped a default
+ * icon. Deriving the set from `build/icon.png` (which IS committed) when the
+ * administrator has published no logo is what makes `npm run build:linux` work on a
+ * clean checkout, and it never touches a file that already exists.
+ */
+function ensureIconSet() {
+  const master = path.join(ROOT, 'build', 'icon.png');
+  if (!existsSync(master)) {
+    warn('no build/icon.png to derive the icon set from — the packaging step will not find build/icons/');
+    return 0;
+  }
+  let written = 0;
+  try {
+    const img = decodePng(readFileSync(master));
+    for (const size of HICOLOR) {
+      const file = path.join(ROOT, 'build', 'icons', `${size}x${size}.png`);
+      if (existsSync(file)) continue;
+      if (writeIfChanged(file, encodePng(resizeArea(img, size, size)))) written += 1;
+    }
+    const webIcon = path.join(ROOT, 'public', 'icon-512.png');
+    if (!existsSync(webIcon) && writeIfChanged(webIcon, encodePng(resizeArea(img, 512, 512)))) written += 1;
+  } catch (e) {
+    warn(`could not derive the icon set from build/icon.png (${e.message})`);
+  }
+  if (written) log(`created ${written} missing icon file(s) from the committed master.`);
+  return written;
 }
 
 function refreshWebAndDesktop(src) {
@@ -284,68 +343,58 @@ function refreshWebAndDesktop(src) {
   return n;
 }
 
-function refreshAndroid(src) {
-  let n = 0;
-  const bg = androidBackgroundColour();
-  const resDir = path.join(ROOT, 'android', 'app', 'src', 'main', 'res');
-  for (const density of DENSITIES) {
-    const dir = path.join(resDir, `mipmap-${density}`);
-    if (!existsSync(dir)) continue;
-    for (const name of ['ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png']) {
-      const file = path.join(dir, name);
-      const dims = dimsOf(file);
-      if (!dims) continue;
-      const size = Number(dims.split('x')[0]);
-      const data = name.endsWith('foreground.png')
-        ? foregroundIcon(src, size)
-        : squareIcon(src, { size, background: bg, round: name.includes('round') });
-      if (writeIfChanged(file, data)) n += 1;
-    }
-  }
-  // The native splash (what flashes before the webview paints) shows the same
-  // logo, so an APK must not open with the old one.
-  for (const orient of ['port', 'land']) {
-    for (const density of DENSITIES) {
-      const file = path.join(resDir, `drawable-${orient}-${density}`, 'splash.png');
-      const dims = dimsOf(file);
-      if (!dims) continue;
-      const [w, h] = dims.split('x').map(Number);
-      const box = Math.max(64, Math.round(Math.min(w, h) * 0.4));
-      const logo = path.join(TMP, `splash-${orient}-${density}.png`);
-      writeFileSync(logo, squareIcon(src, { size: box }));
-      if (writeIfChanged(file, flatSplash(w, h, logo))) n += 1;
-    }
-  }
-  return n;
+/**
+ * Hand the mobile half to scripts/mobile-icons.mjs.
+ *
+ * It is the single definition of what an Android/iOS icon set contains (density
+ * buckets, adaptive layers, themed layer, native splash, the asset catalog's own
+ * declarations), it does not need ImageMagick, and it can be *checked* in CI
+ * (`--check`). Duplicating that here is how the two halves drifted apart in the
+ * first place, so both rasterizer paths end up calling it.
+ */
+function refreshMobile() {
+  const res = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'mobile-icons.mjs')], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  const out = `${res.stdout ?? ''}${res.stderr ?? ''}`.trim();
+  for (const line of out.split('\n').filter(Boolean)) log(`mobile: ${line}`);
+  if (res.status !== 0) warn(`mobile icon generation exited ${res.status} — the committed mobile artwork is unchanged.`);
+  return 0;
 }
 
-/** Logo centred (a touch above centre, as launchers do) on the app's background. */
-function flatSplash(w, h, logoFile) {
-  const offset = Math.round(h * 0.06);
-  return toPng(['-size', `${w}x${h}`, 'xc:#eef2f7', logoFile, '-gravity', 'center', '-geometry', `+0-${offset}`, '-composite'], 'splash');
-}
-
-function refreshIos(src) {
+/**
+ * `refreshWebAndDesktop` without ImageMagick: every file is resized to the pixel
+ * dimensions the file ITSELF already has (so a density set or a 1024 master is never
+ * quietly re-sized), and the Windows/Linux master is flattened opaque because an .ico
+ * or .icns with alpha renders black.
+ */
+function refreshWebAndDesktopNode(bytes) {
   let n = 0;
-  const dir = path.join(ROOT, 'ios', 'App', 'App', 'Assets.xcassets', 'AppIcon.appiconset');
-  const text = readTextSafe(path.join(dir, 'Contents.json'));
-  if (!text) return 0;
-  let doc;
-  try {
-    doc = JSON.parse(text);
-  } catch {
-    return 0;
+  const dimsOfNode = (file) => {
+    if (!existsSync(file)) return null;
+    try {
+      const d = readPngDims(readFileSync(file));
+      return d ? `${d.width}x${d.height}` : null;
+    } catch {
+      return null;
+    }
+  };
+  for (const size of HICOLOR) {
+    const file = path.join(ROOT, 'build', 'icons', `${size}x${size}.png`);
+    const dims = dimsOfNode(file);
+    const target = dims ? Number(dims.split('x')[0]) : size;
+    if (writeIfChanged(file, nodeSquareIcon(bytes, { size: target }))) n += 1;
   }
-  for (const image of doc.images ?? []) {
-    if (!image?.filename) continue;
-    const file = path.join(dir, image.filename);
-    const dims = dimsOf(file);
-    const size = dims
-      ? Number(dims.split('x')[0])
-      : Number(String(image.size ?? '1024x1024').split('x')[0]) || 1024;
-    // iOS rejects alpha in App Store icons, hence the white plate.
-    if (writeIfChanged(file, squareIcon(src, { size: Math.max(64, size), scale: 0.82, background: '#ffffff' }))) n += 1;
-  }
+  const webIcon = path.join(ROOT, 'public', 'icon-512.png');
+  const webDims = dimsOfNode(webIcon);
+  const webSize = webDims ? Math.max(...webDims.split('x').map(Number)) : 512;
+  if (writeIfChanged(webIcon, nodeSquareIcon(bytes, { size: webSize }))) n += 1;
+  const master = path.join(ROOT, 'build', 'icon.png');
+  const masterDims = dimsOfNode(master);
+  const masterSize = masterDims ? Number(masterDims.split('x')[0]) : 1024;
+  if (writeIfChanged(master, nodeSquareIcon(bytes, { size: masterSize, scale: 0.86, background: '#ffffff' }))) n += 1;
+  log(`no ImageMagick on this host — rasterized with scripts/pngkit.mjs (${HICOLOR.length + 2} files considered).`);
   return n;
 }
 
@@ -362,12 +411,14 @@ async function main() {
       appearance = await appearanceFromApi();
     } catch (e) {
       warn(`published catalog unavailable (${e.message}) — keeping the committed icon artwork.`);
+      ensureIconSet();
       return;
     }
   }
   const logoValue = appearance?.logo || appearance?.appIcon?.image;
   if (typeof logoValue !== 'string' || logoValue.length < 64) {
     log('the administrator has not set an app logo — keeping the committed icon artwork.');
+    ensureIconSet();
     return;
   }
   let bytes;
@@ -375,10 +426,12 @@ async function main() {
     bytes = await logoBytes(logoValue);
   } catch (e) {
     warn(`could not download the admin logo (${e.message}) — keeping the committed icon artwork.`);
+    ensureIconSet();
     return;
   }
   if (!bytes) {
     warn('the admin logo could not be read as an image — keeping the committed icon artwork.');
+    ensureIconSet();
     return;
   }
 
@@ -390,40 +443,24 @@ async function main() {
     writeFileSync(src, bytes);
 
     TOOL = detectTool();
-    if (!TOOL) {
-      // No rasterizer. Copying the raw upload is only ever safe for the few
-      // targets whose consumer resizes the file itself, and only when the bytes
-      // really are a square PNG: the manifest declares image/png, Android needs
-      // exact density dims and iOS forbids alpha, so anything else keeps the
-      // committed artwork instead of receiving a broken icon.
-      const png = pngSquareInfo(bytes);
-      if (!png) {
-        warn(
-          'ImageMagick not found and the admin logo is not a square PNG — the shipped icon ' +
-            'artwork is left as committed (install ImageMagick on the build host to refresh it).'
-        );
-        return;
-      }
-      const targets = ['public/icon-512.png'];
-      // electron-builder only ever resizes DOWN for the .ico / hicolor set, so a
-      // source smaller than a target would ship a blurred icon — skip those.
-      if (png.size >= 512) targets.push('build/icons/512x512.png');
-      if (png.size >= 256) targets.push('build/icons/256x256.png');
-      let n = 0;
-      for (const rel of targets) {
-        if (writeIfChanged(path.join(ROOT, rel), bytes)) n += 1;
-      }
-      warn(
-        `ImageMagick not found — copied the ${png.size}x${png.size} logo to ${n} file(s) as-is; ` +
-          'the Android/iOS icon sets and the resized hicolor sizes keep the committed artwork.'
-      );
-      return;
-    }
 
     let written = 0;
-    written += refreshWebAndDesktop(src);
-    written += refreshAndroid(src);
-    written += refreshIos(src);
+    if (!TOOL && !pngSquareInfo(bytes)) {
+      // The pure-Node rasterizer reads PNG only. Everything else (a JPEG logo, an SVG
+      // master, a non-square upload) still needs ImageMagick, and naming that is the
+      // difference between "the icons are stale" and "the icons are stale, and here is
+      // the one command that fixes it".
+      warn(
+        'ImageMagick not found and the admin logo is not a square PNG - the web/desktop ' +
+          'artwork is left as committed (install ImageMagick on the build host to refresh it).'
+      );
+      ensureIconSet();
+    } else if (TOOL) {
+      written += refreshWebAndDesktop(src);
+    } else {
+      written += refreshWebAndDesktopNode(bytes);
+    }
+    written += refreshMobile();
     log(
       written
         ? `refreshed ${written} shipped icon file(s) from the published branding.`
@@ -438,9 +475,14 @@ async function main() {
   }
 }
 
-try {
-  await main();
-} catch (e) {
-  // Branding must never break a build: warn loudly, keep the old artwork.
-  warn(`skipped (${e instanceof Error ? e.message : String(e)}) — keeping the committed icon artwork.`);
+// Only when RUN, not when imported — the tests pull in the pure raster helpers, and a
+// top-level await here would refresh every shipped icon on the machine that only
+// wanted to assert something about them.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    await main();
+  } catch (e) {
+    // Branding must never break a build: warn loudly, keep the old artwork.
+    warn(`skipped (${e instanceof Error ? e.message : String(e)}) — keeping the committed icon artwork.`);
+  }
 }

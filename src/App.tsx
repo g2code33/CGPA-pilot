@@ -255,7 +255,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
           onClick={playGameAgain}
           title="Play Sky Dash mini-game"
           aria-label="Play the mini-game again"
-          className="fixed right-4 top-4 z-10 flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-xs font-black text-white ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25 active:scale-95"
+          className="fixed right-[calc(1rem_+_var(--safe-right))] top-[calc(1rem_+_var(--safe-top))] z-10 flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-xs font-black text-white ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25 active:scale-95"
         >
           🎮 Play
         </button>
@@ -590,7 +590,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   if (view === 'desktop') {
     return (
       <div className={`app-root ${rootH} flex flex-col bg-slate-100`}>
-        <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/80 px-4 py-2 backdrop-blur">
+        <header className="app-header no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/80 px-4 backdrop-blur [--app-header-pad:0.5rem]">
           <Brand appearance={appearance} />
           <div className="flex shrink-0 items-center gap-1.5">
             <UpdateButton />
@@ -728,7 +728,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
             </div>
           )}
         </div>
-        {aiFab('bottom-6 right-6')}
+        {aiFab('bottom-[calc(1.5rem_+_var(--safe-bottom))] right-[calc(1.5rem_+_var(--safe-right))]')}
       </div>
     );
   }
@@ -745,7 +745,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
       tool && tool.id === 'next' ? toolNameFor(d.semesterRole) : tool?.title ?? '';
     return (
       <div className={`app-root ${rootH} flex flex-col bg-slate-50`}>
-        <header className="no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
+        <header className="app-header no-print shrink-0 flex items-center gap-2 border-b border-slate-200/70 bg-white/70 px-3 backdrop-blur">
           <button
             onClick={() => setScreen('home')}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
@@ -784,7 +784,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
               <div className="mx-auto w-full max-w-md">{toolBody}</div>
             </div>
             {/* Bottom tool navigation */}
-            <nav className="no-print shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
+            <nav className="app-bar no-print shrink-0 border-t border-slate-200 bg-white/95 px-3 backdrop-blur">
               <div className="mx-auto flex w-full max-w-md items-center gap-2">
                 {isTool(screen) && prev ? (
               <button
@@ -839,11 +839,11 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
           </>
         )}
         {navWarn && (
-          <div className="no-print fixed bottom-20 left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-lg">
+          <div className="no-print fixed bottom-[calc(5rem_+_var(--safe-bottom))] left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-lg">
             ⚠️ {navWarn}
           </div>
         )}
-        {aiFab('bottom-16 right-3')}
+        {aiFab('bottom-[calc(4rem_+_var(--safe-bottom))] right-[calc(0.75rem_+_var(--safe-right))]')}
       </div>
     );
   }
@@ -851,7 +851,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
   // ── HOME HUB (mobile view — the layout most students use) ─────────────
   return (
     <div className={`app-root ${rootH} flex flex-col bg-gradient-to-b from-brand-50 to-white`}>
-      <header className="no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 py-1.5 backdrop-blur">
+      <header className="app-header no-print shrink-0 flex items-center justify-between gap-2 border-b border-slate-200/70 bg-white/70 px-3 backdrop-blur">
         <Brand appearance={appearance} />
         <div className="flex shrink-0 items-center gap-1.5">
           <UpdateButton />
@@ -866,7 +866,7 @@ export default function App({ preview }: { preview?: StudentPreviewControls } = 
           {homeContent(false)}
         </div>
       </div>
-      {aiFab('bottom-4 right-3')}
+      {aiFab('bottom-[calc(1rem_+_var(--safe-bottom))] right-[calc(0.75rem_+_var(--safe-right))]')}
     </div>
   );
 }

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app's own colours, referenced from styles.xml.
+
+  These deliberately OVERRIDE the names the Capacitor library also defines
+  (colorPrimary/colorPrimaryDark/colorAccent): a resource in the app module wins
+  over the library's during the merge, and the library's values are the framework
+  template's indigo (#3F51B5 / #303F9F), which is why the status bar on a phone did
+  not match the app. Same rule as `productName` on the desktop: what ships is what
+  the app declares, not what the generator left behind.
+-->
+<resources>
+    <color name="colorPrimary">#4F46E5</color>
+    <color name="colorPrimaryDark">#4338CA</color>
+    <color name="colorAccent">#4F46E5</color>
+
+    <!-- Matches `body` in src/index.css, so the moment before the first frame
+         painted is the same colour as the app, not a white flash. -->
+    <color name="app_background">#EEF2F7</color>
+    <!-- The header is white; the bars are painted to match it so the app reads as
+         one surface with the clock on top of it, not a page under a coloured strip. -->
+    <color name="app_bar">#FFFFFF</color>
+    <color name="splashscreen_background">#EEF2F7</color>
+</resources>

@@ -117,7 +117,7 @@ export function AdminApp() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:hidden">
+        <header className="app-header sticky top-0 z-20 flex items-center gap-2 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:hidden [--app-header-pad:0.75rem]">
           <Brand compact appearance={catalog.appearance} />
           <div className="ml-auto flex items-center gap-2">
             <BackToApp />
@@ -158,7 +158,7 @@ export function AdminApp() {
           )}
         </main>
 
-        <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 sm:hidden">
+        <nav className="app-bar fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 sm:hidden">
           <div className="flex gap-2 border-b border-slate-200 p-2">
             <SaveButtons onToast={flashSave} compact />
           </div>
@@ -182,7 +182,7 @@ export function AdminApp() {
       </div>
 
       {saveToast && (
-        <div className="fixed bottom-20 left-1/2 z-50 w-max max-w-[92vw] -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-lg sm:bottom-6">
+        <div className="fixed bottom-[calc(5rem_+_var(--safe-bottom))] left-1/2 z-50 w-max max-w-[92vw] -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-lg sm:bottom-6">
           {saveToast}
         </div>
       )}

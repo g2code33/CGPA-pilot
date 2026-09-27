@@ -9,14 +9,44 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <!--
+      PHONE CHROME (see docs/MOBILE.md).
+
+      `android:theme` on the ACTIVITY is `AppTheme.NoActionBarLaunch`, and nothing in
+      Capacitor 8 swaps it (BridgeActivity never calls installSplashScreen()), so
+      every window-level item below has to live on the LAUNCH theme too — putting it
+      only on `AppTheme.NoActionBar`, as the framework template suggests, would style
+      a theme this app never applies. That duplication is deliberate, not an oversight.
+
+      `fitsSystemWindows` is the Android half of the safe-area fix: it makes the
+      window inset its content below the status bar and above the gesture bar, so the
+      header can never sit under the clock (and the back button in it can never become
+      untappable). `src/index.css` then adds `env(safe-area-inset-*)` for iOS and for
+      any WebView laid out edge-to-edge; each mechanism reports 0 where the other one
+      applies, so the content is inset exactly once.
+    -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:fitsSystemWindows">true</item>
+        <item name="android:statusBarColor">@color/app_bar</item>
+        <item name="android:navigationBarColor">@color/app_bar</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
-
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
+        <!-- Android 12+ draws this in the middle of the splash; it is the adaptive
+             foreground, so the launcher and the splash show the same artwork. -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:fitsSystemWindows">true</item>
+        <item name="android:statusBarColor">@color/app_bar</item>
+        <item name="android:navigationBarColor">@color/app_bar</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
