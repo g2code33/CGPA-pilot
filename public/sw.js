@@ -19,7 +19,7 @@
 // mobile:version`), so a release re-caches instead of serving the previous build's
 // assets forever. Bump it by hand only if you change the rules below without a
 // release (previous note: v9 — manifest now points at /app-icon, the admin logo).
-const CACHE = 'cgpa-pilot-v1.0.29';
+const CACHE = 'cgpa-pilot-v1.0.30';
 
 const SHELL = [
   './',
