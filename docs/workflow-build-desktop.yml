@@ -78,8 +78,29 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Set up Android SDK
+      - name: Prefer the runner's Android SDK
         if: matrix.os == 'ubuntu-latest'
+        # The runner ships an SDK (licenses accepted); use it, and keep
+        # android-actions/setup-android as a fallback only. See
+        # docs/ci-android-sdk-resilient.patch for the failure this avoids: that action
+        # downloads its command-line tools from dl.google.com with no cache, before
+        # anything in android/ is read, so an upstream hiccup costs the APK and nothing
+        # else. Read the wanted platform from the project, do not repeat the number.
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          API="$(grep -oE 'compileSdkVersion[[:space:]]*=[[:space:]]*[0-9]+' android/variables.gradle | grep -oE '[0-9]+$' | head -1)"
+          API="${API:-36}"
+          if [ -n "$SDK" ] && [ -d "$SDK/platforms/android-$API" ] && [ -n "$(ls -d "$SDK"/build-tools/* 2>/dev/null | head -1)" ]; then
+            echo "Using the runner's SDK at $SDK (platforms/android-$API)"
+            echo "sdk.dir=$SDK" >> local.properties
+            exit 0
+          fi
+          echo "No usable preinstalled SDK (need $SDK/platforms/android-$API) — falling back to android-actions/setup-android"
+          echo "ANDROID_SDK_FALLBACK=1" >> "$GITHUB_ENV"
+
+      - name: Set up Android SDK
+        if: matrix.os == 'ubuntu-latest' && env.ANDROID_SDK_FALLBACK == '1'
         uses: android-actions/setup-android@v3
 
       - name: Prepare Android project
@@ -164,8 +185,29 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Set up Android SDK
+      - name: Prefer the runner's Android SDK
         if: matrix.os == 'ubuntu-latest'
+        # The runner ships an SDK (licenses accepted); use it, and keep
+        # android-actions/setup-android as a fallback only. See
+        # docs/ci-android-sdk-resilient.patch for the failure this avoids: that action
+        # downloads its command-line tools from dl.google.com with no cache, before
+        # anything in android/ is read, so an upstream hiccup costs the APK and nothing
+        # else. Read the wanted platform from the project, do not repeat the number.
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          API="$(grep -oE 'compileSdkVersion[[:space:]]*=[[:space:]]*[0-9]+' android/variables.gradle | grep -oE '[0-9]+$' | head -1)"
+          API="${API:-36}"
+          if [ -n "$SDK" ] && [ -d "$SDK/platforms/android-$API" ] && [ -n "$(ls -d "$SDK"/build-tools/* 2>/dev/null | head -1)" ]; then
+            echo "Using the runner's SDK at $SDK (platforms/android-$API)"
+            echo "sdk.dir=$SDK" >> local.properties
+            exit 0
+          fi
+          echo "No usable preinstalled SDK (need $SDK/platforms/android-$API) — falling back to android-actions/setup-android"
+          echo "ANDROID_SDK_FALLBACK=1" >> "$GITHUB_ENV"
+
+      - name: Set up Android SDK
+        if: matrix.os == 'ubuntu-latest' && env.ANDROID_SDK_FALLBACK == '1'
         uses: android-actions/setup-android@v3
 
       - name: Build Android release APK

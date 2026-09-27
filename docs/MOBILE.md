@@ -210,13 +210,22 @@ Only you can do these — CI will not fail for them, so read this list at releas
    key** (intentional, so CI keeps producing installable APKs). A debug-signed APK can
    never be updated in place by a release-signed one: users must uninstall, losing their
    locally stored record. Decide once, before telling anyone to install: stay on the
-   debug key for internal use, or generate the keystore and never change it again. To
-   sign for real: `keytool -genkeypair -keystore android/app/release-keystore.p12
-   -storetype PKCS12 -alias cgpapilot -keyalg RSA -keysize 2048 -validity 10000`, then
-   set the repository secrets the workflow reads — `ANDROID_KEYSTORE_PASSWORD`,
-   `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS` — and note that `build.gradle` defaults
-   them to `changeit`/`cgpapilot`, so a keystore added *without* the secrets fails
-   vaguely at signing rather than clearly at config time.
+   debug key for internal use, or generate the keystore and never change it again. The
+   release job already knows how to sign, so this is only secrets plus a key:
+
+   ```bash
+   keytool -genkeypair -keystore release-keystore.p12 -storetype PKCS12 \
+     -alias cgpapilot -keyalg RSA -keysize 2048 -validity 10000
+   base64 -w0 release-keystore.p12   # → ANDROID_KEYSTORE_BASE64  (never commit this)
+   ```
+
+   then set `ANDROID_KEYSTORE_BASE64` (the file, base64 — the job decodes it to
+   `android/app/release-keystore.p12`), plus `ANDROID_KEYSTORE_PASSWORD`,
+   `ANDROID_KEY_PASSWORD` and `ANDROID_KEY_ALIAS`. `build.gradle` defaults those to
+   `changeit`/`cgpapilot`, so a keystore added *without* the secrets fails vaguely at
+   signing instead of clearly at config time: set them together or not at all. Store the
+   keystore somewhere that outlives GitHub — losing it means every installed app has to be
+   reinstalled to receive updates again.
 2. **Play Console / signing by Google**, if this leaves a small group of devices: with
    upload key vs app signing key the update path changes again.
 3. **iOS**: the project is present (`ios/App`) but nothing here can compile it — that
@@ -241,14 +250,36 @@ npm run verify:branding       # every surface, including the two gates above
 npm run mobile:sync           # version → build:web (which refreshes art) → cap sync android
 ```
 
-For CI, `.github/workflows/build-desktop.yml` needs two lines before the Android job
-(`.github/workflows/**` is not pushable with this repo's token, so this is the snippet —
-the same shape as `docs/ci-brand-icons-imagemagick.patch`):
+## CI
+
+`.github/workflows/**` is not pushable with this repo's automation token (no `workflows`
+scope), so workflow changes ship as patches — `git apply docs/<name>.patch`, then commit
+the result. Two are open:
+
+* `docs/ci-android-sdk-resilient.patch` — the ubuntu job failed at **Set up Android SDK**
+  on both v1.0.29 runs (`36340016935`, `36340411406`) while type-check, the web build,
+  Electron packaging and the whole Windows job passed. `android-actions/setup-android@v3`
+  downloads its tools from dl.google.com with no cache, before anything in `android/` is
+  read, so an upstream hiccup costs only the APK. The patch prefers the SDK the runner
+  already ships and keeps the action as a fallback. `docs/workflow-build-desktop.yml` (the
+  tracked copy) already carries the change, so applying the patch to
+  `.github/workflows/build-desktop.yml` makes the two agree. **Until it is applied, a
+  release may publish without an APK — and the tests below still pass, which is exactly
+  why it is easy to miss.**
+* `docs/ci-brand-icons-imagemagick.patch` — optional now: `scripts/pngkit.mjs` rasterizes
+  a square-PNG logo without ImageMagick. Keep the patch only if a JPEG or SVG logo has to
+  be usable as installer art.
+
+The gate worth adding to both Android jobs (the `docs/workflow-build-desktop.yml` copy has
+it as a step you can copy):
 
 ```yaml
       - name: Mobile assets are current
         run: npm run check:mobile
 ```
+
+`npm test` already covers the same ground (it regenerates the plan in-process and compares
+every byte), so this step is for clarity in the log rather than for coverage.
 
 Related: `docs/BRANDING.md` (where the logo comes from), `docs/DESKTOP-LINUX.md`
 (packaging on the desktop), `docs/DEPLOYMENT.md` (what a client fetches).
