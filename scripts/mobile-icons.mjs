@@ -114,12 +114,26 @@ export function buildPlan() {
   }
   const overscan = Number(opt('overscan', '0.06'));
   if (!(overscan >= 0 && overscan < 0.4)) throw new Error(`--overscan must be in [0, 0.4), got ${overscan}`);
-  // The crop is measured, not guessed: 0.083 for the shipped logo (84px of flat page
-  // on a 1024px canvas) plus 0.06 for the tile's rounding. A logo that already bleeds
-  // edge-to-edge is cropped by `--overscan` alone, which is why the default is small.
+  // The crop is measured, not guessed. For the shipped logo the flat page is 84px of a
+  // 1024px canvas per side (8.3%), plus 6% of margin to get past the tile's rounding —
+  // and doubled, because `overScanSquare` takes a fraction of the whole canvas. So this
+  // logo is generated from its central 71%. A logo that already bleeds edge-to-edge is
+  // cropped by `--overscan` alone, which is why that default is small.
   const trim = flatBorderTrim(img);
   const trimFrac = trim.inset === 0 ? 0 : Math.max(...Object.values(trim.inset)) / Math.min(img.width, img.height);
-  const cropFrac = Math.min(0.34, trimFrac + overscan);
+  // `overScanSquare` takes a fraction of the WHOLE canvas and removes half of it from
+  // each side, so the per-side numbers measured above have to be DOUBLED. Getting this
+  // wrong is how a "trimmed" icon still showed the page colour as a ~1% rim at
+  // 12/3/6/9 o'clock — invisible in the source PNG, obvious once the launcher's circle
+  // is simulated, and caught by a test rather than by an eye.
+  const wantFrac = 2 * (trimFrac + overscan);
+  const cropFrac = Math.min(0.4, wantFrac);
+  if (cropFrac < wantFrac) {
+    console.error(
+      `[mobile-icons] the flat border is ${Math.round(trimFrac * 100)}% per side; cropping further would eat the ` +
+        `mark, so the crop is capped at 40%. Expect a rim of the logo's own page colour unless --overscan is lowered.`
+    );
+  }
   const tile = overScanSquare(img, cropFrac);
   const backdrop = opt('brand') ?? toHex(dominantDarkColor(tile));
   parseHex(backdrop); // fail now, not inside a half-finished write
@@ -132,6 +146,7 @@ export function buildPlan() {
     overscan,
     flatBorder: Number(trimFrac.toFixed(4)),
     crop: Number(cropFrac.toFixed(4)),
+    capped: cropFrac < wantFrac,
     trimmed: trim.inset === 0 ? null : trim.inset,
     backdrop,
   };

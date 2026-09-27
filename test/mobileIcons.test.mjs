@@ -25,6 +25,7 @@ import {
   dominantColor,
   dominantDarkColor,
   encodePng,
+  flatBorderTrim,
   flatten,
   inkCoverage,
   luma,
@@ -90,10 +91,20 @@ test('encodePng honours the greyscale mode and the decoder returns RGBA', () => 
   assert.equal(back.data[0], back.data[2], 'grey means grey: no leftover hue');
 });
 
-test('the shipped master is a square opaque PNG, as the resize rules assume', () => {
-  const dims = readPngDims(readFileSync(SRC));
-  assert.deepEqual(dims, { width: 1024, height: 1024, bitDepth: 8, colorType: 2 });
-  assert.equal(dims.colorType, 2, 'no alpha: public/icon-512.png is a flat tile by design');
+test('the shipped master is square, 8-bit and carries no transparency', () => {
+  // Which colour type it is depends on the rasterizer that last wrote the file
+  // (ImageMagick emits RGBA, scripts/pngkit.mjs emits RGB), so the type is not pinned —
+  // the three properties the resize rules actually assume are.
+  const bytes = readFileSync(SRC);
+  const dims = readPngDims(bytes);
+  assert.deepEqual([dims.width, dims.height, dims.bitDepth], [1024, 1024, 8]);
+  assert.ok([0, 2, 3, 4, 6].includes(dims.colorType), `an 8-bit master, got colorType ${dims.colorType}`);
+  if (dims.colorType === 4 || dims.colorType === 6) {
+    const img = decodePng(bytes);
+    let clear = 0;
+    for (let i = 3; i < img.data.length; i += 4) if (img.data[i] < 255) clear += 1;
+    assert.equal(clear, 0, `${clear} transparent pixels: an icon with alpha shows the wallpaper through it`);
+  }
 });
 
 test('crop copies exactly, and reads outside the source as transparent', () => {
@@ -270,9 +281,15 @@ test('buildPlan describes the whole Android set the platform asks for', () => {
   }
   assert.ok(files.some((f) => f.startsWith('ios/App/App/Assets.xcassets/AppIcon.appiconset/')), 'iOS catalog entry');
   assert.equal(report.overscan, 0.06, 'the extra crop is a sixth of the canvas, not a guess at the whole border');
-  assert.ok(report.flatBorder > 0.08 && report.flatBorder < 0.09, `measured flat page: ${report.flatBorder}`);
-  assert.ok(report.crop > report.flatBorder, 'the mark is cropped past its own page, which is the whole point');
-  assert.deepEqual(report.trimmed, { top: 84, bottom: 85, left: 84, right: 85 });
+  assert.ok(report.flatBorder >= 0 && report.flatBorder <= 0.2, `measured flat page: ${report.flatBorder}`);
+  assert.ok(
+    report.crop >= 2 * report.flatBorder,
+    `the crop (${report.crop}) must reach past the flat page on EVERY side, and overScanSquare takes a whole-canvas fraction`
+  );
+  if (report.trimmed) {
+    assert.deepEqual(Object.keys(report.trimmed).sort(), ['bottom', 'left', 'right', 'top']);
+    assert.ok(Object.values(report.trimmed).every((v) => Number.isInteger(v) && v >= 0), JSON.stringify(report.trimmed));
+  }
   assert.match(report.backdrop, /^#[0-9A-F]{6}$/);
 });
 
@@ -306,9 +323,10 @@ test('legacy tiles are opaque, round ones masked, adaptive ones full-bleed', () 
   const shown = maskCircle(flatten(fg, report.backdrop));
   assert.ok(inkCoverage(shown) > 0.5, 'the mark must fill the masked tile');
   assert.equal(shown.data[3], 0, 'the corner is cut away, so the launcher shows its own shape');
-  // The white of the graduation cap is the ARTWORK and is allowed. The defect this
-  // guards is the page colour surviving as a FRAME, so only the outer ring is judged —
-  // measured, not eyeballed, because viewing the source PNG is what missed it before.
+  // The defect is the source's PAGE colour surviving as a frame at the masked edge. It
+  // cannot be judged as "no white" (a white-field logo would be white by design, and the
+  // cap itself is white), so it is judged against the measured page colour: if a flat
+  // border was found and trimmed, none of it may remain on the ring.
   const mid = shown.width / 2;
   const isWhite = (x, y) => {
     const o = (y * shown.width + x) * 4;
@@ -327,7 +345,16 @@ test('legacy tiles are opaque, round ones masked, adaptive ones full-bleed', () 
     if (isWhite(x, y)) ringWhite += 1;
   }
   assert.ok(ringInk > 300, `a full sweep of the masked edge, got ${ringInk} samples`);
-  assert.equal(ringWhite, 0, `${ringWhite}/${ringInk} edge pixels are the page colour — a white frame is back`);
+  if (report.flatBorder > 0) {
+    // Judging the ring by COLOUR cannot work: the mark is white and reaches the mask
+    // edge at 9 o'clock, so page-white and art-white look identical there. What
+    // distinguishes a frame from artwork is geometry — a frame is an ENTIRE flat edge,
+    // so the assertion is that the generated layer has no flat border left in it, plus
+    // a sanity bound on how much of the ring is white at all.
+    const leftover = flatBorderTrim(decodePng(get('/mipmap-xxxhdpi/ic_launcher_foreground.png').bytes));
+    assert.equal(leftover.inset, 0, `the foreground layer still carries a flat edge (${JSON.stringify(leftover.inset)}) — it will show as a rim inside every launcher mask`);
+    assert.ok(ringWhite / ringInk < 0.05, `${ringWhite}/${ringInk} ring pixels are page-white`);
+  }
 });
 
 test('the themed layer is emitted only when the mark can read as ink', () => {

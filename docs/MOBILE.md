@@ -124,9 +124,15 @@ Two decisions here exist because the naive version was tried and looked wrong:
   the outer ring contains **zero** page-coloured pixels.
 * **The crop is measured, not guessed.** `pngkit`'s `flatBorderTrim` removes only rows
   and columns that are provably flat border (all four corners agree, every sampled pixel
-  within a tolerance), then 6 % more is cropped to get past the tile's own rounding. For
-  the current logo that is 8.3 % + 6 % = 14 %, reported as `crop` in `--json`. A fixed
-  over-scan is what left a white band at 12 o'clock in the first attempt.
+  within a tolerance), then 6 % more to get past the tile's own rounding — and the total
+  is **doubled**, because `overScanSquare` takes a fraction of the whole canvas and
+  removes half of it per side. For the current logo that is 2 × (8.3 + 6) = 28.6 %, so
+  the art is generated from the central 71 % of the source, reported as `crop` in
+  `--json`. Skipping either half of that arithmetic produced a rim of the page colour at
+  12/3/6/9 o'clock — invisible when viewing the source PNG, obvious in the simulated
+  mask, and now asserted directly (`the generated foreground layer has no flat edge
+  left`). The cap is 40 %, and exceeding it prints why rather than quietly eating the
+  mark.
 * The `<monochrome>` layer is all-or-nothing across densities (one bad density makes the
   launcher fall back mid-set), and a nearly-solid or nearly-empty silhouette is refused:
   a themed icon that renders as a filled squircle is worse than no themed icon.
