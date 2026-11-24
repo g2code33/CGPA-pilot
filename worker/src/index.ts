@@ -82,7 +82,14 @@ import {
   __resetAiRuntime,
   type ParsedAi,
 } from './ai';
-import { sanitizeProvider, validateAiSettings, type AiKey, type AiProvider, type AiSettings } from '../../src/admin/aiSettings';
+import {
+  aiModelsEndpoint,
+  sanitizeProvider,
+  validateAiSettings,
+  type AiKey,
+  type AiProvider,
+  type AiSettings,
+} from '../../src/admin/aiSettings';
 import { buildDistribution } from '../../src/admin/catalogPublish';
 import {
   catalogAssetList,
@@ -1291,20 +1298,21 @@ async function handleApi(req: Request, url: URL, env: Env): Promise<Response> {
  * a 5xx or a network failure means the endpoint itself is the problem.
  */
 async function probeProviderEndpoint(p: AiProvider): Promise<{ ok: boolean; detail: string; ms: number }> {
-  const base = p.baseUrl.replace(/\/+$/, '');
   const key = p.keys[0]?.value;
   const t0 = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
     const headers: Record<string, string> = {};
+    // Same normalization as the chat call, so the probe can never report a
+    // bogus "endpoint problem" for a base URL the chat path handles fine.
     let url: string;
     if (p.type === 'anthropic') {
-      url = `${base}/v1/models`;
+      url = aiModelsEndpoint(p.baseUrl, 'anthropic');
       if (key) headers['x-api-key'] = key;
       headers['anthropic-version'] = '2023-06-01';
     } else {
-      url = `${base}/models`;
+      url = aiModelsEndpoint(p.baseUrl, 'openai-compatible');
       if (key) headers.authorization = `Bearer ${key}`;
     }
     const res = await fetch(url, { method: 'GET', signal: ctrl.signal, headers });

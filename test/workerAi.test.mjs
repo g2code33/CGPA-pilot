@@ -6,7 +6,8 @@
 //   Public status: labels + flags, NEVER worker-mode keys; direct mode
 //                 intentionally carries endpoint+key in `direct`
 //   Chat:         disabled → 404 · valid → provider text (mocked fetch)
-//                 key rotation: first key 401 → second key succeeds
+//                 key rotation: first key 401 → second key succeeds + a dead
+//                 key rests in its cooldown; url normalization (…/v1 + /v1/…)
 //                 rate limit: N/hour → 429 + retryAfterSec
 //                 context: full per-semester course tables in the system prompt
 //   Streaming:    SSE meta event + raw provider deltas · failure before the
@@ -20,6 +21,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { __resetAi } from '../worker/src/index.ts';
+import { validateAiSettings } from '../src/admin/aiSettings.ts';
+import { __aiKeyPool } from '../worker/src/ai.ts';
 import { createD1Stub } from './helpers/d1Stub.mjs';
 import { makeValidCatalog } from './helpers/fixtures.mjs';
 
@@ -972,4 +975,218 @@ test('admin GET /api/admin/ai answers with ok:true (the console must render stor
   assert.equal(doc.settings.providers[0].keys[0].value, 'nvapi-11112222');
   assert.ok(doc.version >= 1);
   assert.ok(doc.updatedAt);
+});
+
+// ── The two traps that made a healthy key look broken ─────────────────────
+// (1) the base URL an admin pastes decides the path, and (2) the admin's own
+// Test toast has to say WHICH url it hit — "HTTP 404" alone is unactionable
+// from a phone in Kumasi with no way to inspect the Worker.
+
+test('chat: an Anthropic base pasted with /v1 does not double the version path', async () => {
+  const e = env();
+  __resetAi();
+  const doc = aiSettingsDoc({
+    defaultProviderId: 'prov-ant',
+    providers: [
+      {
+        id: 'prov-ant',
+        preset: 'anthropic',
+        label: 'Claude',
+        type: 'anthropic',
+        mode: 'worker',
+        baseUrl: 'https://api.anthropic.com/v1',
+        model: 'claude-3-5-haiku-latest',
+        keys: [{ id: 'k1', label: 'main', value: 'sk-ant-11112222' }],
+        enabled: true,
+      },
+    ],
+  });
+  const saved = await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: doc }), e);
+  assert.equal(saved.status, 200, JSON.stringify(await saved.clone().json()));
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), headers: opts?.headers, body: JSON.parse(opts?.body ?? '{}') });
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: 'ready' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }] } }),
+      e
+    );
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    const out = await res.json();
+    assert.equal(out.ok, true);
+    assert.equal(out.text, 'ready');
+    // The whole point: …/v1 + /v1/messages used to become …/v1/v1/messages → 404.
+    assert.equal(calls[0].url, 'https://api.anthropic.com/v1/messages');
+    assert.equal(calls[0].headers['x-api-key'], 'sk-ant-11112222');
+    assert.equal(calls[0].body.model, 'claude-3-5-haiku-latest');
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('chat (streaming): same normalized url as the buffered path', async () => {
+  const e = env();
+  __resetAi();
+  const doc = aiSettingsDoc({
+    providers: [
+      {
+        ...aiSettingsDoc().providers[0],
+        baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', // a full endpoint pasted as the base
+      },
+    ],
+  });
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: doc }), e);
+  const urls = [];
+  const enc = new TextEncoder();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return new Response(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n'));
+          c.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } }
+    );
+  };
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { stream: true, messages: [{ role: 'user', content: 'hi' }] } }),
+      e
+    );
+    assert.equal(res.status, 200);
+    assert.deepEqual(urls, ['https://integrate.api.nvidia.com/v1/chat/completions']);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('admin Test: the raw evidence line names the exact endpoint it tried', async () => {
+  const e = env();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: { message: 'Not Found' } }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  try {
+    const res = await worker.fetch(
+      req('/api/admin/ai/test', {
+        method: 'POST',
+        token: TOKEN,
+        body: {
+          provider: {
+            id: 'prov-x',
+            type: 'openai-compatible',
+            mode: 'worker',
+            baseUrl: 'https://gateway.internal',
+            model: 'some-model',
+            keys: [],
+            enabled: true,
+          },
+          keyValue: 'secret-1',
+        },
+      }),
+      e
+    );
+    assert.equal(res.status, 200);
+    const out = await j(res);
+    assert.equal(out.ok, false);
+    assert.match(out.message, /not found/i);
+    assert.match(out.detail, /tried POST https:\/\/gateway\.internal\/chat\/completions/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('key pool: a rejected key rests for the cooldown window instead of being re-tested', () => {
+  // Synchronous on purpose: this pins the map-key contract between
+  // markKeyFailed() and pickKey(), which an HTTP-level test cannot see (a
+  // successful request never advances the rotation index).
+  __resetAi();
+  const { pick, markFailed } = __aiKeyPool;
+  const provider = {
+    id: 'prov-1',
+    keys: [
+      { id: 'a', label: 'a', value: '1' },
+      { id: 'b', label: 'b', value: '2' },
+      { id: 'c', label: 'c', value: '3' },
+    ],
+  };
+  const now = Date.now();
+  assert.equal(pick(provider, now).id, 'a', 'fresh pool starts at the head');
+
+  markFailed('prov-1', 'a');
+  markFailed('prov-1', 'b');
+  assert.equal(pick(provider, now + 60_000).id, 'c', 'cooling keys are skipped');
+
+  // All three cooling → the key that recovers FIRST (earliest failure), so a
+  // forced retry is never aimed at the freshest failure.
+  markFailed('prov-1', 'c');
+  assert.notEqual(pick(provider, now + 120_000).id, 'c', 'the freshest failure is the least likely to work');
+
+  // After the window the whole pool is eligible again.
+  assert.equal(pick(provider, now + 6 * 60_000).id, 'a', 'cooldown expires after 5 minutes');
+  __resetAi();
+});
+
+test('save is REFUSED for an enabled provider with no base URL (a silently dead key pool)', async () => {
+  const e = env();
+  __resetAi();
+  const doc = aiSettingsDoc({
+    defaultProviderId: 'prov-bare',
+    providers: [
+      {
+        id: 'prov-bare',
+        preset: 'custom',
+        label: 'Gateway',
+        type: 'openai-compatible',
+        mode: 'worker',
+        baseUrl: '', // the classic half-configured provider: keys present, no endpoint
+        model: 'some-model',
+        keys: [{ id: 'k1', label: 'main', value: 'secret-1' }],
+        enabled: true,
+      },
+    ],
+  });
+  const res = await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: doc }), e);
+  assert.equal(res.status, 400);
+  const out = await j(res);
+  assert.equal(out.error, 'validation');
+  assert.match(out.issues.join(' '), /base url/i);
+
+  // …and the pure validator agrees (the admin console renders THIS call's
+  // issues in its live panel, so the reason appears before any save).
+  const v = validateAiSettings(doc);
+  assert.equal(v.ok, false);
+  assert.match(v.issues.join(' '), /Gateway.*base url/i);
+  // The provider stays in the document: the console must still show the
+  // admin's half-finished entry instead of swallowing it on the next load.
+  assert.ok(v.normalized.providers.some((pr) => pr.id === 'prov-bare'), 'never drop an unsaved-but-entered provider');
+});
+
+test('validation: a disabled provider may stay half-configured, an enabled keyless one only warns', () => {
+  const draft = {
+    format: 'cgpa-pilot-ai-settings',
+    enabled: true,
+    providers: [
+      { id: 'p1', preset: 'custom', label: 'Draft', type: 'openai-compatible', mode: 'worker', baseUrl: '', model: '', keys: [], enabled: false },
+      { id: 'p2', preset: 'openai', label: 'OpenAI', type: 'openai-compatible', mode: 'worker', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', keys: [], enabled: true },
+    ],
+  };
+  const v = validateAiSettings(draft);
+  assert.equal(v.ok, true, `only warnings expected, got: ${v.issues.join(' | ')}`);
+  assert.ok(v.normalized.providers.some((p) => p.id === 'p1'), 'the disabled draft provider is kept');
+  assert.match(v.issues.join(' '), /“OpenAI”.{0,80}no API keys/i);
 });

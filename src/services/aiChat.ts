@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { configApiUrl } from '../config/apiBase';
-import type { AiChatMessage, AiPublicStatus, AiStudentContext } from '../admin/aiSettings';
+import { aiChatEndpoint, type AiChatMessage, type AiPublicStatus, type AiStudentContext } from '../admin/aiSettings';
 
 export type AiSendResult =
   | { ok: true; text: string; provider?: string; model?: string; ms?: number }
@@ -312,14 +312,14 @@ export async function streamAiMessage(input: AiSendInput, h: AiStreamHandlers): 
       const withContext = context?.hasAnyData ? `${input.directSystemPrompt ?? ''}\n\n${JSON.stringify(context)}` : input.directSystemPrompt ?? '';
       res =
         direct.type === 'anthropic'
-          ? await fetch(`${direct.baseUrl.replace(/\/+$/, '')}/v1/messages`, {
+          ? await fetch(aiChatEndpoint(direct.baseUrl, 'anthropic'), {
               method: 'POST',
               cache: 'no-store',
               signal: h.signal,
               headers: { 'content-type': 'application/json', 'x-api-key': direct.key, 'anthropic-version': '2023-06-01' },
               body: JSON.stringify({ model: direct.model, max_tokens: 700, temperature: 0.4, stream: true, system: withContext, messages: messages.map(contentToAnthropic) }),
             })
-          : await fetch(`${direct.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+          : await fetch(aiChatEndpoint(direct.baseUrl, 'openai-compatible'), {
               method: 'POST',
               cache: 'no-store',
               signal: h.signal,
@@ -433,7 +433,7 @@ async function directCall(
   try {
     const withContext = context?.hasAnyData ? `${system}\n\n${JSON.stringify(context)}` : system;
     if (direct.type === 'anthropic') {
-      const res = await fetch(`${direct.baseUrl.replace(/\/+$/, '')}/v1/messages`, {
+      const res = await fetch(aiChatEndpoint(direct.baseUrl, 'anthropic'), {
         method: 'POST',
         signal: ctrl.signal,
         headers: { 'content-type': 'application/json', 'x-api-key': direct.key, 'anthropic-version': '2023-06-01' },
@@ -445,7 +445,7 @@ async function directCall(
       if (!text) throw new Error('empty answer');
       return { text, ms: Date.now() - t0 };
     }
-    const res = await fetch(`${direct.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const res = await fetch(aiChatEndpoint(direct.baseUrl, 'openai-compatible'), {
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${direct.key}` },

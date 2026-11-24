@@ -290,6 +290,36 @@ Body limit 15 MB.
   `src/config/seed/admin-catalog.json` — this updates the *fallback* that
   fresh offline devices boot from.
 
+### 8.1 “My AI API keys are not working” — diagnose in 60 seconds
+
+Keys live in ONE row of D1 (`ai_settings`); the Worker is the only thing that
+calls the provider (except `direct`-mode providers, which the student's own
+device calls). Three in-console checks, in order — no log access needed:
+
+1. **AI Settings → Test** on the key. This sends the provider + key exactly as
+   they are on screen (no save required) and toasts the provider's **raw**
+   answer plus the endpoint tried (`· tried POST https://…/chat/completions`).
+2. **AI Monitor → diagnostics (deep)**: `Key probe · <provider>` runs one real
+   1-token request per provider, and `Endpoint · <provider>` proves the base URL
+   resolves even when no key works. `Student errors (24 h)` shows what students
+   just hit.
+3. `curl -s https://cgpa-pilot.<account>.workers.dev/api/ai/status` → `enabled`,
+   `ready`, provider labels. `ready:false` means the keys were never stored (or
+   the provider is disabled / has no base URL, which now blocks the save).
+
+Reading the answer: `no-provider` = no enabled provider; `no-keys` = provider
+has no keys stored; HTTP 401/403 = the provider rejected that key (the pool
+rests it for 5 minutes and rotates); 402/429 = credit exhausted / rate limited
+(add keys — the pool spreads load automatically); 404 = wrong model id or base
+URL, not a key problem; 503 = `CONFIG_DB` binding missing on that deployment.
+
+Base URLs are normalized at call time (`aiChatEndpoint` in
+`src/admin/aiSettings.ts`, shared by the Worker, the diagnostics probe and the
+student client): a pasted `…/v1` on Anthropic no longer becomes `…/v1/v1/messages`,
+and a full `…/chat/completions` pasted into the base field is not doubled. Both
+used to look exactly like a dead key — the provider card now also prints the URL
+it will post to, so a wrong shape is visible before you save.
+
 ---
 
 ## 9. Clients, views & updates

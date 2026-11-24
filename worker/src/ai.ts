@@ -21,6 +21,7 @@
 
 import type { AiContentPart, AiKey, AiProvider, AiSettings } from '../../src/admin/aiSettings';
 import {
+  aiChatEndpoint,
   defaultAiSettings,
   publicAiStatus,
   validateAiSettings,
@@ -84,21 +85,33 @@ const keyIndex = new Map<string, number>();
 const keyFailAt = new Map<string, number>();
 const KEY_COOLDOWN_MS = 5 * 60 * 1000;
 
+/**
+ * The pool-state map is keyed `provider/key` (two providers may reuse a key
+ * id like `key-1`, and presets generate short random ids), so BOTH sides of
+ * the lookup must build that id — reading it by bare `key.id` made every
+ * cooldown miss and the pool silently re-tested dead keys forever.
+ */
+function failId(providerId: string, keyId: string): string {
+  return `${providerId}/${keyId}`;
+}
+
 function pickKey(provider: AiProvider, now = Date.now()): AiKey | null {
   if (!provider.keys.length) return null;
   const n = provider.keys.length;
   const start = keyIndex.get(provider.id) ?? 0;
   for (let i = 0; i < n; i++) {
     const k = provider.keys[(start + i) % n];
-    const fail = keyFailAt.get(k.id) ?? 0;
+    const fail = keyFailAt.get(failId(provider.id, k.id)) ?? 0;
     if (now - fail > KEY_COOLDOWN_MS) return k;
   }
-  // All cooling down → use the least-recently-failed key.
+  // All cooling down → use the key whose cooldown EXPIRES FIRST, i.e. the
+  // least-recently-failed one (a bare `f > bestFail` picked the freshest
+  // failure, which is the key least likely to have recovered).
   let best = provider.keys[0];
-  let bestFail = -1;
+  let bestFail = Number.POSITIVE_INFINITY;
   for (const k of provider.keys) {
-    const f = keyFailAt.get(k.id) ?? 0;
-    if (f > bestFail) {
+    const f = keyFailAt.get(failId(provider.id, k.id)) ?? 0;
+    if (f < bestFail) {
       bestFail = f;
       best = k;
     }
@@ -112,7 +125,7 @@ function advanceKey(provider: AiProvider): void {
 }
 
 function markKeyFailed(providerId: string, keyId: string): void {
-  keyFailAt.set(`${providerId}/${keyId}`, Date.now());
+  keyFailAt.set(failId(providerId, keyId), Date.now());
 }
 
 // ── Rate limiting (sliding 1-hour window per client IP) ───────────────────
@@ -138,6 +151,13 @@ export function rateLimitAllow(
   ipWindow.set(ip, arr);
   return { ok: true, retryAfterSec: 0, count: count + 1 };
 }
+
+/**
+ * Rotation internals for tests only (test/workerAi.test.mjs pins the
+ * cooldown semantics, which are invisible to an HTTP-level test because a
+ * successful request never advances the index).
+ */
+export const __aiKeyPool = { pick: pickKey, markFailed: markKeyFailed, advance: advanceKey };
 
 export function __resetAiRuntime(): void {
   keyIndex.clear();
@@ -329,7 +349,10 @@ export async function runAiChat(input: AiChatInput, ip: string): Promise<AiChatR
     };
   }
 
-  const enabledProviders = s.providers.filter((p) => p.enabled);
+  // A provider with no base URL cannot be called at all — treat it as not
+   // configured rather than posting a relative URL and surfacing a 404 that
+   // reads like a rejected key.
+  const enabledProviders = s.providers.filter((p) => p.enabled && p.baseUrl);
   if (!enabledProviders.length) {
     return {
       ok: false,
@@ -355,6 +378,7 @@ export async function runAiChat(input: AiChatInput, ip: string): Promise<AiChatR
   let lastError = 'The AI provider did not respond.';
   let lastStatus = 0;
   let lastKeyLabel = '';
+  let lastEndpoint = aiChatEndpoint(provider.baseUrl, provider.type);
 
   // Try keys in rotation order; a failing key cools down for 5 minutes and
   // the next key is used — so one dead key never blocks the pool.
@@ -367,6 +391,7 @@ export async function runAiChat(input: AiChatInput, ip: string): Promise<AiChatR
       return { ok: true, text: res.text, provider: provider.label, model: provider.model, keyLabel: key.label || key.id, ms: res.ms };
     }
     lastError = res.error;
+    lastEndpoint = res.endpoint;
     const m = res.error.match(/^HTTP (\d{3}):/);
     if (m) lastStatus = Number(m[1]);
     if (res.retryable) {
@@ -381,7 +406,7 @@ export async function runAiChat(input: AiChatInput, ip: string): Promise<AiChatR
     ok: false,
     code: 'provider-error',
     message: friendlyProviderError(lastError),
-    detail: lastError.slice(0, 500),
+    detail: `${lastError} · tried POST ${lastEndpoint}`.slice(0, 500),
     provider: provider.label,
     model: provider.model,
     keyLabel: lastKeyLabel,
@@ -452,14 +477,20 @@ async function callProvider(
   messages: AiChatMessage[],
   maxTokens: number,
   temperature: number
-): Promise<{ ok: true; text: string; ms: number } | { ok: false; error: string; retryable: boolean }> {
+): Promise<
+  | { ok: true; text: string; ms: number }
+  | { ok: false; error: string; retryable: boolean; endpoint: string }
+> {
   const t0 = Date.now();
   const params: CallParams = { maxTokens, temperature };
+  // The URL actually tried — carried into the admin-visible `detail` so a 404
+  // names the path instead of looking like a bad key.
+  const url = aiChatEndpoint(provider.baseUrl, provider.type);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
   try {
     if (provider.type === 'anthropic') {
-      const res = await f(`${provider.baseUrl.replace(/\/+$/, '')}/v1/messages`, {
+      const res = await f(url, {
         method: 'POST',
         signal: ctrl.signal,
         headers: {
@@ -481,6 +512,7 @@ async function callProvider(
           ok: false,
           error: `HTTP ${res.status}: ${text.slice(0, 300)}`,
           retryable: res.status === 401 || res.status === 403 || res.status === 429,
+          endpoint: url,
         };
       }
       const doc = JSON.parse(text) as { content?: { type: string; text?: string }[] };
@@ -489,13 +521,13 @@ async function callProvider(
         .map((c) => c.text ?? '')
         .join('\n')
         .trim();
-      if (!out) return { ok: false, error: 'The provider returned an empty answer.', retryable: false };
+      if (!out) return { ok: false, error: 'The provider returned an empty answer.', retryable: false, endpoint: url };
       return { ok: true, text: out, ms: Date.now() - t0 };
     }
 
     // OpenAI-compatible (NVIDIA NIM, Gemini, Groq, Cerebras, Mistral,
     // OpenRouter, OpenAI, Ollama, LM Studio, vLLM, …).
-    const res = await f(`${provider.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const res = await f(url, {
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key.value}` },
@@ -512,15 +544,16 @@ async function callProvider(
         ok: false,
         error: `HTTP ${res.status}: ${text.slice(0, 300)}`,
         retryable: res.status === 401 || res.status === 403 || res.status === 429,
+        endpoint: url,
       };
     }
     const doc = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
     const out = (doc.choices?.[0]?.message?.content ?? '').trim();
-    if (!out) return { ok: false, error: 'The provider returned an empty answer.', retryable: false };
+    if (!out) return { ok: false, error: 'The provider returned an empty answer.', retryable: false, endpoint: url };
     return { ok: true, text: out, ms: Date.now() - t0 };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg, retryable: /aborted|timeout|timed out/i.test(msg) };
+    return { ok: false, error: msg, retryable: /aborted|timeout|timed out/i.test(msg), endpoint: url };
   } finally {
     clearTimeout(timer);
   }
@@ -559,13 +592,17 @@ async function callProviderStream(
   messages: AiChatMessage[],
   maxTokens: number,
   temperature: number
-): Promise<{ ok: true; body: ReadableStream<Uint8Array> } | { ok: false; error: string; status: number; retryable: boolean }> {
+): Promise<
+  | { ok: true; body: ReadableStream<Uint8Array> }
+  | { ok: false; error: string; status: number; retryable: boolean; endpoint: string }
+> {
+  const url = aiChatEndpoint(provider.baseUrl, provider.type);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), STREAM_CONNECT_TIMEOUT_MS);
   try {
     let res: Response;
     if (provider.type === 'anthropic') {
-      res = await f(`${provider.baseUrl.replace(/\/+$/, '')}/v1/messages`, {
+      res = await f(url, {
         method: 'POST',
         signal: ctrl.signal,
         headers: { 'content-type': 'application/json', 'x-api-key': key.value, 'anthropic-version': '2023-06-01' },
@@ -579,7 +616,7 @@ async function callProviderStream(
         }),
       });
     } else {
-      res = await f(`${provider.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+      res = await f(url, {
         method: 'POST',
         signal: ctrl.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key.value}` },
@@ -594,13 +631,13 @@ async function callProviderStream(
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 300)}`, status: res.status, retryable: res.status === 401 || res.status === 403 || res.status === 429 };
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 300)}`, status: res.status, retryable: res.status === 401 || res.status === 403 || res.status === 429, endpoint: url };
     }
-    if (!res.body) return { ok: false, error: 'The provider returned no stream body.', status: 0, retryable: false };
+    if (!res.body) return { ok: false, error: 'The provider returned no stream body.', status: 0, retryable: false, endpoint: url };
     return { ok: true, body: res.body };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg, status: 0, retryable: /aborted|timeout|timed out/i.test(msg) };
+    return { ok: false, error: msg, status: 0, retryable: /aborted|timeout|timed out/i.test(msg), endpoint: url };
   } finally {
     // Headers arrived (or failed) — the stream, if any, now has its own
     // lifetime and must not be aborted by the connect timeout.
@@ -679,7 +716,7 @@ export async function streamAiChat(input: AiChatInput, ip: string): Promise<AiSt
       retryAfterSec: rl.retryAfterSec,
     };
   }
-  const enabledProviders = s.providers.filter((p) => p.enabled);
+  const enabledProviders = s.providers.filter((p) => p.enabled && p.baseUrl);
   if (!enabledProviders.length) {
     return { ok: false, code: 'no-provider', message: 'No AI provider is enabled yet — your administrator is still setting it up.' };
   }
@@ -705,6 +742,7 @@ export async function streamAiChat(input: AiChatInput, ip: string): Promise<AiSt
   let lastError = 'The AI provider did not respond.';
   let lastStatus = 0;
   let lastKeyLabel = '';
+  let lastEndpoint = aiChatEndpoint(provider.baseUrl, provider.type);
   for (let attempt = 0; attempt < provider.keys.length; attempt++) {
     const key = pickKey(provider, input.now ?? Date.now());
     if (!key) break;
@@ -721,6 +759,7 @@ export async function streamAiChat(input: AiChatInput, ip: string): Promise<AiSt
     }
     lastError = up.error;
     lastStatus = up.status;
+    lastEndpoint = up.endpoint;
     if (up.retryable) {
       markKeyFailed(provider.id, key.id);
       advanceKey(provider);
@@ -732,7 +771,7 @@ export async function streamAiChat(input: AiChatInput, ip: string): Promise<AiSt
     ok: false,
     code: 'provider-error',
     message: friendlyProviderError(lastError),
-    detail: lastError.slice(0, 500),
+    detail: `${lastError} · tried POST ${lastEndpoint}`.slice(0, 500),
     provider: provider.label,
     model: provider.model,
     keyLabel: lastKeyLabel,
@@ -755,7 +794,11 @@ export async function testAiKey(
   // `detail` carries the provider's RAW error (HTTP status + body) so the
   // admin can see exactly what the provider said — the friendly `message`
   // is a guess, the detail is the evidence.
-  return { ok: false, message: friendlyProviderError(res.error), detail: res.error.slice(0, 240) };
+  return {
+    ok: false,
+    message: friendlyProviderError(res.error),
+    detail: `${res.error}${'endpoint' in res ? ` · tried POST ${res.endpoint}` : ''}`.slice(0, 240),
+  };
 }
 
 export { publicAiStatus };

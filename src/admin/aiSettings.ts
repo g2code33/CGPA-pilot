@@ -197,6 +197,47 @@ export function aiPreset(id: AiPresetId): AiPreset {
   return AI_PRESETS.find((p) => p.id === id) ?? AI_PRESETS[AI_PRESETS.length - 1];
 }
 
+// ── Endpoint building (ONE rule, shared by the Worker, the student client
+//    and the admin diagnostics — so "Test" always predicts the real call) ──
+//
+// An admin pastes a base URL copied from wherever the provider documents its
+// SDK, so the same field legitimately carries `https://api.openai.com/v1`,
+// `https://api.anthropic.com`, `https://…/v1beta/openai` or even a FULL
+// endpoint (`…/v1/chat/completions`). Every one of those shapes used to be a
+// coin flip: the Anthropic branch appended `/v1/messages` to a base that
+// already ended in `/v1` (→ `POST …/v1/v1/messages`, HTTP 404), and a pasted
+// full endpoint doubled up (`…/chat/completions/chat/completions`, also 404).
+// A 404 from a wrong path looks EXACTLY like a bad key from the admin's
+// chair — "my API keys are not working" — while the key is fine. So the path
+// is normalized here, once, instead of being guessed at each call site.
+
+/** Trim whitespace + trailing slashes so paths can be appended safely. */
+function aiBaseOnly(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, '');
+}
+
+/** Drop a pasted endpoint suffix (`/chat/completions`, `/messages`, …). */
+function aiStripEndpointSuffix(base: string): string {
+  return base.replace(/\/(?:chat\/completions|completions|messages)$/i, '').replace(/\/+$/, '');
+}
+
+/** For Anthropic, the API ROOT is the base — a trailing `/v1` belongs to the path. */
+function aiAnthropicRoot(base: string): string {
+  return base.replace(/\/v1$/i, '').replace(/\/+$/, '');
+}
+
+/** The chat endpoint for a provider (`type` picks the wire protocol). */
+export function aiChatEndpoint(baseUrl: string, type: AiProviderType): string {
+  const base = aiStripEndpointSuffix(aiBaseOnly(baseUrl));
+  return type === 'anthropic' ? `${aiAnthropicRoot(base)}/v1/messages` : `${base}/chat/completions`;
+}
+
+/** The model-list endpoint used by the admin endpoint probe (never 404s on a double `/v1`). */
+export function aiModelsEndpoint(baseUrl: string, type: AiProviderType): string {
+  const base = aiStripEndpointSuffix(aiBaseOnly(baseUrl));
+  return type === 'anthropic' ? `${aiAnthropicRoot(base)}/v1/models` : `${base}/models`;
+}
+
 export const DEFAULT_AI_SYSTEM_PROMPT =
   'You are the built-in assistant of CGPA Pilot, an offline-first academic ' +
   'planning app for university students. A student has asked you a question. ' +
@@ -271,6 +312,15 @@ export function validateAiSettings(raw: unknown): AiValidation {
       continue;
     }
     seenProviderIds.add(prov.id);
+    // An enabled provider with no base URL can never answer — saving it
+    // produced a stored document that LOOKED configured while every request
+    // died on a relative URL. Fail the save with the reason instead.
+    if (prov.enabled && !prov.baseUrl) {
+      issues.push(`Provider “${prov.label}” needs a base URL (e.g. https://api.openai.com/v1) before it can be enabled.`);
+    }
+    if (prov.enabled && prov.mode === 'worker' && !prov.keys.length) {
+      issues.push(`Warning: provider “${prov.label}” is enabled but has no API keys — students will see “being set up”.`);
+    }
     s.providers.push(prov);
   }
 
@@ -431,8 +481,8 @@ export interface AiPublicStatus {
 
 export function publicAiStatus(s: AiSettings): AiPublicStatus {
   const enabledProviders = s.providers.filter((p) => p.enabled);
-  const ready = enabledProviders.some((p) =>
-    p.mode === 'direct' ? p.baseUrl.length > 0 && p.model.length > 0 : p.keys.length > 0
+  const ready = enabledProviders.some(
+    (p) => p.baseUrl.length > 0 && (p.mode === 'direct' ? p.model.length > 0 : p.keys.length > 0)
   );
   const directProv =
     s.enabled && ready
