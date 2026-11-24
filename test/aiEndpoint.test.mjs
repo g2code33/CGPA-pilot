@@ -12,7 +12,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AI_PRESETS, aiChatEndpoint, aiModelsEndpoint } from '../src/admin/aiSettings.ts';
+import { AI_PRESETS, aiChatEndpoint, aiModelsEndpoint, aiSettingsDrift, validateAiSettings } from '../src/admin/aiSettings.ts';
 
 const ANTH = 'anthropic';
 const OPENAI = 'openai-compatible';
@@ -91,4 +91,110 @@ test('every shipped preset builds a clean endpoint from its own default base URL
       `${p.id}: unexpected chat path ${chat}`
     );
   }
+});
+
+// ── The truncated paste (what a narrow phone input actually holds) ─────────
+// The user's Base URL field read `https://integrate.api.nvidia.com/v1/chat/…`
+// — the model card's FULL call URL, truncated by the input. `/chat/completions`
+// was known; the trailing `/chat` half of it was not, and it produced the same
+// 404 as the doubled suffix.
+
+test('a base URL truncated at /chat or /completions still resolves to one clean path', () => {
+  const want = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  assert.equal(aiChatEndpoint('https://integrate.api.nvidia.com/v1/chat/', OPENAI), want);
+  assert.equal(aiChatEndpoint('https://integrate.api.nvidia.com/v1/chat', OPENAI), want);
+  assert.equal(aiChatEndpoint('https://integrate.api.nvidia.com/v1/chat/completions', OPENAI), want);
+  assert.equal(aiChatEndpoint('https://integrate.api.nvidia.com/v1/completions', OPENAI), want);
+  // …and the probe for the same provider agrees with the chat call.
+  assert.equal(aiModelsEndpoint('https://integrate.api.nvidia.com/v1/chat/', OPENAI), 'https://integrate.api.nvidia.com/v1/models');
+});
+
+// ── The save/refresh contract: nothing may vanish silently ──────────────────
+
+test('validate: duplicate key values inside one provider are REFUSED, not dropped', () => {
+  const doc = {
+    format: 'cgpa-pilot-ai-settings',
+    enabled: true,
+    providers: [
+      {
+        id: 'p1',
+        preset: 'nvidia',
+        label: 'NVIDIA NIM',
+        type: 'openai-compatible',
+        mode: 'worker',
+        baseUrl: 'https://integrate.api.nvidia.com/v1',
+        model: 'meta/llama-3.3-70b-instruct',
+        keys: [
+          { id: 'k1', label: '1st', value: 'nvapi-same' },
+          { id: 'k2', label: '2nd', value: 'nvapi-same' }, // pasted twice
+          { id: 'k3', label: '3rd', value: '   ' }, // blank
+        ],
+        enabled: true,
+      },
+    ],
+  };
+  const v = validateAiSettings(doc);
+  assert.equal(v.ok, false, 'a save that would lose keys must not report success');
+  assert.match(v.issues.join(' '), /2 of 3 key\(s\) were rejected/);
+  assert.match(v.issues.join(' '), /cannot hold the same value/);
+});
+
+test('validate: a provider with a non-http base URL is named, not swallowed', () => {
+  const v = validateAiSettings({
+    format: 'cgpa-pilot-ai-settings',
+    enabled: true,
+    providers: [{ id: 'p1', label: 'Gateway', baseUrl: 'integrate.api.nvidia.com/v1', keys: [{ id: 'k', value: 'x' }], enabled: true }],
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.issues.join(' '), /Gateway.*must start with http/i);
+});
+
+test('drift: the post-save check names exactly what the server did not keep', () => {
+  const sent = {
+    format: 'cgpa-pilot-ai-settings',
+    enabled: true,
+    version: 7,
+    updatedAt: null,
+    label: '',
+    notice: '',
+    systemPrompt: '',
+    temperature: 0.4,
+    maxTokens: 700,
+    maxMessagesPerHour: 20,
+    sendContext: true,
+    defaultProviderId: 'p1',
+    providers: [
+      {
+        id: 'p1',
+        preset: 'nvidia',
+        label: 'NVIDIA NIM',
+        type: 'openai-compatible',
+        mode: 'worker',
+        baseUrl: 'https://integrate.api.nvidia.com/v1',
+        model: 'm1',
+        keys: [
+          { id: 'k1', label: '1st', value: 'a' },
+          { id: 'k2', label: '2nd', value: 'b' },
+        ],
+        enabled: true,
+      },
+    ],
+  };
+  assert.deepEqual(aiSettingsDrift(sent, sent), [], 'identical documents never drift');
+
+  const lostKey = structuredClone(sent);
+  lostKey.providers[0].keys = [{ id: 'k1', label: '1st', value: 'a' }];
+  assert.match(aiSettingsDrift(sent, lostKey).join(' '), /did not store 1 key\(s\): 2nd/);
+
+  const changedValue = structuredClone(sent);
+  changedValue.providers[0].keys[1].value = 'different';
+  assert.match(aiSettingsDrift(sent, changedValue).join(' '), /did not update 1 key value\(s\)/);
+
+  const droppedProvider = structuredClone(sent);
+  droppedProvider.providers = [];
+  assert.match(aiSettingsDrift(sent, droppedProvider).join(' '), /provider “NVIDIA NIM” was not stored at all/);
+
+  const differentModel = structuredClone(sent);
+  differentModel.providers[0].model = 'other-model';
+  assert.match(aiSettingsDrift(sent, differentModel).join(' '), /kept a different model/);
 });

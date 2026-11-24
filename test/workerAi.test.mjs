@@ -1190,3 +1190,77 @@ test('validation: a disabled provider may stay half-configured, an enabled keyle
   assert.ok(v.normalized.providers.some((p) => p.id === 'p1'), 'the disabled draft provider is kept');
   assert.match(v.issues.join(' '), /“OpenAI”.{0,80}no API keys/i);
 });
+
+test('chat: HTTP 410 “end of life” is a retired MODEL, not a snag to retry', async () => {
+  const e = env();
+  __resetAi();
+  const doc = aiSettingsDoc({
+    providers: [
+      {
+        ...aiSettingsDoc().providers[0],
+        model: 'meta/llama-3.2-11b-vision-instruct',
+        baseUrl: 'https://integrate.api.nvidia.com/v1/chat/', // the truncated paste real admins ship
+      },
+    ],
+  });
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: doc }), e);
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    seen.push(String(url));
+    // Verbatim shape of NVIDIA's answer for a model it retired.
+    return new Response(
+      JSON.stringify({
+        type: 'about:blank',
+        title: 'Gone',
+        status: 410,
+        detail: "model 'meta/llama-3.2-11b-vision-instruct' has reached its end of life on 2026-11-05T00:00:00",
+      }),
+      { status: 410, headers: { 'content-type': 'application/problem+json' } }
+    );
+  };
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }] } }),
+      e
+    );
+    assert.equal(res.status, 502);
+    const out = await j(res);
+    // It must NOT say "try again in a moment" — retrying a retired model never works.
+    assert.match(out.message, /retired by the AI provider/i);
+    assert.doesNotMatch(out.message, /try again in a moment/i);
+    // And the base URL got normalized before the call.
+    assert.deepEqual(seen, ['https://integrate.api.nvidia.com/v1/chat/completions']);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});
+
+test('410 does not burn the key pool (a retired model is not the key’s fault)', async () => {
+  const e = env();
+  __resetAi();
+  await worker.fetch(req('/api/admin/ai', { method: 'POST', token: TOKEN, body: aiSettingsDoc() }), e);
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    seen.push(1);
+    return new Response(JSON.stringify({ title: 'Gone', status: 410, detail: 'model has reached its end of life' }), {
+      status: 410,
+    });
+  };
+  try {
+    const res = await worker.fetch(
+      req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'hi' }] } }),
+      e
+    );
+    const out = await j(res);
+    assert.equal(res.status, 502);
+    // ONE call: 410 is not retryable, so both keys of the pool are not walked.
+    assert.equal(seen.length, 1, 'a model error must not mark keys dead and rotate the pool');
+    assert.match(out.message, /retired/i);
+  } finally {
+    globalThis.fetch = realFetch;
+    __resetAi();
+  }
+});

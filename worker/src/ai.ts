@@ -428,6 +428,11 @@ function friendlyProviderError(msg: string): string {
   if (m.includes('timeout') || m.includes('aborted') || m.includes('timed out') || m.includes('network') || m.includes('fetch failed')) {
     return 'Could not reach the AI provider (network/timeout). Check your connection and try again.';
   }
+  if (/^http 410/.test(m) || m.includes('end of life') || m.includes('no longer available') || m.includes('retired')) {
+    return /^http 410/.test(m) && !m.includes('model') && !m.includes('end of life')
+      ? 'The AI provider removed this endpoint. Your administrator should check the base URL and model in AI Settings.'
+      : 'That model has been retired by the AI provider — retrying will not help. Your administrator needs a current model id in AI Settings.';
+  }
   if (m.includes('404')) {
     return 'The AI provider endpoint or model was not found. Check the base URL and model in AI Settings.';
   }

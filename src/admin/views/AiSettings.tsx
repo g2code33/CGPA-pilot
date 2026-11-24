@@ -26,6 +26,7 @@ import {
   type AiSettings,
 } from '../aiSettings';
 import { getAiSettings, saveAiSettings, testAiKey } from '../adminApi';
+import { aiSettingsDrift } from '../aiSettings';
 import { appConfirm } from '../../components/appDialog';
 
 type Toast = (m: string) => void;
@@ -130,14 +131,30 @@ export function AiSettings({ toast, onNavigate }: { toast: Toast; onNavigate: (v
     const r = await saveAiSettings(v.normalized);
     setSaving(false);
     if (r.ok) {
-      // The screen now shows EXACTLY what the server holds (the normalized
-      // doc + fresh version), and the dirty-dot baseline matches it.
-      const next: AiSettings = { ...v.normalized, version: r.version ?? v.normalized.version, updatedAt: r.updatedAt ?? null };
+      // Re-read the SERVER copy instead of trusting the local form: the stored
+      // document is normalized on write, so a save can report success while the
+      // server kept something different. Adopt what is actually stored (so the
+      // dirty-dot baseline matches it) and surface any difference loudly —
+      // "saved, but the keys vanished after a refresh" was this gap.
+      const server = await getAiSettings();
+      const next: AiSettings =
+        server.ok && server.settings
+          ? server.settings
+          : { ...v.normalized, version: r.version ?? v.normalized.version, updatedAt: r.updatedAt ?? null };
       savedRef.current = next;
       setSettings(next);
       setSaved({ version: next.version, updatedAt: next.updatedAt });
       setHasStored(true);
-      toast(`✅ AI settings saved${r.version ? ` (v${r.version})` : ''}. They stay on the server and reappear after any refresh.`);
+      if (server.ok && server.settings) {
+        const drift = aiSettingsDrift(v.normalized, server.settings);
+        toast(
+          drift.length
+            ? `⚠️ Saved as v${next.version}, but the server kept something different: ${drift.slice(0, 2).join(' · ')}`
+            : `✅ AI settings saved (v${next.version}) — confirmed against the server, so they survive a refresh.`
+        );
+      } else {
+        toast(`✅ AI settings saved${r.version ? ` (v${r.version})` : ''}. They stay on the server and reappear after any refresh.`);
+      }
     } else {
       toast(`⛔ ${r.issues?.[0] ?? r.message ?? 'Save failed'}`);
     }
@@ -206,7 +223,7 @@ export function AiSettings({ toast, onNavigate }: { toast: Toast; onNavigate: (v
           onClick={() => void onSave()}
           disabled={saving}
           className={`rounded-xl px-4 py-2.5 text-xs font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-60 ${
-            dirty ? 'bg-brand-600 hover:bg-brand-700 ring-2 ring-brand-300' : 'bg-slate-700 hover:bg-slate-600'
+            dirty ? 'bg-amber-500 text-slate-900 hover:bg-amber-400 ring-2 ring-amber-300' : 'bg-slate-700 hover:bg-slate-600'
           }`}
         >
           {saving ? 'Saving…' : dirty ? '💾 Save AI settings' : '✅ Saved'}

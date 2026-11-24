@@ -216,9 +216,15 @@ function aiBaseOnly(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '');
 }
 
-/** Drop a pasted endpoint suffix (`/chat/completions`, `/messages`, …). */
+/**
+ * Drop a pasted endpoint suffix. NVIDIA/model-hub pages print the WHOLE call
+ * URL (`https://integrate.api.nvidia.com/v1/chat/completions`) into a field
+ * labelled "Base URL", and narrow phone inputs truncate it to
+ * `…/v1/chat/` — so `/chat`, `/completions` and `/messages` all count as a
+ * suffix, not part of the base.
+ */
 function aiStripEndpointSuffix(base: string): string {
-  return base.replace(/\/(?:chat\/completions|completions|messages)$/i, '').replace(/\/+$/, '');
+  return base.replace(/\/(?:chat(?:\/completions)?|completions|messages)$/i, '').replace(/\/+$/, '');
 }
 
 /** For Anthropic, the API ROOT is the base — a trailing `/v1` belongs to the path. */
@@ -306,7 +312,27 @@ export function validateAiSettings(raw: unknown): AiValidation {
   const seenProviderIds = new Set<string>();
   for (const p of Array.isArray(r.providers) ? (r.providers as unknown[]) : []) {
     const prov = sanitizeProvider(p);
-    if (!prov) continue;
+    if (!prov) {
+      // sanitizeProvider returns null for a non-object entry or a base URL that
+      // is not http(s). Silently dropping a whole provider is how "I added the
+      // keys and they disappeared" happens: the save succeeds, the keys are
+      // gone, and nothing on screen explains it.
+      const raw = p && typeof p === 'object' ? (p as Record<string, unknown>) : null;
+      const label = typeof raw?.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Unnamed provider';
+      const base = typeof raw?.baseUrl === 'string' ? raw.baseUrl.trim() : '';
+      issues.push(
+        `Provider “${label}” cannot be saved${base ? ` — its base URL “${base.slice(0, 60)}” must start with http:// or https://` : ' — it has no usable base URL'}.`
+      );
+      continue;
+    }
+    // Keys are deduped by value inside sanitizeProvider; a dropped key must be
+    // named here, never swallowed.
+    const rawKeys = Array.isArray((p as Record<string, unknown>).keys) ? (p as { keys: unknown[] }).keys.length : 0;
+    if (prov.keys.length < rawKeys) {
+      issues.push(
+        `Provider “${prov.label}”: ${rawKeys - prov.keys.length} of ${rawKeys} key(s) were rejected — each key needs a value, and two keys in one provider cannot hold the same value.`
+      );
+    }
     if (seenProviderIds.has(prov.id)) {
       issues.push(`Provider “${prov.label}” has a duplicate id.`);
       continue;
@@ -395,6 +421,43 @@ export function sanitizeProvider(p: unknown): AiProvider | null {
     keys,
     enabled: o.enabled !== false,
   };
+}
+
+/**
+ * Compare what the admin SENT with what the server answers after a save.
+ * The stored document is normalized on write, so a save can legitimately
+ * "succeed" while the server kept something different — and before this check
+ * existed, that looked exactly like persistence being broken. Returns human
+ * readable differences (empty array = the server holds what you sent).
+ */
+export function aiSettingsDrift(sent: AiSettings, stored: AiSettings): string[] {
+  const out: string[] = [];
+  const byId = new Map(stored.providers.map((p) => [p.id, p]));
+  for (const p of sent.providers) {
+    const got = byId.get(p.id);
+    if (!got) {
+      out.push(`provider “${p.label}” was not stored at all`);
+      continue;
+    }
+    if (got.baseUrl !== p.baseUrl) out.push(`“${p.label}” kept a different base URL (${got.baseUrl || 'empty'})`);
+    if (got.model !== p.model) out.push(`“${p.label}” kept a different model (${got.model || 'empty'})`);
+    if (got.type !== p.type) out.push(`“${p.label}” kept a different type (${got.type})`);
+    if (got.mode !== p.mode) out.push(`“${p.label}” kept a different mode (${got.mode})`);
+    if (got.enabled !== p.enabled) out.push(`“${p.label}” kept enabled=${got.enabled}`);
+    const gotKeys = new Map(got.keys.map((k) => [k.id, k]));
+    const lost = p.keys.filter((k) => !gotKeys.has(k.id));
+    const changed = p.keys.filter((k) => gotKeys.has(k.id) && gotKeys.get(k.id)!.value !== k.value);
+    if (lost.length) out.push(`“${p.label}” did not store ${lost.length} key(s): ${lost.map((k) => k.label || k.id).join(', ')}`);
+    if (changed.length) out.push(`“${p.label}” did not update ${changed.length} key value(s)`);
+    const added = got.keys.filter((k) => !p.keys.some((x) => x.id === k.id));
+    if (added.length) out.push(`“${p.label}” holds ${added.length} extra key(s) you did not send`);
+  }
+  const extraStored = stored.providers.filter((p) => !sent.providers.some((x) => x.id === p.id));
+  if (extraStored.length) out.push(`${extraStored.length} provider(s) exist on the server that this form did not send`);
+  if (sent.enabled !== stored.enabled) out.push(`the feature switch reads ${stored.enabled ? 'ON' : 'OFF'} on the server`);
+  const def = sent.defaultProviderId;
+  if (def && stored.defaultProviderId !== def) out.push('the default provider was reset');
+  return out;
 }
 
 // ── Chat contract (shared by the student client + the Worker) ─────────────

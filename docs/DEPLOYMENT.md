@@ -307,11 +307,29 @@ device calls). Three in-console checks, in order — no log access needed:
    `ready`, provider labels. `ready:false` means the keys were never stored (or
    the provider is disabled / has no base URL, which now blocks the save).
 
-Reading the answer: `no-provider` = no enabled provider; `no-keys` = provider
-has no keys stored; HTTP 401/403 = the provider rejected that key (the pool
-rests it for 5 minutes and rotates); 402/429 = credit exhausted / rate limited
-(add keys — the pool spreads load automatically); 404 = wrong model id or base
-URL, not a key problem; 503 = `CONFIG_DB` binding missing on that deployment.
+Reading the answer: `no-provider` = no enabled provider; `no-keys` = provider has
+no keys stored; **HTTP 401/403** = the provider rejected that key (the pool rests
+it for 5 minutes and rotates); **402/429** = credit exhausted / rate limited (add
+keys — the pool spreads load automatically); **404** = wrong model id or base URL,
+*not* a key problem; **410 Gone / "has reached its end of life"** = the provider
+RETIRED THE MODEL the key is being used with — the keys are fine, the model id in
+the provider card must change (410 is deliberately not retryable, so one retired
+model never marks the whole key pool dead); **503** = `CONFIG_DB` binding missing
+on that deployment. A `410`/`404` from the provider is itself proof that
+authentication passed, which is why "the keys are broken" is usually a model or
+base-URL problem.
+
+Model ids are only valid while the host keeps them: `https://build.nvidia.com`
+(or the provider's own list) is the ground truth, and the `Endpoint · <provider>`
+diagnostic reads `GET <base>/models`, so a working key tells you exactly which ids
+are live right now.
+
+Saving is confirmed: after `POST /api/admin/ai` the console re-reads the server
+document and compares it with what it sent (`aiSettingsDrift`), so a save that the
+server normalized differently says `⚠️ Saved as vN, but the server kept something
+different: …` instead of looking like the keys vanished on refresh. Keys are
+keyed by `id`, deduped by value, and anything that WOULD be dropped during
+normalization is now a hard validation error naming the provider and the count.
 
 Base URLs are normalized at call time (`aiChatEndpoint` in
 `src/admin/aiSettings.ts`, shared by the Worker, the diagnostics probe and the
